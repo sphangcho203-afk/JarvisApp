@@ -13,6 +13,7 @@ import java.util.Locale
 class VoiceLoop(
     private val activity: Activity,
     private val onSpeech: (String) -> Unit,
+    private val onPartial: (String) -> Unit,
     private val onState: (State) -> Unit
 ) : RecognitionListener {
 
@@ -31,13 +32,12 @@ class VoiceLoop(
         active = true
         onState(State.LISTENING)
         ensureRecognizer()
-        runCatching {
-            recognizer?.startListening(intent())
-        }.onFailure {
-            active = false
-            onState(State.ERROR)
-            startDelayed(900)
-        }
+        runCatching { recognizer?.startListening(intent()) }
+            .onFailure {
+                active = false
+                onState(State.ERROR)
+                startDelayed(900)
+            }
     }
 
     fun startDelayed(delayMs: Long) {
@@ -47,7 +47,7 @@ class VoiceLoop(
 
     fun restart() {
         stop()
-        startDelayed(250)
+        startDelayed(180)
     }
 
     fun stop() {
@@ -65,9 +65,7 @@ class VoiceLoop(
 
     private fun ensureRecognizer() {
         if (recognizer == null) {
-            recognizer = SpeechRecognizer.createSpeechRecognizer(activity).also {
-                it.setRecognitionListener(this)
-            }
+            recognizer = SpeechRecognizer.createSpeechRecognizer(activity).also { it.setRecognitionListener(this) }
         }
     }
 
@@ -75,19 +73,13 @@ class VoiceLoop(
         putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
         putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
         putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-        putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 4)
-        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1100L)
-        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 900L)
+        putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1050L)
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 800L)
     }
 
-    override fun onReadyForSpeech(params: Bundle?) {
-        onState(State.LISTENING)
-    }
-
-    override fun onBeginningOfSpeech() {
-        onState(State.LISTENING)
-    }
-
+    override fun onReadyForSpeech(params: Bundle?) { onState(State.LISTENING) }
+    override fun onBeginningOfSpeech() { onState(State.LISTENING) }
     override fun onRmsChanged(rmsdB: Float) = Unit
     override fun onBufferReceived(buffer: ByteArray?) = Unit
     override fun onEndOfSpeech() {
@@ -98,27 +90,23 @@ class VoiceLoop(
     override fun onError(error: Int) {
         active = false
         onState(State.ERROR)
-        startDelayed(if (error == SpeechRecognizer.ERROR_NO_MATCH) 500 else 1100)
+        startDelayed(if (error == SpeechRecognizer.ERROR_NO_MATCH) 450 else 1000)
     }
 
     override fun onResults(results: Bundle?) {
         active = false
-        val matches = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION).orEmpty()
-        val text = matches.firstOrNull().orEmpty()
+        val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION).orEmpty().firstOrNull().orEmpty()
         if (text.isNotBlank()) {
             onState(State.PROCESSING)
             onSpeech(text)
         } else {
-            startDelayed(500)
+            startDelayed(450)
         }
     }
 
     override fun onPartialResults(partialResults: Bundle?) {
-        val matches = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION).orEmpty()
-        val text = matches.firstOrNull().orEmpty()
-        if (text.isNotBlank()) {
-            // Partial transcript is intentionally not sent to the brain yet.
-        }
+        val text = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION).orEmpty().firstOrNull().orEmpty()
+        if (text.isNotBlank()) onPartial(text)
     }
 
     override fun onEvent(eventType: Int, params: Bundle?) = Unit

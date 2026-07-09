@@ -23,36 +23,40 @@ class MainActivity : Activity() {
         voiceLoop = VoiceLoop(
             activity = this,
             onSpeech = ::handleSpeech,
+            onPartial = ::handlePartialSpeech,
             onState = ::handleVoiceState
         )
 
         setContentView(hud)
-        hud.pushEvent("CORE -> PHASE 4 ONLINE")
-        hud.pushEvent("BRAIN -> LOCAL COGNITION READY")
-        hud.pushEvent("VOICE -> STANDBY")
+        hud.pushEvent("PHASE 5 -> LOCAL BRAIN ENGINE ONLINE")
+        hud.pushEvent("MEMORY -> ${brain.memorySnapshot()}")
+        hud.pushEvent("VOICE -> DIRECT LISTEN LOOP")
 
         tts = TextToSpeech(this) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 tts?.language = Locale.US
-                tts?.setSpeechRate(0.93f)
-                tts?.setPitch(0.86f)
-                hud.pushEvent("VOICE -> SYNTHESIS READY")
-                speak("Jarvis phase four online. Cognitive shell initialized.")
+                tts?.setSpeechRate(0.94f)
+                tts?.setPitch(0.84f)
+                speak("Jarvis phase five online. Local brain engine initialized.")
             } else {
                 hud.pushEvent("VOICE -> SYNTHESIS FAILED")
             }
         }
 
         hud.setOnClickListener {
-            hud.pushEvent("USER -> MANUAL LISTEN RESTART")
+            hud.pushEvent("USER -> MANUAL BRAIN WAKE")
             voiceLoop.restart()
         }
 
         if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-            voiceLoop.startDelayed(700)
+            voiceLoop.startDelayed(650)
         } else {
             requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_RECORD_AUDIO)
         }
+    }
+
+    private fun handlePartialSpeech(text: String) {
+        hud.setTranscript(text)
     }
 
     private fun handleSpeech(text: String) {
@@ -67,9 +71,13 @@ class MainActivity : Activity() {
             val response = brain.respond(clean)
             runOnUiThread {
                 hud.submitBrainResponse(response)
+                if (response.action.type != ActionType.NONE) {
+                    val executed = brain.execute(response.action)
+                    hud.pushEvent("ACTION -> ${response.action.label.uppercase()} ${if (executed) "OK" else "FAILED"}")
+                }
                 speak(response.spoken)
                 hud.setProcessing(false)
-                voiceLoop.startDelayed(1400)
+                voiceLoop.startDelayed(1300)
             }
         }.start()
     }
@@ -101,7 +109,10 @@ class MainActivity : Activity() {
                     confidence = 1f,
                     mode = BrainMode.SECURITY,
                     trace = listOf("permission_scan", "voice_channel_blocked"),
-                    memory = brain.memorySnapshot()
+                    memory = brain.memorySnapshot(),
+                    thoughts = listOf("Audio input channel unavailable."),
+                    entities = listOf("permission=record_audio"),
+                    decision = "request_microphone_permission"
                 )
             )
         }

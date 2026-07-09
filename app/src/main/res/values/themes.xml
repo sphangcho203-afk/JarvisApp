@@ -4,7 +4,7 @@
         <item name="android:windowNoTitle">true</item>
         <item name="android:fontFamily">monospace</item>
         <item name="android:colorAccent">#00F5EB</item>
-        <item name="android:navigationBarColor">#00080C</item>
-        <item name="android:statusBarColor">#00080C</item>
+        <item name="android:navigationBarColor">#00040A</item>
+        <item name="android:statusBarColor">#00040A</item>
     </style>
 </resources>
