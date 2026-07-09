@@ -9,7 +9,6 @@ import android.os.Vibrator
 import android.speech.tts.TextToSpeech
 import android.view.MotionEvent
 import android.view.WindowManager
-import androidx.annotation.RequiresPermission
 import android.app.Activity
 import com.seongja.jarvis.audio.SoundEngine
 import com.seongja.jarvis.audio.VoiceManager
