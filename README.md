@@ -1,44 +1,46 @@
 # Jarvis Android
 
-A futuristic Android assistant interface built for voice commands, local automation, and phone-first control.
+A futuristic Android assistant interface built with Kotlin, voice commands, local automation, and a sci-fi HUD.
 
-## Current Build
+## Current Build: Phase 2
 
-This starter repo includes:
+Jarvis now includes:
 
 - Native Kotlin Android app
-- Sci-fi animated HUD
-- Visible voice loop using Android SpeechRecognizer
+- Animated sci-fi HUD
+- Voice loop using Android SpeechRecognizer
 - Text-to-speech responses
-- Basic command router
-- Open settings command
-- Open YouTube / Chrome command
-- Web search command
-- Status and time commands
+- Persistent callsign memory
+- Command counter telemetry
+- Battery diagnostics
+- Web search routing
+- Common app launching
+- Local command router
 
-## Voice Commands To Try
+## Commands To Try
 
-- `wake up`
+- `Jarvis wake up`
 - `system status`
+- `battery status`
 - `what time is it`
 - `open settings`
 - `open YouTube`
-- `open Chrome`
+- `open Spotify`
+- `open Discord`
 - `search for latest technology news`
-- `stop listening`
-
-## Build Notes
-
-Open this project in Android Studio or build with Gradle after installing the Android SDK.
-
-The app asks for microphone permission because voice control cannot work without it. Stunning revelation, truly.
+- `set callsign to Seongja`
+- `who am I`
+- `mission brief`
+- `sleep mode`
 
 ## Project Direction
 
-This repo is meant to become your phone-based Jarvis core:
+1. Phase 3: command modules and safer action permissions.
+2. Phase 4: local encrypted memory.
+3. Phase 5: phone-computer sync.
+4. Phase 6: wake-word style experience through Android service design.
+5. Phase 7: real automation dashboard and audit logs.
 
-1. Better HUD animations and sound design.
-2. More Android intents and app actions.
-3. Secure local memory.
-4. Phone-computer sync.
-5. Permission dashboard and audit logs.
+## Notes
+
+The app asks for microphone permission because voice control cannot work without it. Humanity continues to be haunted by obvious requirements.

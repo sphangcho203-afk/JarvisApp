@@ -1,50 +1,50 @@
 package com.seongja.jarvis
 
-import android.content.Context
+import android.os.SystemClock
 
-class JarvisEngine(
-    context: Context,
-    private val onState: (JarvisUiState) -> Unit
-) {
-    private var state = JarvisUiState()
-    private val actions = SystemActions(context)
-    private val router = CommandRouter(actions)
-    private val voiceManager = VoiceManager(
-        context = context,
-        onListeningChanged = { listening -> updateState(state.copy(isListening = listening)) },
-        onTranscript = { transcript -> updateState(state.copy(transcript = transcript)) },
-        onCommand = { command -> handleCommand(command) }
-    )
-    private val soundEngine = SoundEngine()
+class JarvisEngine {
+    private val listeners = mutableSetOf<(JarvisUiState) -> Unit>()
+    private val bootTime = SystemClock.elapsedRealtime()
 
-    fun initialize() {
-        soundEngine.initialize()
-        voiceManager.initialize()
-        updateState(state.copy(status = "SYSTEM ONLINE", response = "Jarvis initialized. Tap the core to listen."))
+    var state: JarvisUiState = JarvisUiState()
+        private set
+
+    fun addListener(listener: (JarvisUiState) -> Unit) {
+        listeners += listener
+        listener(state.copy(uptimeSeconds = uptimeSeconds()))
     }
 
-    fun toggleListening() {
-        voiceManager.toggleListening()
+    fun removeListener(listener: (JarvisUiState) -> Unit) {
+        listeners -= listener
     }
 
-    private fun handleCommand(command: String) {
-        val response = router.route(command)
-        updateState(
-            state.copy(
-                response = response,
-                status = if (response.contains("paused", ignoreCase = true)) "STANDBY" else "COMMAND PROCESSED"
-            )
+    fun update(
+        status: String = state.status,
+        transcript: String = state.transcript,
+        response: String = state.response,
+        listening: Boolean = state.listening,
+        energy: Float = state.energy,
+        mode: String = state.mode,
+        commandCount: Int = state.commandCount,
+        lastCommand: String = state.lastCommand,
+        signal: String = state.signal
+    ) {
+        state = JarvisUiState(
+            status = status,
+            transcript = transcript,
+            response = response,
+            listening = listening,
+            energy = energy.coerceIn(0f, 1f),
+            mode = mode,
+            commandCount = commandCount,
+            lastCommand = lastCommand,
+            signal = signal,
+            uptimeSeconds = uptimeSeconds()
         )
-        voiceManager.speak(response)
+        listeners.toList().forEach { it(state) }
     }
 
-    private fun updateState(newState: JarvisUiState) {
-        state = newState
-        onState(newState)
-    }
-
-    fun destroy() {
-        voiceManager.destroy()
-        soundEngine.release()
+    private fun uptimeSeconds(): Long {
+        return (SystemClock.elapsedRealtime() - bootTime) / 1000L
     }
 }
