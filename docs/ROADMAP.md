@@ -1,39 +1,30 @@
 # Jarvis Roadmap
 
-## Phase 1 - Core Shell
+## Phase 1
+- Kotlin Android starter
+- Voice commands
+- Basic HUD
 
-- Native Kotlin Android app
-- Animated HUD
-- Voice recognition loop
-- Text-to-speech response system
-- Basic command routing
+## Phase 2
+- Memory
+- Diagnostics
+- More app commands
 
-## Phase 2 - Phone Control
+## Phase 3
+- Advanced civilization HUD
+- Boot sequence
+- Mode engine
+- Telemetry panels
+- GitHub Actions APK build
 
-- Open installed apps
-- Launch settings panels
-- Run web searches
-- Add notification reader with explicit permission
-- Add battery/status dashboard
+## Phase 4
+- Notification intelligence
+- Foreground service
+- Encrypted memory
+- Sound assets
+- Command audit log
 
-## Phase 3 - Secure Memory
-
-- Local encrypted memory database
-- User profiles by ID
-- Permission-controlled private notes
-- Authentication gate before private reads
-
-## Phase 4 - Desktop Sync
-
-- Pair phone and computer
-- Local network command relay
-- Secure token exchange
-- Computer status dashboard
-
-## Phase 5 - Real Assistant Engine
-
-- Tool calling layer
-- Scheduled tasks
-- Intent classifier
-- Offline fallback commands
-- Audit log for every sensitive action
+## Phase 5
+- Phone-computer sync
+- Desktop command bridge
+- Secure remote execution

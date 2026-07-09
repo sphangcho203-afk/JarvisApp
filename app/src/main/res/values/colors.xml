@@ -1,6 +1,5 @@
 <resources>
-    <color name="jarvis_black">#05070C</color>
+    <color name="jarvis_void">#02060F</color>
     <color name="jarvis_cyan">#00E5FF</color>
-    <color name="jarvis_blue">#2979FF</color>
-    <color name="jarvis_white">#EAFBFF</color>
+    <color name="jarvis_gold">#FFD76A</color>
 </resources>

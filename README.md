@@ -1,46 +1,55 @@
 # Jarvis Android
 
-A futuristic Android assistant interface built with Kotlin, voice commands, local automation, and a sci-fi HUD.
+Jarvis is a phone-first Android AI assistant interface built in Kotlin. It focuses on a futuristic command HUD, voice control, local memory, device diagnostics, and expandable automation modules.
 
-## Current Build: Phase 2
+## Current Version
 
-Jarvis now includes:
+**Phase 3: Advanced Civilization Interface**
 
-- Native Kotlin Android app
-- Animated sci-fi HUD
-- Voice loop using Android SpeechRecognizer
-- Text-to-speech responses
-- Persistent callsign memory
-- Command counter telemetry
-- Battery diagnostics
+## Current Capabilities
+
+- Advanced sci-fi HUD rendered with native Android Canvas
+- Boot sequence and reactor-core animation
+- Voice waveform visualization
+- Live telemetry panels
+- Local memory vault
+- Callsign memory
+- App launching
 - Web search routing
-- Common app launching
-- Local command router
+- Device and battery diagnostics
+- Mode engine: Online, Listening, Processing, Tactical, Stealth, Security, Red Alert, Dormant
+- GitHub Actions APK builder
 
-## Commands To Try
+## Voice Commands
 
-- `Jarvis wake up`
-- `system status`
-- `battery status`
-- `what time is it`
-- `open settings`
+Try commands like:
+
+- `wake up`
+- `enter tactical mode`
+- `enter stealth mode`
+- `red alert`
 - `open YouTube`
+- `open Chrome`
 - `open Spotify`
-- `open Discord`
-- `search for latest technology news`
-- `set callsign to Seongja`
+- `open settings`
+- `open Wi-Fi settings`
+- `search for Android Kotlin voice assistant`
+- `battery status`
+- `system status`
+- `remember that favorite game is MLBB`
+- `call me Seongja`
 - `who am I`
-- `mission brief`
-- `sleep mode`
+- `what do you remember`
+- `clear memory`
 
-## Project Direction
+## Build APK From GitHub
 
-1. Phase 3: command modules and safer action permissions.
-2. Phase 4: local encrypted memory.
-3. Phase 5: phone-computer sync.
-4. Phase 6: wake-word style experience through Android service design.
-5. Phase 7: real automation dashboard and audit logs.
+Go to **Actions → Build Jarvis APK → Run workflow** or push to `main`.
 
-## Notes
+When the workflow finishes, download the artifact named:
 
-The app asks for microphone permission because voice control cannot work without it. Humanity continues to be haunted by obvious requirements.
+`Jarvis-debug-apk`
+
+## Warning
+
+This is not a finished personal assistant yet. It is the foundation of one. Android automation, notification intelligence, encrypted memory, and desktop sync should be added carefully because security matters, despite humanity often treating permissions like confetti.

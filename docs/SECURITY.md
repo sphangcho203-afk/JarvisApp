@@ -1,25 +1,18 @@
 # Jarvis Security Notes
 
-Jarvis should be powerful, but not reckless. We are building an assistant, not a cyberpunk liability dispenser.
+Jarvis should stay local-first by default.
 
 ## Rules
 
-1. Never store secrets in plain text.
-2. Never expose private notes without authentication.
-3. Keep dangerous actions behind confirmation.
-4. Log sensitive commands.
-5. Prefer local-first processing where possible.
-6. Ask permission before accessing contacts, messages, files, or notifications.
+- Do not commit API keys.
+- Do not commit GitHub tokens.
+- Do not store private secrets as plain text long-term.
+- Ask permission before enabling always-listening behavior.
+- Keep memory local unless the user explicitly chooses sync.
+- Use Android permissions only when needed.
 
-## Sensitive Features To Guard
+## Current Memory
 
-- Private database lookup
-- Device lock/unlock commands
-- Computer sync
-- Contacts and messages
-- Location
-- Microphone background behavior
+Phase 3 memory uses Android SharedPreferences. This is fine for harmless preferences and labels, but not for sensitive secrets.
 
-## Android Reality Check
-
-Android does not allow normal apps to constantly read fingerprints from arbitrary screen touches. Fingerprint authentication must use official Android biometric APIs. Any design involving fingerprints must be built around system-approved biometric prompts, not fantasy spy-movie sensors. Tragic, but laws of software still exist.
+For Phase 4, sensitive memory should move to Android Keystore-backed encryption.
