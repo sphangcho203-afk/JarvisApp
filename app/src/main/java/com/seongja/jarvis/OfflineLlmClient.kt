@@ -30,7 +30,7 @@ internal class OfflineLlmClient(
             val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 connectTimeout = 2_500
-                readTimeout = 180_000
+                readTimeout = 120_000
                 doOutput = true
                 useCaches = false
                 setRequestProperty("Content-Type", "application/json; charset=utf-8")
@@ -87,7 +87,7 @@ internal class OfflineLlmClient(
                 put("reply", JSONObject().apply {
                     put("type", "string")
                     put("minLength", 1)
-                    put("maxLength", 700)
+                    put("maxLength", 420)
                 })
                 put("tool", JSONObject().apply {
                     put("type", "string")
@@ -136,7 +136,7 @@ internal class OfflineLlmClient(
             Return only the schema-constrained JSON object.
 
             LOCAL MEMORY:
-            ${memoryContext.take(3_500)}
+            ${memoryContext.take(1_200)}
         """.trimIndent()
 
         return JSONObject().apply {
@@ -148,7 +148,7 @@ internal class OfflineLlmClient(
             put("temperature", 0.45)
             put("top_p", 0.9)
             put("repeat_penalty", 1.10)
-            put("max_tokens", 220)
+            put("max_tokens", 110)
             put("stream", false)
             put("response_format", JSONObject().apply {
                 put("type", "json_schema")
@@ -173,7 +173,7 @@ internal class OfflineLlmClient(
         }
 
         return OfflineLlmDecision(
-            reply = json.optString("reply", "Jarvis local brain returned an empty response.").trim().take(700),
+            reply = json.optString("reply", "Jarvis local brain returned an empty response.").trim().take(420),
             tool = tool,
             argument = json.optString("argument", "").trim().take(160),
             memoryFact = json.optString("memory_fact", "").trim().take(220),

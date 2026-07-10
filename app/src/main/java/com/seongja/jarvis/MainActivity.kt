@@ -6,8 +6,10 @@ import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
+import android.speech.tts.UtteranceProgressListener
 import android.view.View
 import java.util.Locale
+import java.util.concurrent.atomic.AtomicBoolean
 
 class MainActivity : Activity() {
     private lateinit var hud: AdvancedCivilizationHudView
@@ -15,6 +17,8 @@ class MainActivity : Activity() {
     private lateinit var voiceLoop: VoiceLoop
     private var tts: TextToSpeech? = null
     private var ttsReady = false
+    private val brainBusy = AtomicBoolean(false)
+    private var resumed = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -31,38 +35,17 @@ class MainActivity : Activity() {
         )
 
         setContentView(hud)
-        hud.pushEvent("PHASE 6.1 -> VOICE BRIDGE HOTFIX")
+        hud.pushEvent("PHASE 6.2 -> ASR BUSY RECOVERY")
         hud.pushEvent("CORTEX -> LOCALHOST:8080")
-        hud.pushEvent("TAP -> RESTART LISTENING")
-        hud.pushEvent("LONG PRESS -> TEST BRAIN WITHOUT VOICE")
+        hud.pushEvent("TAP -> HARD RESET LISTENER")
+        hud.pushEvent("LONG PRESS -> DIRECT BRAIN TEST")
 
-        tts = TextToSpeech(this) { status ->
-            if (status == TextToSpeech.SUCCESS) {
-                tts?.setAudioAttributes(
-                    AudioAttributes.Builder()
-                        .setUsage(AudioAttributes.USAGE_ASSISTANT)
-                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                        .build()
-                )
-
-                val defaultResult = tts?.setLanguage(Locale.getDefault()) ?: TextToSpeech.LANG_NOT_SUPPORTED
-                if (defaultResult == TextToSpeech.LANG_MISSING_DATA || defaultResult == TextToSpeech.LANG_NOT_SUPPORTED) {
-                    tts?.setLanguage(Locale.US)
-                }
-                tts?.setSpeechRate(0.94f)
-                tts?.setPitch(0.88f)
-                ttsReady = true
-                hud.pushEvent("VOICE -> SYNTHESIS READY")
-                speak("Jarvis voice bridge online.")
-            } else {
-                hud.pushEvent("VOICE -> SYNTHESIS FAILED: $status")
-            }
-        }
+        initTts()
 
         hud.setOnClickListener {
             if (hasMicPermission()) {
-                hud.pushEvent("USER -> MANUAL LISTENING RESTART")
-                voiceLoop.restart()
+                hud.pushEvent("USER -> MANUAL ASR HARD RESET")
+                voiceLoop.manualRestart()
             } else {
                 hud.pushEvent("AUTH -> REQUESTING MICROPHONE")
                 requestMicPermission()
@@ -70,75 +53,169 @@ class MainActivity : Activity() {
         }
 
         hud.setOnLongClickListener {
-            hud.pushEvent("DIAGNOSTIC -> BYPASSING SPEECH INPUT")
-            handleSpeech("Confirm the offline brain bridge is connected in one short sentence.")
+            if (brainBusy.compareAndSet(false, true)) {
+                hud.pushEvent("DIAGNOSTIC -> DIRECT LLM REQUEST")
+                processInput("Reply only: Offline brain bridge connected, Sir.")
+            } else {
+                hud.pushEvent("CORTEX -> REQUEST ALREADY RUNNING")
+            }
             true
         }
 
-        if (hasMicPermission()) {
-            hud.pushEvent("AUTH -> MICROPHONE GRANTED")
-            voiceLoop.startDelayed(700)
-        } else {
-            requestMicPermission()
+        if (!hasMicPermission()) requestMicPermission()
+    }
+
+    private fun initTts() {
+        tts = TextToSpeech(this) { status ->
+            if (status != TextToSpeech.SUCCESS) {
+                hud.pushEvent("VOICE -> SYNTHESIS FAILED: $status")
+                if (resumed && hasMicPermission()) voiceLoop.resume()
+                return@TextToSpeech
+            }
+
+            tts?.setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build()
+            )
+            val languageResult = tts?.setLanguage(Locale.US) ?: TextToSpeech.LANG_NOT_SUPPORTED
+            ttsReady = languageResult != TextToSpeech.LANG_MISSING_DATA &&
+                languageResult != TextToSpeech.LANG_NOT_SUPPORTED
+            tts?.setSpeechRate(0.94f)
+            tts?.setPitch(0.88f)
+            tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                override fun onStart(utteranceId: String?) {
+                    runOnUiThread { hud.pushEvent("VOICE -> SPEAKING") }
+                }
+
+                override fun onDone(utteranceId: String?) {
+                    runOnUiThread {
+                        hud.pushEvent("VOICE -> COMPLETE")
+                        if (resumed && hasMicPermission() && !brainBusy.get()) {
+                            voiceLoop.resumeAfterTts(900)
+                        }
+                    }
+                }
+
+                @Deprecated("Deprecated in Java")
+                override fun onError(utteranceId: String?) {
+                    runOnUiThread {
+                        hud.pushEvent("VOICE -> OUTPUT ERROR")
+                        if (resumed && hasMicPermission() && !brainBusy.get()) {
+                            voiceLoop.resumeAfterTts(1_100)
+                        }
+                    }
+                }
+            })
+            hud.pushEvent("VOICE -> SYNTHESIS READY")
+
+            if (resumed) speak("Jarvis voice system online.")
         }
     }
 
     override fun onResume() {
         super.onResume()
-        if (::voiceLoop.isInitialized && hasMicPermission()) {
-            voiceLoop.startDelayed(450)
+        resumed = true
+        if (hasMicPermission() && !brainBusy.get()) {
+            if (ttsReady) speak("Jarvis listening.") else voiceLoop.resume()
         }
     }
 
     override fun onPause() {
+        resumed = false
         if (::voiceLoop.isInitialized) voiceLoop.stop()
         super.onPause()
     }
 
     private fun handlePartialSpeech(text: String) {
-        hud.setTranscript(text)
+        if (!brainBusy.get()) hud.setTranscript(text)
     }
 
     private fun handleSpeech(text: String) {
         val clean = text.trim()
-        if (clean.isBlank()) return
+        if (clean.isBlank()) {
+            voiceLoop.resume()
+            return
+        }
+        if (!brainBusy.compareAndSet(false, true)) {
+            hud.pushEvent("CORTEX -> BUSY; INPUT DROPPED")
+            return
+        }
+        processInput(clean)
+    }
 
+    private fun processInput(clean: String) {
+        voiceLoop.pauseForProcessing()
         hud.setTranscript(clean)
         hud.setProcessing(true)
-        hud.pushEvent("INPUT -> $clean")
-        hud.pushEvent("CORTEX -> LOCAL INFERENCE REQUEST")
+        hud.pushEvent("INPUT -> ${clean.take(55)}")
+        hud.pushEvent("CORTEX -> LOCAL INFERENCE START")
 
         Thread {
-            val response = brain.respond(clean)
+            val started = System.currentTimeMillis()
+            val response = runCatching { brain.respond(clean) }.getOrElse { error ->
+                BrainResponse(
+                    spoken = "The local brain bridge failed: ${error.javaClass.simpleName}.",
+                    display = "LLM bridge error: ${error.message ?: error.javaClass.simpleName}",
+                    intent = "bridge_error",
+                    confidence = 0f,
+                    mode = BrainMode.ALERT,
+                    trace = listOf("localhost:8080", "exception=${error.javaClass.simpleName}"),
+                    memory = brain.memorySnapshot(),
+                    thoughts = listOf("The local request threw an exception."),
+                    entities = emptyList(),
+                    decision = "bridge_exception",
+                    action = BrainAction()
+                )
+            }
+            val elapsed = (System.currentTimeMillis() - started) / 1000
+
             runOnUiThread {
                 hud.submitBrainResponse(response)
+                hud.pushEvent("CORTEX -> RESPONSE ${elapsed}s")
                 if (response.trace.any { it.contains("unavailable") }) {
-                    hud.pushEvent("CORTEX -> SERVER OFFLINE, FALLBACK ACTIVE")
-                } else {
-                    hud.pushEvent("CORTEX -> RESPONSE RECEIVED")
+                    hud.pushEvent("CORTEX -> SERVER OFFLINE; FALLBACK USED")
                 }
                 if (response.action.type != ActionType.NONE) {
                     val executed = brain.execute(response.action)
-                    hud.pushEvent("ACTION -> ${response.action.label.uppercase()} ${if (executed) "OK" else "BLOCKED/FAILED"}")
+                    hud.pushEvent("ACTION -> ${response.action.label.uppercase()} ${if (executed) "OK" else "BLOCKED"}")
                 }
-                speak(response.spoken)
                 hud.setProcessing(false)
-                voiceLoop.startDelayed(1_300)
+                brainBusy.set(false)
+                speak(response.spoken)
             }
         }.start()
     }
 
     private fun handleVoiceState(state: VoiceLoop.State) {
-        hud.setVoiceState(state)
+        if (!brainBusy.get() || state == VoiceLoop.State.PROCESSING) {
+            hud.setVoiceState(state)
+        }
     }
 
     private fun speak(text: String) {
-        if (!ttsReady) {
-            hud.pushEvent("VOICE -> TTS NOT READY")
+        val clean = text.trim()
+        if (clean.isBlank()) {
+            if (resumed && hasMicPermission()) voiceLoop.resumeAfterTts(700)
             return
         }
-        val result = tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "jarvis-${System.currentTimeMillis()}")
-        hud.pushEvent("VOICE -> ${if (result == TextToSpeech.SUCCESS) "SPEAKING" else "SPEAK FAILED"}")
+        voiceLoop.pauseForTts()
+        if (!ttsReady) {
+            hud.pushEvent("VOICE -> TTS NOT READY; SHOWING TEXT")
+            if (resumed && hasMicPermission() && !brainBusy.get()) voiceLoop.resumeAfterTts(1_000)
+            return
+        }
+        val result = tts?.speak(
+            clean,
+            TextToSpeech.QUEUE_FLUSH,
+            null,
+            "jarvis-${System.currentTimeMillis()}"
+        )
+        if (result != TextToSpeech.SUCCESS) {
+            hud.pushEvent("VOICE -> SPEAK REQUEST FAILED")
+            if (resumed && hasMicPermission() && !brainBusy.get()) voiceLoop.resumeAfterTts(1_100)
+        }
     }
 
     private fun hasMicPermission(): Boolean =
@@ -156,9 +233,9 @@ class MainActivity : Activity() {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
         if (requestCode == REQ_RECORD_AUDIO && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
             hud.pushEvent("AUTH -> MICROPHONE GRANTED")
-            voiceLoop.startDelayed(500)
+            voiceLoop.resume()
         } else if (requestCode == REQ_RECORD_AUDIO) {
-            hud.pushEvent("AUTH -> MICROPHONE DENIED; ENABLE IN APP SETTINGS")
+            hud.pushEvent("AUTH -> MICROPHONE DENIED")
         }
     }
 

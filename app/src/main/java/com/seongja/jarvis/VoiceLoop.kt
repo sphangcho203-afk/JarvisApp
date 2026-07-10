@@ -23,12 +23,83 @@ class VoiceLoop(
 
     private val handler = Handler(Looper.getMainLooper())
     private var recognizer: SpeechRecognizer? = null
-    private var active = false
-    private var onDeviceRecognizer = false
     private var destroyed = false
+    private var listening = false
+    private var starting = false
+    private var paused = false
+    private var forceSystemRecognizer = false
+    private var busyCount = 0
+    private var generation = 0
 
-    fun start() {
-        if (destroyed || active) return
+    private val delayedStart = Runnable { startNow() }
+
+    fun startDelayed(delayMs: Long) {
+        if (destroyed || paused) return
+        handler.removeCallbacks(delayedStart)
+        handler.postDelayed(delayedStart, delayMs.coerceAtLeast(250L))
+    }
+
+    fun manualRestart() {
+        onDiagnostic("ASR -> MANUAL HARD RESET")
+        paused = false
+        hardReset()
+        startDelayed(1_200)
+    }
+
+    fun pauseForProcessing() {
+        paused = true
+        handler.removeCallbacks(delayedStart)
+        listening = false
+        starting = false
+        runCatching { recognizer?.cancel() }
+        onState(State.PROCESSING)
+    }
+
+    fun pauseForTts() {
+        paused = true
+        handler.removeCallbacks(delayedStart)
+        listening = false
+        starting = false
+        runCatching { recognizer?.cancel() }
+        onDiagnostic("ASR -> PAUSED FOR SPEECH OUTPUT")
+        onState(State.READY)
+    }
+
+    fun resumeAfterTts(delayMs: Long = 900L) {
+        if (destroyed) return
+        paused = false
+        onDiagnostic("ASR -> RESUMING AFTER SPEECH OUTPUT")
+        startDelayed(delayMs)
+    }
+
+    fun stop() {
+        paused = true
+        handler.removeCallbacks(delayedStart)
+        listening = false
+        starting = false
+        runCatching { recognizer?.cancel() }
+        onState(State.READY)
+    }
+
+    fun resume() {
+        if (destroyed) return
+        paused = false
+        startDelayed(850)
+    }
+
+    fun destroy() {
+        destroyed = true
+        paused = true
+        handler.removeCallbacksAndMessages(null)
+        listening = false
+        starting = false
+        runCatching { recognizer?.cancel() }
+        runCatching { recognizer?.destroy() }
+        recognizer = null
+    }
+
+    private fun startNow() {
+        if (destroyed || paused || listening || starting) return
         if (!SpeechRecognizer.isRecognitionAvailable(activity)) {
             onDiagnostic("ASR -> NO RECOGNITION SERVICE")
             onState(State.UNAVAILABLE)
@@ -41,81 +112,75 @@ class VoiceLoop(
             return
         }
 
-        active = true
+        starting = true
         onState(State.LISTENING)
-        onDiagnostic(if (onDeviceRecognizer) "ASR -> ON-DEVICE LISTENING" else "ASR -> SYSTEM LISTENING")
-
-        runCatching { engine.startListening(intent()) }
+        onDiagnostic("ASR -> START REQUEST")
+        runCatching { engine.startListening(recognitionIntent()) }
             .onFailure {
-                active = false
+                starting = false
+                listening = false
                 onDiagnostic("ASR START ERROR -> ${it.javaClass.simpleName}")
                 onState(State.ERROR)
-                startDelayed(1_000)
+                hardReset()
+                startDelayed(2_000)
             }
-    }
-
-    fun startDelayed(delayMs: Long) {
-        if (destroyed) return
-        handler.removeCallbacksAndMessages(null)
-        handler.postDelayed({ start() }, delayMs)
-    }
-
-    fun restart() {
-        active = false
-        runCatching { recognizer?.cancel() }
-        startDelayed(250)
-    }
-
-    fun stop() {
-        handler.removeCallbacksAndMessages(null)
-        active = false
-        runCatching { recognizer?.cancel() }
-        onState(State.READY)
-    }
-
-    fun destroy() {
-        destroyed = true
-        active = false
-        handler.removeCallbacksAndMessages(null)
-        recognizer?.destroy()
-        recognizer = null
     }
 
     private fun ensureRecognizer() {
         if (recognizer != null) return
 
+        val useOnDevice = !forceSystemRecognizer &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            SpeechRecognizer.isOnDeviceRecognitionAvailable(activity)
+
         recognizer = runCatching {
-            if (
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-                SpeechRecognizer.isOnDeviceRecognitionAvailable(activity)
-            ) {
-                onDeviceRecognizer = true
+            if (useOnDevice) {
                 onDiagnostic("ASR ENGINE -> ANDROID ON-DEVICE")
                 SpeechRecognizer.createOnDeviceSpeechRecognizer(activity)
             } else {
-                onDeviceRecognizer = false
-                onDiagnostic("ASR ENGINE -> SYSTEM DEFAULT; OFFLINE NOT GUARANTEED")
+                onDiagnostic("ASR ENGINE -> SYSTEM DEFAULT")
                 SpeechRecognizer.createSpeechRecognizer(activity)
             }
         }.onFailure {
             onDiagnostic("ASR CREATE ERROR -> ${it.javaClass.simpleName}")
-        }.getOrNull()?.also { it.setRecognitionListener(this) }
+        }.getOrNull()?.also {
+            generation++
+            it.setRecognitionListener(this)
+        }
     }
 
-    private fun intent(): Intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+    private fun hardReset() {
+        handler.removeCallbacks(delayedStart)
+        listening = false
+        starting = false
+        runCatching { recognizer?.cancel() }
+        runCatching { recognizer?.destroy() }
+        recognizer = null
+        generation++
+    }
+
+    private fun recognitionIntent(): Intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
         putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.US.toLanguageTag())
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, Locale.US.toLanguageTag())
         putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-        putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
+        putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
         putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 900L)
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 650L)
     }
 
     override fun onReadyForSpeech(params: Bundle?) {
+        starting = false
+        listening = true
+        busyCount = 0
         onDiagnostic("ASR -> READY FOR SPEECH")
         onState(State.LISTENING)
     }
 
     override fun onBeginningOfSpeech() {
+        starting = false
+        listening = true
         onDiagnostic("ASR -> SPEECH DETECTED")
         onState(State.LISTENING)
     }
@@ -124,13 +189,16 @@ class VoiceLoop(
     override fun onBufferReceived(buffer: ByteArray?) = Unit
 
     override fun onEndOfSpeech() {
-        active = false
+        listening = false
+        starting = false
         onDiagnostic("ASR -> PROCESSING SPEECH")
         onState(State.PROCESSING)
     }
 
     override fun onError(error: Int) {
-        active = false
+        listening = false
+        starting = false
+
         val label = when (error) {
             SpeechRecognizer.ERROR_AUDIO -> "AUDIO"
             SpeechRecognizer.ERROR_CLIENT -> "CLIENT"
@@ -147,20 +215,48 @@ class VoiceLoop(
             SpeechRecognizer.ERROR_TOO_MANY_REQUESTS -> "TOO MANY REQUESTS"
             else -> "CODE $error"
         }
+
         onDiagnostic("ASR ERROR -> $label")
         onState(State.ERROR)
+        if (paused || destroyed) return
 
-        val delay = when (error) {
-            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> 5_000L
-            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> 1_500L
-            SpeechRecognizer.ERROR_NO_MATCH, SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> 550L
-            else -> 1_200L
+        when (error) {
+            SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> {
+                busyCount++
+                hardReset()
+                if (busyCount >= 2 && !forceSystemRecognizer) {
+                    forceSystemRecognizer = true
+                    busyCount = 0
+                    onDiagnostic("ASR BUSY LOOP -> SWITCHING TO SYSTEM ENGINE")
+                    startDelayed(3_000)
+                } else {
+                    onDiagnostic("ASR BUSY -> HARD RESET ${busyCount}/2")
+                    startDelayed(2_500)
+                }
+            }
+            SpeechRecognizer.ERROR_CLIENT,
+            SpeechRecognizer.ERROR_SERVER_DISCONNECTED,
+            SpeechRecognizer.ERROR_TOO_MANY_REQUESTS -> {
+                hardReset()
+                startDelayed(2_500)
+            }
+            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> {
+                paused = true
+                onDiagnostic("ASR -> MICROPHONE PERMISSION REQUIRED")
+            }
+            SpeechRecognizer.ERROR_NO_MATCH,
+            SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> startDelayed(900)
+            else -> {
+                hardReset()
+                startDelayed(1_800)
+            }
         }
-        startDelayed(delay)
     }
 
     override fun onResults(results: Bundle?) {
-        active = false
+        listening = false
+        starting = false
+        busyCount = 0
         val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
             .orEmpty()
             .firstOrNull()
@@ -168,12 +264,13 @@ class VoiceLoop(
             .trim()
 
         if (text.isNotBlank()) {
-            onDiagnostic("ASR RESULT -> ${text.take(80)}")
+            paused = true
+            onDiagnostic("ASR RESULT -> ${text.take(72)}")
             onState(State.PROCESSING)
             onSpeech(text)
         } else {
             onDiagnostic("ASR RESULT -> EMPTY")
-            startDelayed(500)
+            startDelayed(900)
         }
     }
 

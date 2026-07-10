@@ -171,7 +171,7 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
         textPaint.textAlign = Paint.Align.CENTER
         textPaint.textSize = 23f
         textPaint.color = cyan
-        canvas.drawText("JARVIS // PHASE 5 LOCAL BRAIN ENGINE", width / 2f, 42f, textPaint)
+        canvas.drawText("JARVIS // PHASE 6.2 OFFLINE CORTEX", width / 2f, 42f, textPaint)
         textPaint.textSize = 12.5f
         textPaint.color = Color.argb(210, 185, 255, 245)
         val voice = when (voiceState) {
@@ -338,7 +338,7 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
         textPaint.textAlign = Paint.Align.CENTER
         textPaint.textSize = 24f
         textPaint.color = Color.argb(alpha, 0, 255, 235)
-        canvas.drawText("LOCAL BRAIN ENGINE BOOTING", width / 2f, height / 2f - 42f, textPaint)
+        canvas.drawText("OFFLINE CORTEX BOOTING", width / 2f, height / 2f - 42f, textPaint)
         textPaint.textSize = 13.5f
         val pct = ((t / 3.0f) * 100f).toInt().coerceAtMost(100)
         canvas.drawText("INTENT MATRIX $pct% // MEMORY VAULT LINKED", width / 2f, height / 2f, textPaint)
@@ -391,6 +391,6 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
 
     companion object {
         private val cyan = Color.rgb(0, 245, 235)
-        private val events = mutableListOf("PHASE 5 -> HUD READY")
+        private val events = mutableListOf("PHASE 6.2 -> HUD READY")
     }
 }
