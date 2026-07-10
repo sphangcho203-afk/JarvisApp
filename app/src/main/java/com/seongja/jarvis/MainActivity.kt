@@ -35,10 +35,12 @@ class MainActivity : Activity() {
         )
 
         setContentView(hud)
-        hud.pushEvent("PHASE 6.2 -> ASR BUSY RECOVERY")
-        hud.pushEvent("CORTEX -> LOCALHOST:8080")
+        hud.pushEvent("PHASE 7 -> ANDROID + TERMUX BRIDGE")
+        hud.pushEvent("BRIDGE -> LOCALHOST:8765")
         hud.pushEvent("TAP -> HARD RESET LISTENER")
-        hud.pushEvent("LONG PRESS -> DIRECT BRAIN TEST")
+        hud.pushEvent("LONG PRESS -> DIRECT BRIDGE TEST")
+        hud.pushEvent("PAIR -> RUN jarvis-v4-pair-code IN TERMUX")
+        hud.pushEvent("PAIR -> SAY PAIR CODE + SIX DIGITS")
 
         initTts()
 
@@ -54,8 +56,8 @@ class MainActivity : Activity() {
 
         hud.setOnLongClickListener {
             if (brainBusy.compareAndSet(false, true)) {
-                hud.pushEvent("DIAGNOSTIC -> DIRECT LLM REQUEST")
-                processInput("Reply only: Offline brain bridge connected, Sir.")
+                hud.pushEvent("DIAGNOSTIC -> DIRECT V4.1 REQUEST")
+                processInput("battery status")
             } else {
                 hud.pushEvent("CORTEX -> REQUEST ALREADY RUNNING")
             }
@@ -150,20 +152,20 @@ class MainActivity : Activity() {
         hud.setTranscript(clean)
         hud.setProcessing(true)
         hud.pushEvent("INPUT -> ${clean.take(55)}")
-        hud.pushEvent("CORTEX -> LOCAL INFERENCE START")
+        hud.pushEvent("BRIDGE -> REQUEST START")
 
         Thread {
             val started = System.currentTimeMillis()
             val response = runCatching { brain.respond(clean) }.getOrElse { error ->
                 BrainResponse(
-                    spoken = "The local brain bridge failed: ${error.javaClass.simpleName}.",
-                    display = "LLM bridge error: ${error.message ?: error.javaClass.simpleName}",
+                    spoken = "The secure local bridge failed: ${error.javaClass.simpleName}.",
+                    display = "Local bridge error: ${error.message ?: error.javaClass.simpleName}",
                     intent = "bridge_error",
                     confidence = 0f,
                     mode = BrainMode.ALERT,
-                    trace = listOf("localhost:8080", "exception=${error.javaClass.simpleName}"),
+                    trace = listOf("localhost:8765", "exception=${error.javaClass.simpleName}"),
                     memory = brain.memorySnapshot(),
-                    thoughts = listOf("The local request threw an exception."),
+                    thoughts = listOf("The local bridge request threw an exception."),
                     entities = emptyList(),
                     decision = "bridge_exception",
                     action = BrainAction()
@@ -173,9 +175,9 @@ class MainActivity : Activity() {
 
             runOnUiThread {
                 hud.submitBrainResponse(response)
-                hud.pushEvent("CORTEX -> RESPONSE ${elapsed}s")
+                hud.pushEvent("BRIDGE -> RESPONSE ${elapsed}s")
                 if (response.trace.any { it.contains("unavailable") }) {
-                    hud.pushEvent("CORTEX -> SERVER OFFLINE; FALLBACK USED")
+                    hud.pushEvent("BRIDGE -> OFFLINE; ANDROID FALLBACK USED")
                 }
                 if (response.action.type != ActionType.NONE) {
                     val executed = brain.execute(response.action)
