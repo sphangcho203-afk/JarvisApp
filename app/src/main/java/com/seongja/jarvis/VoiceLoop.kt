@@ -74,8 +74,7 @@ class VoiceLoop(
         putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault())
         putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
         putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
-        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1050L)
-        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 800L)
+        putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
     }
 
     override fun onReadyForSpeech(params: Bundle?) { onState(State.LISTENING) }
@@ -90,12 +89,13 @@ class VoiceLoop(
     override fun onError(error: Int) {
         active = false
         onState(State.ERROR)
-        startDelayed(if (error == SpeechRecognizer.ERROR_NO_MATCH) 450 else 1000)
+        startDelayed(if (error == SpeechRecognizer.ERROR_NO_MATCH) 450 else 1_000)
     }
 
     override fun onResults(results: Bundle?) {
         active = false
-        val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION).orEmpty().firstOrNull().orEmpty()
+        val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+            .orEmpty().firstOrNull().orEmpty()
         if (text.isNotBlank()) {
             onState(State.PROCESSING)
             onSpeech(text)
@@ -105,7 +105,8 @@ class VoiceLoop(
     }
 
     override fun onPartialResults(partialResults: Bundle?) {
-        val text = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION).orEmpty().firstOrNull().orEmpty()
+        val text = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+            .orEmpty().firstOrNull().orEmpty()
         if (text.isNotBlank()) onPartial(text)
     }
 

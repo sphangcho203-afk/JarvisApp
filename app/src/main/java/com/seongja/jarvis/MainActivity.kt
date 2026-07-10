@@ -28,23 +28,24 @@ class MainActivity : Activity() {
         )
 
         setContentView(hud)
-        hud.pushEvent("PHASE 5 -> LOCAL BRAIN ENGINE ONLINE")
+        hud.pushEvent("PHASE 6 -> OFFLINE LLM BRIDGE")
+        hud.pushEvent("CORTEX -> QWEN2.5 3B @ LOCALHOST:8080")
         hud.pushEvent("MEMORY -> ${brain.memorySnapshot()}")
-        hud.pushEvent("VOICE -> DIRECT LISTEN LOOP")
+        hud.pushEvent("TOOLS -> SAFE ANDROID ALLOWLIST")
 
         tts = TextToSpeech(this) { status ->
             if (status == TextToSpeech.SUCCESS) {
                 tts?.language = Locale.US
                 tts?.setSpeechRate(0.94f)
                 tts?.setPitch(0.84f)
-                speak("Jarvis phase five online. Local brain engine initialized.")
+                speak("Jarvis phase six online. Offline language model bridge initialized.")
             } else {
                 hud.pushEvent("VOICE -> SYNTHESIS FAILED")
             }
         }
 
         hud.setOnClickListener {
-            hud.pushEvent("USER -> MANUAL BRAIN WAKE")
+            hud.pushEvent("USER -> MANUAL CORTEX WAKE")
             voiceLoop.restart()
         }
 
@@ -66,18 +67,24 @@ class MainActivity : Activity() {
         hud.setTranscript(clean)
         hud.setProcessing(true)
         hud.pushEvent("INPUT -> $clean")
+        hud.pushEvent("CORTEX -> LOCAL INFERENCE REQUEST")
 
         Thread {
             val response = brain.respond(clean)
             runOnUiThread {
                 hud.submitBrainResponse(response)
+                if (response.trace.any { it.contains("unavailable") }) {
+                    hud.pushEvent("CORTEX -> SERVER OFFLINE, FALLBACK ACTIVE")
+                } else {
+                    hud.pushEvent("CORTEX -> RESPONSE RECEIVED")
+                }
                 if (response.action.type != ActionType.NONE) {
                     val executed = brain.execute(response.action)
-                    hud.pushEvent("ACTION -> ${response.action.label.uppercase()} ${if (executed) "OK" else "FAILED"}")
+                    hud.pushEvent("ACTION -> ${response.action.label.uppercase()} ${if (executed) "OK" else "BLOCKED/FAILED"}")
                 }
                 speak(response.spoken)
                 hud.setProcessing(false)
-                voiceLoop.startDelayed(1300)
+                voiceLoop.startDelayed(1_300)
             }
         }.start()
     }
@@ -101,20 +108,6 @@ class MainActivity : Activity() {
             voiceLoop.startDelayed(500)
         } else {
             hud.pushEvent("AUTH -> MICROPHONE DENIED")
-            hud.submitBrainResponse(
-                BrainResponse(
-                    spoken = "Microphone permission is required for direct voice cognition.",
-                    display = "Microphone permission denied. Enable it to activate direct listening.",
-                    intent = "permission_required",
-                    confidence = 1f,
-                    mode = BrainMode.SECURITY,
-                    trace = listOf("permission_scan", "voice_channel_blocked"),
-                    memory = brain.memorySnapshot(),
-                    thoughts = listOf("Audio input channel unavailable."),
-                    entities = listOf("permission=record_audio"),
-                    decision = "request_microphone_permission"
-                )
-            )
         }
     }
 

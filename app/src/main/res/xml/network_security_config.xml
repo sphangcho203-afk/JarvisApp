@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <!-- The app only calls 127.0.0.1 in Phase 6. No external endpoint is configured. -->
+    <base-config cleartextTrafficPermitted="true" />
+</network-security-config>

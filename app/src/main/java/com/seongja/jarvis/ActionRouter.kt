@@ -2,11 +2,11 @@ package com.seongja.jarvis
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.provider.Settings
+import java.util.Locale
 
 class ActionRouter(private val context: Context) {
-    private val appPackages = mapOf(
+    private val appPackages = linkedMapOf(
         "YouTube" to listOf("com.google.android.youtube"),
         "Chrome" to listOf("com.android.chrome", "com.google.android.googlequicksearchbox"),
         "Spotify" to listOf("com.spotify.music"),
@@ -21,30 +21,30 @@ class ActionRouter(private val context: Context) {
         "Calculator" to listOf("com.google.android.calculator", "com.android.calculator2")
     )
 
-    fun execute(action: BrainAction): Boolean {
-        return when (action.type) {
-            ActionType.NONE -> false
-            ActionType.OPEN_SETTINGS -> openIntent(Intent(Settings.ACTION_SETTINGS))
-            ActionType.OPEN_URL -> openIntent(Intent(Intent.ACTION_VIEW, Uri.parse(action.payload)))
-            ActionType.WEB_SEARCH -> openUrl("https://www.google.com/search?q=${Uri.encode(action.payload)}")
-            ActionType.OPEN_APP -> openApp(action.payload)
-        }
+    fun execute(action: BrainAction): Boolean = when (action.type) {
+        ActionType.NONE -> false
+        ActionType.OPEN_SETTINGS -> openIntent(Intent(Settings.ACTION_SETTINGS))
+        ActionType.OPEN_APP -> openApp(action.payload)
+        ActionType.OPEN_URL, ActionType.WEB_SEARCH -> false
     }
 
-    private fun openApp(name: String): Boolean {
-        val packages = appPackages[name].orEmpty()
-        for (pkg in packages) {
-            val launch = context.packageManager.getLaunchIntentForPackage(pkg)
-            if (launch != null) {
-                launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                context.startActivity(launch)
-                return true
-            }
-        }
-        return openUrl("https://www.google.com/search?q=${Uri.encode(name)}")
-    }
+    private fun openApp(rawName: String): Boolean {
+        val normalized = rawName.trim().lowercase(Locale.US)
+        val canonical = appPackages.keys.firstOrNull { key ->
+            val keyLower = key.lowercase(Locale.US)
+            normalized == keyLower || normalized.contains(keyLower) || keyLower.contains(normalized)
+        } ?: return false
 
-    private fun openUrl(url: String): Boolean = openIntent(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+        for (packageName in appPackages[canonical].orEmpty()) {
+            val launchIntent = context.packageManager.getLaunchIntentForPackage(packageName) ?: continue
+            launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            return runCatching {
+                context.startActivity(launchIntent)
+                true
+            }.getOrDefault(false)
+        }
+        return false
+    }
 
     private fun openIntent(intent: Intent): Boolean {
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)

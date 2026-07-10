@@ -14,11 +14,11 @@ class MemoryVault(context: Context) {
             prefs.edit()
                 .putBoolean(KEY_SEEDED, true)
                 .putString(KEY_CALLSIGN, "Seongja")
-                .putString(KEY_PROFILE, "Operator: Seongja // Role: Jarvis creator // Mission: Build a phone-first AI assistant with advanced civilization interface.")
+                .putString(KEY_PROFILE, "Operator: Seongja // Role: Jarvis creator // Mission: Build a phone-first offline AI assistant.")
                 .putString(KEY_FACTS, listOf(
-                    stamped("Jarvis Phase 5 local brain initialized."),
-                    stamped("Default identity loaded: Seongja, creator/operator of Jarvis."),
-                    stamped("Design directive: advanced civilization, sci-fi, geometric, live HUD.")
+                    stamped("Jarvis local memory initialized."),
+                    stamped("Default identity: Seongja, creator/operator of Jarvis."),
+                    stamped("Design directive: advanced civilization, geometric, live HUD.")
                 ).joinToString("\n"))
                 .apply()
         }
@@ -26,7 +26,8 @@ class MemoryVault(context: Context) {
 
     fun callsign(): String = prefs.getString(KEY_CALLSIGN, "Seongja") ?: "Seongja"
 
-    fun profile(): String = prefs.getString(KEY_PROFILE, "Operator profile not configured.") ?: "Operator profile not configured."
+    fun profile(): String = prefs.getString(KEY_PROFILE, "Operator profile not configured.")
+        ?: "Operator profile not configured."
 
     fun setIdentity(name: String) {
         val clean = name.trim().ifBlank { "Seongja" }.take(40)
@@ -38,47 +39,47 @@ class MemoryVault(context: Context) {
     }
 
     fun addFact(fact: String) {
+        val clean = fact.trim().take(220)
+        if (clean.isBlank()) return
         val old = prefs.getString(KEY_FACTS, "") ?: ""
-        val line = stamped(fact.trim().take(220))
-        val merged = (line + "\n" + old).lines().filter { it.isNotBlank() }.take(40).joinToString("\n")
+        val line = stamped(clean)
+        val merged = (line + "\n" + old).lines().filter { it.isNotBlank() }.take(60).joinToString("\n")
         prefs.edit().putString(KEY_FACTS, merged).apply()
     }
 
     fun addHistory(entry: String) {
+        val clean = entry.trim().take(220)
+        if (clean.isBlank()) return
         val old = prefs.getString(KEY_HISTORY, "") ?: ""
-        val line = stamped(entry.trim().take(160))
-        val merged = (line + "\n" + old).lines().filter { it.isNotBlank() }.take(20).joinToString("\n")
+        val line = stamped(clean)
+        val merged = (line + "\n" + old).lines().filter { it.isNotBlank() }.take(30).joinToString("\n")
         prefs.edit().putString(KEY_HISTORY, merged).apply()
     }
 
     fun clearUserFactsKeepIdentity() {
         prefs.edit()
-            .putString(KEY_FACTS, stamped("Memory vault cleared. Core identity retained: ${callsign()}."))
+            .putString(KEY_FACTS, stamped("Memory cleared. Core identity retained: ${callsign()}."))
             .putString(KEY_HISTORY, "")
             .apply()
     }
 
-    fun summary(): String {
-        val factCount = facts().size
-        val histCount = history().size
-        return "OPERATOR ${callsign()} // FACTS $factCount // HISTORY $histCount"
-    }
+    fun summary(): String = "OPERATOR ${callsign()} // FACTS ${facts().size} // HISTORY ${history().size}"
 
-    fun expanded(): String = buildString {
+    fun promptContext(): String = buildString {
         appendLine(profile())
-        appendLine()
-        appendLine("RECENT FACTS:")
-        val facts = facts().take(8)
-        if (facts.isEmpty()) appendLine("No stored facts.") else facts.forEach { appendLine(it) }
-        appendLine()
-        appendLine("RECENT CONTEXT:")
-        val history = history().take(5)
-        if (history.isEmpty()) append("No recent context.") else history.forEach { appendLine(it) }
+        appendLine("Stored facts:")
+        facts().take(12).forEach { appendLine("- $it") }
+        appendLine("Recent conversation:")
+        history().take(8).reversed().forEach { appendLine("- $it") }
     }.trim()
 
-    fun facts(): List<String> = (prefs.getString(KEY_FACTS, "") ?: "").lines().filter { it.isNotBlank() }
+    fun expanded(): String = promptContext()
 
-    fun history(): List<String> = (prefs.getString(KEY_HISTORY, "") ?: "").lines().filter { it.isNotBlank() }
+    fun facts(): List<String> = (prefs.getString(KEY_FACTS, "") ?: "")
+        .lines().filter { it.isNotBlank() }
+
+    fun history(): List<String> = (prefs.getString(KEY_HISTORY, "") ?: "")
+        .lines().filter { it.isNotBlank() }
 
     private fun stamped(text: String): String = "${format.format(Date())} // $text"
 
