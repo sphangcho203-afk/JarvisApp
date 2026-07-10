@@ -171,7 +171,7 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
         textPaint.textAlign = Paint.Align.CENTER
         textPaint.textSize = 23f
         textPaint.color = cyan
-        canvas.drawText("JARVIS // PHASE 6.2 OFFLINE CORTEX", width / 2f, 42f, textPaint)
+        canvas.drawText("JARVIS // PHASE 6.3 LOW-LATENCY CORTEX", width / 2f, 42f, textPaint)
         textPaint.textSize = 12.5f
         textPaint.color = Color.argb(210, 185, 255, 245)
         val voice = when (voiceState) {
@@ -391,6 +391,6 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
 
     companion object {
         private val cyan = Color.rgb(0, 245, 235)
-        private val events = mutableListOf("PHASE 6.2 -> HUD READY")
+        private val events = mutableListOf("PHASE 6.3 -> HUD READY")
     }
 }
