@@ -26,10 +26,12 @@ internal class OfflineLlmClient(
         private set
 
     fun ask(userInput: String, memoryContext: String): OfflineLlmDecision? {
+        lastError = "none"
+
         return runCatching {
             val connection = (URL(endpoint).openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
-                connectTimeout = 2_500
+                connectTimeout = 3_000
                 readTimeout = 300_000
                 doOutput = true
                 useCaches = false
@@ -41,6 +43,7 @@ internal class OfflineLlmClient(
             val body = requestBody(userInput, memoryContext).toString()
             connection.outputStream.use { output ->
                 output.write(body.toByteArray(Charsets.UTF_8))
+                output.flush()
             }
 
             val code = connection.responseCode
@@ -49,36 +52,22 @@ internal class OfflineLlmClient(
             connection.disconnect()
 
             if (code !in 200..299) {
-                throw IllegalStateException("HTTP $code: ${responseText.take(240)}")
+                throw IllegalStateException("HTTP $code: ${responseText.take(260)}")
+            }
+            if (responseText.isBlank()) {
+                throw IllegalStateException("llama-server returned an empty HTTP body")
             }
 
             parseResponse(responseText)
         }.onFailure {
-            lastError = it.message?.take(160) ?: it.javaClass.simpleName
+            lastError = (it.message ?: it.javaClass.simpleName).take(220)
         }.getOrNull()
     }
 
     private fun requestBody(userInput: String, memoryContext: String): JSONObject {
-        val toolValues = JSONArray(listOf(
-            "none",
-            "open_app",
-            "open_settings",
-            "remember",
-            "set_identity",
-            "set_mode"
-        ))
-
-        val modeValues = JSONArray(listOf(
-            "ONLINE",
-            "LISTENING",
-            "THINKING",
-            "EXECUTING",
-            "TACTICAL",
-            "STEALTH",
-            "SECURITY",
-            "ALERT",
-            "LEARNING"
-        ))
+        val toolValues = JSONArray(
+            listOf("none", "open_app", "open_settings", "remember", "set_identity", "set_mode")
+        )
 
         val schema = JSONObject().apply {
             put("type", "object")
@@ -95,34 +84,19 @@ internal class OfflineLlmClient(
                 })
                 put("argument", JSONObject().apply {
                     put("type", "string")
-                    put("maxLength", 160)
-                })
-                put("memory_fact", JSONObject().apply {
-                    put("type", "string")
-                    put("maxLength", 220)
-                })
-                put("mode", JSONObject().apply {
-                    put("type", "string")
-                    put("enum", modeValues)
-                })
-                put("confidence", JSONObject().apply {
-                    put("type", "number")
-                    put("minimum", 0.0)
-                    put("maximum", 1.0)
+                    put("maxLength", 120)
                 })
             })
-            put("required", JSONArray(listOf(
-                "reply", "tool", "argument", "memory_fact", "mode", "confidence"
-            )))
+            put("required", JSONArray(listOf("reply", "tool", "argument")))
         }
 
         val systemPrompt = """
             You are JARVIS, Seongja's fully offline Android assistant.
-            Be concise, honest, calm, and address the user as Sir when natural.
-            You have no internet. Never claim an action succeeded unless Android executes it.
-            Return only the JSON object required by the response schema.
-            Allowed tools: none, open_app, open_settings, remember, set_identity, set_mode.
-            MEMORY: ${memoryContext.take(320)}
+            Reply briefly and honestly. Address the user as Sir when natural.
+            Return JSON with exactly: reply, tool, argument.
+            Tools: none, open_app, open_settings, remember, set_identity, set_mode.
+            Never claim an action succeeded before Android confirms it.
+            No internet. Memory: ${memoryContext.take(240)}
         """.trimIndent()
 
         return JSONObject().apply {
@@ -131,11 +105,14 @@ internal class OfflineLlmClient(
                 put(JSONObject().put("role", "system").put("content", systemPrompt))
                 put(JSONObject().put("role", "user").put("content", userInput.take(400)))
             })
-            put("temperature", 0.45)
+            put("temperature", 0.35)
             put("top_p", 0.9)
-            put("repeat_penalty", 1.10)
-            put("max_tokens", 64)
+            put("repeat_penalty", 1.08)
+            put("max_tokens", 128)
             put("stream", false)
+            put("cache_prompt", true)
+            put("reasoning_format", "none")
+            put("chat_template_kwargs", JSONObject().put("enable_thinking", false))
             put("response_format", JSONObject().apply {
                 put("type", "json_schema")
                 put("schema", schema)
@@ -145,39 +122,96 @@ internal class OfflineLlmClient(
 
     private fun parseResponse(responseText: String): OfflineLlmDecision {
         val envelope = JSONObject(responseText)
-        val content = envelope
-            .getJSONArray("choices")
-            .getJSONObject(0)
-            .getJSONObject("message")
-            .optString("content", "")
+        val choices = envelope.optJSONArray("choices")
+            ?: throw IllegalArgumentException("No choices array in llama-server response")
 
-        val objectText = extractJsonObject(content)
-        val json = JSONObject(objectText)
-        val allowedTools = setOf("none", "open_app", "open_settings", "remember", "set_identity", "set_mode")
-        val tool = json.optString("tool", "none").lowercase(Locale.US).let {
-            if (it in allowedTools) it else "none"
+        if (choices.length() == 0) {
+            throw IllegalArgumentException("llama-server returned zero choices")
+        }
+
+        val choice = choices.optJSONObject(0)
+            ?: throw IllegalArgumentException("choices[0] was not an object")
+        val message = choice.optJSONObject("message")
+
+        val content = message?.optString("content", "")?.trim().orEmpty()
+        val text = choice.optString("text", "").trim()
+        val reasoning = message?.optString("reasoning_content", "")?.trim().orEmpty()
+
+        val candidate = listOf(content, text, reasoning).firstOrNull { it.isNotBlank() }
+            ?: throw IllegalArgumentException("Model returned empty content")
+
+        val json = extractJsonObjectOrNull(candidate)
+
+        val parsedReply = json?.let {
+            firstNonBlank(
+                it.optString("reply", ""),
+                it.optString("answer", ""),
+                it.optString("response", ""),
+                it.optString("message", ""),
+                it.optString("text", "")
+            )
+        }.orEmpty()
+
+        val plainReply = if (json == null) cleanPlainText(candidate) else ""
+        val reply = firstNonBlank(parsedReply, plainReply).take(240)
+
+        if (reply.isBlank()) {
+            throw IllegalArgumentException("Model JSON contained no usable reply: ${candidate.take(120)}")
+        }
+
+        val allowedTools = setOf(
+            "none", "open_app", "open_settings", "remember", "set_identity", "set_mode"
+        )
+
+        val tool = json
+            ?.optString("tool", "none")
+            ?.lowercase(Locale.US)
+            ?.let { if (it in allowedTools) it else "none" }
+            ?: "none"
+
+        val argument = json?.optString("argument", "")?.trim()?.take(120).orEmpty()
+        val mode = if (tool == "set_mode" && argument.isNotBlank()) {
+            argument.uppercase(Locale.US)
+        } else {
+            "ONLINE"
         }
 
         return OfflineLlmDecision(
-            reply = json.optString("reply", "Jarvis local brain returned an empty response.").trim().take(240),
+            reply = reply,
             tool = tool,
-            argument = json.optString("argument", "").trim().take(160),
-            memoryFact = json.optString("memory_fact", "").trim().take(220),
-            mode = json.optString("mode", "ONLINE").uppercase(Locale.US),
-            confidence = json.optDouble("confidence", 0.82).toFloat().coerceIn(0f, 1f),
-            raw = content.take(1_200)
+            argument = argument,
+            memoryFact = if (tool == "remember") argument else "",
+            mode = mode,
+            confidence = 0.86f,
+            raw = candidate.take(1_000)
         )
     }
 
-    private fun extractJsonObject(text: String): String {
+    private fun extractJsonObjectOrNull(text: String): JSONObject? {
         val clean = text.trim()
             .removePrefix("```json")
             .removePrefix("```")
             .removeSuffix("```")
             .trim()
+
         val start = clean.indexOf('{')
         val end = clean.lastIndexOf('}')
-        if (start < 0 || end <= start) throw IllegalArgumentException("No JSON object in model response")
-        return clean.substring(start, end + 1)
+        if (start < 0 || end <= start) return null
+
+        return runCatching {
+            JSONObject(clean.substring(start, end + 1))
+        }.getOrNull()
+    }
+
+    private fun cleanPlainText(text: String): String {
+        return text.trim()
+            .removePrefix("```json")
+            .removePrefix("```")
+            .removeSuffix("```")
+            .trim()
+    }
+
+    private fun firstNonBlank(vararg values: String): String {
+        return values.firstOrNull { it.isNotBlank() }?.trim().orEmpty()
     }
 }

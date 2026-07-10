@@ -33,6 +33,10 @@ class JarvisBrain(context: Context) {
                 decision = "fallback_local_engine"
             )
 
+        val safeReply = decision.reply.ifBlank {
+            fallback.spoken.ifBlank { "I could not produce a usable local response, Sir." }
+        }
+
         val mode = parseMode(decision.mode)
         val modelAction = actionFromDecision(decision)
         val action = if (modelAction.type != ActionType.NONE) {
@@ -52,11 +56,11 @@ class JarvisBrain(context: Context) {
         }
 
         memory.addHistory("USER: ${input.take(180)}")
-        memory.addHistory("JARVIS: ${decision.reply.take(180)}")
+        memory.addHistory("JARVIS: ${safeReply.take(180)}")
 
         return BrainResponse(
-            spoken = decision.reply,
-            display = decision.reply,
+            spoken = safeReply,
+            display = safeReply,
             intent = "offline_llm/${decision.tool}",
             confidence = decision.confidence,
             mode = mode,
