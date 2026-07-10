@@ -3,6 +3,7 @@ package com.seongja.jarvis
 import android.Manifest
 import android.app.Activity
 import android.content.pm.PackageManager
+import android.media.AudioAttributes
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.view.View
@@ -13,6 +14,7 @@ class MainActivity : Activity() {
     private lateinit var brain: JarvisBrain
     private lateinit var voiceLoop: VoiceLoop
     private var tts: TextToSpeech? = null
+    private var ttsReady = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -24,36 +26,73 @@ class MainActivity : Activity() {
             activity = this,
             onSpeech = ::handleSpeech,
             onPartial = ::handlePartialSpeech,
-            onState = ::handleVoiceState
+            onState = ::handleVoiceState,
+            onDiagnostic = { message -> runOnUiThread { hud.pushEvent(message) } }
         )
 
         setContentView(hud)
-        hud.pushEvent("PHASE 6 -> OFFLINE LLM BRIDGE")
-        hud.pushEvent("CORTEX -> QWEN2.5 3B @ LOCALHOST:8080")
-        hud.pushEvent("MEMORY -> ${brain.memorySnapshot()}")
-        hud.pushEvent("TOOLS -> SAFE ANDROID ALLOWLIST")
+        hud.pushEvent("PHASE 6.1 -> VOICE BRIDGE HOTFIX")
+        hud.pushEvent("CORTEX -> LOCALHOST:8080")
+        hud.pushEvent("TAP -> RESTART LISTENING")
+        hud.pushEvent("LONG PRESS -> TEST BRAIN WITHOUT VOICE")
 
         tts = TextToSpeech(this) { status ->
             if (status == TextToSpeech.SUCCESS) {
-                tts?.language = Locale.US
+                tts?.setAudioAttributes(
+                    AudioAttributes.Builder()
+                        .setUsage(AudioAttributes.USAGE_ASSISTANT)
+                        .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                        .build()
+                )
+
+                val defaultResult = tts?.setLanguage(Locale.getDefault()) ?: TextToSpeech.LANG_NOT_SUPPORTED
+                if (defaultResult == TextToSpeech.LANG_MISSING_DATA || defaultResult == TextToSpeech.LANG_NOT_SUPPORTED) {
+                    tts?.setLanguage(Locale.US)
+                }
                 tts?.setSpeechRate(0.94f)
-                tts?.setPitch(0.84f)
-                speak("Jarvis phase six online. Offline language model bridge initialized.")
+                tts?.setPitch(0.88f)
+                ttsReady = true
+                hud.pushEvent("VOICE -> SYNTHESIS READY")
+                speak("Jarvis voice bridge online.")
             } else {
-                hud.pushEvent("VOICE -> SYNTHESIS FAILED")
+                hud.pushEvent("VOICE -> SYNTHESIS FAILED: $status")
             }
         }
 
         hud.setOnClickListener {
-            hud.pushEvent("USER -> MANUAL CORTEX WAKE")
-            voiceLoop.restart()
+            if (hasMicPermission()) {
+                hud.pushEvent("USER -> MANUAL LISTENING RESTART")
+                voiceLoop.restart()
+            } else {
+                hud.pushEvent("AUTH -> REQUESTING MICROPHONE")
+                requestMicPermission()
+            }
         }
 
-        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
-            voiceLoop.startDelayed(650)
-        } else {
-            requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_RECORD_AUDIO)
+        hud.setOnLongClickListener {
+            hud.pushEvent("DIAGNOSTIC -> BYPASSING SPEECH INPUT")
+            handleSpeech("Confirm the offline brain bridge is connected in one short sentence.")
+            true
         }
+
+        if (hasMicPermission()) {
+            hud.pushEvent("AUTH -> MICROPHONE GRANTED")
+            voiceLoop.startDelayed(700)
+        } else {
+            requestMicPermission()
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::voiceLoop.isInitialized && hasMicPermission()) {
+            voiceLoop.startDelayed(450)
+        }
+    }
+
+    override fun onPause() {
+        if (::voiceLoop.isInitialized) voiceLoop.stop()
+        super.onPause()
     }
 
     private fun handlePartialSpeech(text: String) {
@@ -94,7 +133,19 @@ class MainActivity : Activity() {
     }
 
     private fun speak(text: String) {
-        tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "jarvis-${System.currentTimeMillis()}")
+        if (!ttsReady) {
+            hud.pushEvent("VOICE -> TTS NOT READY")
+            return
+        }
+        val result = tts?.speak(text, TextToSpeech.QUEUE_FLUSH, null, "jarvis-${System.currentTimeMillis()}")
+        hud.pushEvent("VOICE -> ${if (result == TextToSpeech.SUCCESS) "SPEAKING" else "SPEAK FAILED"}")
+    }
+
+    private fun hasMicPermission(): Boolean =
+        checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+
+    private fun requestMicPermission() {
+        requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_RECORD_AUDIO)
     }
 
     override fun onRequestPermissionsResult(
@@ -106,8 +157,8 @@ class MainActivity : Activity() {
         if (requestCode == REQ_RECORD_AUDIO && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
             hud.pushEvent("AUTH -> MICROPHONE GRANTED")
             voiceLoop.startDelayed(500)
-        } else {
-            hud.pushEvent("AUTH -> MICROPHONE DENIED")
+        } else if (requestCode == REQ_RECORD_AUDIO) {
+            hud.pushEvent("AUTH -> MICROPHONE DENIED; ENABLE IN APP SETTINGS")
         }
     }
 
@@ -117,7 +168,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
-        voiceLoop.destroy()
+        if (::voiceLoop.isInitialized) voiceLoop.destroy()
         tts?.shutdown()
         super.onDestroy()
     }
