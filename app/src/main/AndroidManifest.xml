@@ -7,6 +7,25 @@
         <intent>
             <action android:name="android.speech.RecognitionService" />
         </intent>
+
+        <!-- Discover installed launchable apps -->
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+
+        <!-- Open HTTPS websites -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+
+        <!-- Open HTTP websites -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="http" />
+        </intent>
+
     </queries>
 
     <application

@@ -1,5 +1,7 @@
 package com.seongja.jarvis
 
+import com.jarvis.core.device.DeviceCommandRouter
+
 import android.Manifest
 import android.app.Activity
 import android.content.pm.PackageManager
@@ -18,6 +20,7 @@ class MainActivity : Activity() {
     private var tts: TextToSpeech? = null
     private var ttsReady = false
     private val brainBusy = AtomicBoolean(false)
+    private val deviceCommandRouter by lazy { DeviceCommandRouter(applicationContext) }
     private var resumed = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -154,6 +157,16 @@ class MainActivity : Activity() {
         hud.pushEvent("INPUT -> ${clean.take(55)}")
         hud.pushEvent("BRIDGE -> REQUEST START")
 
+
+        val deviceResponse = deviceCommandRouter.execute(clean)
+        if (deviceResponse != null) {
+            hud.pushEvent("DEVICE -> COMMAND HANDLED")
+            hud.setTranscript(deviceResponse)
+            hud.setProcessing(false)
+            brainBusy.set(false)
+            speak(deviceResponse)
+            return
+        }
         Thread {
             val started = System.currentTimeMillis()
             val response = runCatching { brain.respond(clean) }.getOrElse { error ->
