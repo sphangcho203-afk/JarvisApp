@@ -49,5 +49,17 @@
             android:exported="true"
             android:label="Jarvis Bridge Setup"
             android:theme="@style/Theme.Jarvis" />
-    </application>
+    
+        <activity
+            android:name=".TermuxCommandActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
+            <intent-filter>
+                <action android:name="com.seongja.jarvis.RUN_COMMAND" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+</application>
 </manifest>
