@@ -24,5 +24,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+    
+        <activity
+            android:name=".BridgeSetupActivity"
+            android:exported="true"
+            android:label="Jarvis Bridge Setup"
+            android:theme="@style/Theme.Jarvis" />
     </application>
 </manifest>
