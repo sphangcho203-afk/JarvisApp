@@ -15,6 +15,7 @@ class VoiceLoop(
     private val activity: Activity,
     private val onSpeech: (String) -> Unit,
     private val onPartial: (String) -> Unit,
+    private val onRms: (Float) -> Unit,
     private val onState: (State) -> Unit,
     private val onDiagnostic: (String) -> Unit = {}
 ) : RecognitionListener {
@@ -48,6 +49,7 @@ class VoiceLoop(
 
     fun pauseForProcessing() {
         paused = true
+        onRms(0f)
         handler.removeCallbacks(delayedStart)
         listening = false
         starting = false
@@ -57,6 +59,7 @@ class VoiceLoop(
 
     fun pauseForTts() {
         paused = true
+        onRms(0f)
         handler.removeCallbacks(delayedStart)
         listening = false
         starting = false
@@ -74,6 +77,7 @@ class VoiceLoop(
 
     fun stop() {
         paused = true
+        onRms(0f)
         handler.removeCallbacks(delayedStart)
         listening = false
         starting = false
@@ -185,12 +189,17 @@ class VoiceLoop(
         onState(State.LISTENING)
     }
 
-    override fun onRmsChanged(rmsdB: Float) = Unit
+    override fun onRmsChanged(rmsdB: Float) {
+        if (paused || destroyed) return
+        val normalized = ((rmsdB + 2f) / 12f).coerceIn(0f, 1f)
+        onRms(normalized)
+    }
     override fun onBufferReceived(buffer: ByteArray?) = Unit
 
     override fun onEndOfSpeech() {
         listening = false
         starting = false
+        onRms(0f)
         onDiagnostic("ASR -> PROCESSING SPEECH")
         onState(State.PROCESSING)
     }
@@ -198,6 +207,12 @@ class VoiceLoop(
     override fun onError(error: Int) {
         listening = false
         starting = false
+
+        if (paused || destroyed) {
+            onDiagnostic("ASR -> INTENTIONAL STOP")
+            onRms(0f)
+            return
+        }
 
         val label = when (error) {
             SpeechRecognizer.ERROR_AUDIO -> "AUDIO"
@@ -218,7 +233,7 @@ class VoiceLoop(
 
         onDiagnostic("ASR ERROR -> $label")
         onState(State.ERROR)
-        if (paused || destroyed) return
+        onRms(0f)
 
         when (error) {
             SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> {
@@ -256,6 +271,7 @@ class VoiceLoop(
     override fun onResults(results: Bundle?) {
         listening = false
         starting = false
+        onRms(0f)
         busyCount = 0
         val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
             .orEmpty()

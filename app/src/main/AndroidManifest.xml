@@ -46,7 +46,7 @@
     
         <activity
             android:name=".BridgeSetupActivity"
-            android:exported="true"
+            android:exported="false"
             android:label="Jarvis Bridge Setup"
             android:theme="@style/Theme.Jarvis" />
     

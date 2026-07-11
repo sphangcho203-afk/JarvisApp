@@ -1,15 +1,16 @@
 package com.seongja.jarvis
 
-import com.jarvis.core.device.DeviceCommandRouter
-
 import android.Manifest
 import android.app.Activity
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.os.Bundle
 import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.view.View
+import android.view.WindowManager
+import com.jarvis.core.device.DeviceCommandRouter
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -17,39 +18,50 @@ class MainActivity : Activity() {
     private lateinit var hud: AdvancedCivilizationHudView
     private lateinit var brain: JarvisBrain
     private lateinit var voiceLoop: VoiceLoop
+    private lateinit var countdown: JarvisCountdownController
+    private lateinit var soundEngine: JarvisSoundEngine
+
     private var tts: TextToSpeech? = null
     private var ttsReady = false
+    private var resumed = false
+    private var announcedOnline = false
     private val brainBusy = AtomicBoolean(false)
     private val deviceCommandRouter by lazy { DeviceCommandRouter(applicationContext) }
-    private var resumed = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         enterImmersiveMode()
 
         hud = AdvancedCivilizationHudView(this)
         brain = JarvisBrain(this)
+        soundEngine = JarvisSoundEngine()
+        countdown = JarvisCountdownController(
+            onTick = hud::setCountdown,
+            onFinished = ::handleCountdownFinished
+        )
         voiceLoop = VoiceLoop(
             activity = this,
             onSpeech = ::handleSpeech,
             onPartial = ::handlePartialSpeech,
+            onRms = hud::setVoiceAmplitude,
             onState = ::handleVoiceState,
             onDiagnostic = { message -> runOnUiThread { hud.pushEvent(message) } }
         )
 
         setContentView(hud)
-        hud.pushEvent("PHASE 7 -> ANDROID + TERMUX BRIDGE")
-        hud.pushEvent("BRIDGE -> LOCALHOST:8765")
-        hud.pushEvent("TAP -> HARD RESET LISTENER")
-        hud.pushEvent("LONG PRESS -> DIRECT BRIDGE TEST")
-        hud.pushEvent("PAIR -> RUN jarvis-v4-pair-code IN TERMUX")
-        hud.pushEvent("PAIR -> SAY PAIR CODE + SIX DIGITS")
+        hud.pushEvent("PHASE 8 -> HANDS-FREE NEURAL INTERFACE")
+        hud.pushEvent("VOICE -> DIRECT LISTENING; NO HOLD CONTROL")
+        hud.pushEvent("TIMER -> SAY SET A TIMER FOR FIVE MINUTES")
+        hud.pushEvent("TAP -> RECALIBRATE VOICE ARRAY")
+        hud.pushEvent("LONG PRESS -> OPEN SECURE BRIDGE CONSOLE")
 
         initTts()
+        hud.postDelayed({ soundEngine.boot() }, 350L)
 
         hud.setOnClickListener {
             if (hasMicPermission()) {
-                hud.pushEvent("USER -> MANUAL ASR HARD RESET")
+                hud.pushEvent("USER -> VOICE ARRAY RECALIBRATION")
                 voiceLoop.manualRestart()
             } else {
                 hud.pushEvent("AUTH -> REQUESTING MICROPHONE")
@@ -58,12 +70,7 @@ class MainActivity : Activity() {
         }
 
         hud.setOnLongClickListener {
-            if (brainBusy.compareAndSet(false, true)) {
-                hud.pushEvent("DIAGNOSTIC -> DIRECT V4.1 REQUEST")
-                processInput("battery status")
-            } else {
-                hud.pushEvent("CORTEX -> REQUEST ALREADY RUNNING")
-            }
+            startActivity(Intent(this, BridgeSetupActivity::class.java))
             true
         }
 
@@ -98,7 +105,7 @@ class MainActivity : Activity() {
                     runOnUiThread {
                         hud.pushEvent("VOICE -> COMPLETE")
                         if (resumed && hasMicPermission() && !brainBusy.get()) {
-                            voiceLoop.resumeAfterTts(900)
+                            voiceLoop.resumeAfterTts(700L)
                         }
                     }
                 }
@@ -108,23 +115,25 @@ class MainActivity : Activity() {
                     runOnUiThread {
                         hud.pushEvent("VOICE -> OUTPUT ERROR")
                         if (resumed && hasMicPermission() && !brainBusy.get()) {
-                            voiceLoop.resumeAfterTts(1_100)
+                            voiceLoop.resumeAfterTts(900L)
                         }
                     }
                 }
             })
             hud.pushEvent("VOICE -> SYNTHESIS READY")
 
-            if (resumed) speak("Jarvis voice system online.")
+            if (resumed && !announcedOnline) {
+                announcedOnline = true
+                speak("Systems online. Direct listening is active, Sir.")
+            }
         }
     }
 
     override fun onResume() {
         super.onResume()
         resumed = true
-        if (hasMicPermission() && !brainBusy.get()) {
-            if (ttsReady) speak("Jarvis listening.") else voiceLoop.resume()
-        }
+        enterImmersiveMode()
+        if (hasMicPermission() && !brainBusy.get()) voiceLoop.resume()
     }
 
     override fun onPause() {
@@ -154,19 +163,27 @@ class MainActivity : Activity() {
         voiceLoop.pauseForProcessing()
         hud.setTranscript(clean)
         hud.setProcessing(true)
-        hud.pushEvent("INPUT -> ${clean.take(55)}")
-        hud.pushEvent("BRIDGE -> REQUEST START")
+        hud.pushEvent("INPUT -> ${clean.take(62)}")
+        soundEngine.processing()
 
+        CountdownCommandParser.parse(clean)?.let { timerCommand ->
+            handleCountdownCommand(timerCommand)
+            return
+        }
 
         val deviceResponse = deviceCommandRouter.execute(clean)
         if (deviceResponse != null) {
-            hud.pushEvent("DEVICE -> COMMAND HANDLED")
-            hud.setTranscript(deviceResponse)
-            hud.setProcessing(false)
-            brainBusy.set(false)
-            speak(deviceResponse)
+            finishLocalCommand(
+                spoken = deviceResponse,
+                display = deviceResponse,
+                intent = "device_command",
+                mode = BrainMode.EXECUTING,
+                trace = listOf("android_router", "user_visible_intent")
+            )
             return
         }
+
+        hud.pushEvent("BRIDGE -> REQUEST START")
         Thread {
             val started = System.currentTimeMillis()
             val response = runCatching { brain.respond(clean) }.getOrElse { error ->
@@ -184,23 +201,127 @@ class MainActivity : Activity() {
                     action = BrainAction()
                 )
             }
-            val elapsed = (System.currentTimeMillis() - started) / 1000
+            val elapsed = System.currentTimeMillis() - started
 
             runOnUiThread {
                 hud.submitBrainResponse(response)
-                hud.pushEvent("BRIDGE -> RESPONSE ${elapsed}s")
+                hud.pushEvent("BRIDGE -> RESPONSE ${elapsed}ms")
                 if (response.trace.any { it.contains("unavailable") }) {
                     hud.pushEvent("BRIDGE -> OFFLINE; ANDROID FALLBACK USED")
                 }
                 if (response.action.type != ActionType.NONE) {
                     val executed = brain.execute(response.action)
-                    hud.pushEvent("ACTION -> ${response.action.label.uppercase()} ${if (executed) "OK" else "BLOCKED"}")
+                    hud.pushEvent("ACTION -> ${response.action.label.uppercase(Locale.US)} ${if (executed) "OK" else "BLOCKED"}")
                 }
                 hud.setProcessing(false)
                 brainBusy.set(false)
+                if (response.mode != BrainMode.ALERT) soundEngine.success()
                 speak(response.spoken)
             }
         }.start()
+    }
+
+    private fun handleCountdownCommand(command: CountdownCommand) {
+        when (command) {
+            is CountdownCommand.Start -> {
+                val snapshot = countdown.start(command.durationMs)
+                val spokenDuration = describeDuration(snapshot.remainingSeconds)
+                finishLocalCommand(
+                    spoken = "Countdown set for $spokenDuration, Sir.",
+                    display = "MISSION TIMER ARMED // ${formatCountdown(snapshot.remainingSeconds)}",
+                    intent = "countdown_start",
+                    mode = BrainMode.EXECUTING,
+                    trace = listOf("voice_timer_parser", "elapsed_realtime_clock", "countdown_active")
+                )
+            }
+
+            CountdownCommand.Cancel -> {
+                val wasActive = countdown.current().active
+                countdown.cancel()
+                finishLocalCommand(
+                    spoken = if (wasActive) "Countdown cancelled, Sir." else "No countdown is currently running, Sir.",
+                    display = if (wasActive) "MISSION TIMER CANCELLED" else "MISSION TIMER // IDLE",
+                    intent = "countdown_cancel",
+                    mode = BrainMode.ONLINE,
+                    trace = listOf("countdown_controller", if (wasActive) "cancelled" else "already_idle")
+                )
+            }
+
+            CountdownCommand.Status -> {
+                val snapshot = countdown.current()
+                val spoken = if (snapshot.active) {
+                    "${describeDuration(snapshot.remainingSeconds)} remain on the countdown, Sir."
+                } else {
+                    "No countdown is currently running, Sir."
+                }
+                finishLocalCommand(
+                    spoken = spoken,
+                    display = if (snapshot.active) "TIME REMAINING // ${formatCountdown(snapshot.remainingSeconds)}" else "MISSION TIMER // IDLE",
+                    intent = "countdown_status",
+                    mode = BrainMode.ONLINE,
+                    trace = listOf("countdown_controller", "status_read")
+                )
+            }
+
+            is CountdownCommand.Invalid -> {
+                finishLocalCommand(
+                    spoken = command.reason,
+                    display = "TIMER INPUT REQUIRED // ${command.reason}",
+                    intent = "countdown_invalid",
+                    mode = BrainMode.ALERT,
+                    trace = listOf("voice_timer_parser", "duration_missing")
+                )
+            }
+        }
+    }
+
+    private fun handleCountdownFinished(label: String) {
+        hud.pushEvent("$label -> COMPLETE")
+        hud.setTranscript("COUNTDOWN COMPLETE")
+        hud.submitBrainResponse(
+            BrainResponse(
+                spoken = "Countdown complete, Sir.",
+                display = "$label COMPLETE",
+                intent = "countdown_complete",
+                confidence = 1f,
+                mode = BrainMode.ALERT,
+                trace = listOf("elapsed_realtime_clock", "zero_reached", "completion_signal"),
+                memory = brain.memorySnapshot(),
+                thoughts = listOf("The active countdown reached zero."),
+                entities = listOf("timer=$label"),
+                decision = "signal_timer_completion"
+            )
+        )
+        soundEngine.timerComplete()
+        if (resumed) speak("Countdown complete, Sir.")
+    }
+
+    private fun finishLocalCommand(
+        spoken: String,
+        display: String,
+        intent: String,
+        mode: BrainMode,
+        trace: List<String>
+    ) {
+        hud.submitBrainResponse(
+            BrainResponse(
+                spoken = spoken,
+                display = display,
+                intent = intent,
+                confidence = 1f,
+                mode = mode,
+                trace = trace,
+                memory = brain.memorySnapshot(),
+                thoughts = listOf("The command was handled locally on Android."),
+                entities = emptyList(),
+                decision = intent,
+                action = BrainAction()
+            )
+        )
+        hud.setProcessing(false)
+        brainBusy.set(false)
+        if (mode != BrainMode.ALERT) soundEngine.success()
+        speak(spoken)
     }
 
     private fun handleVoiceState(state: VoiceLoop.State) {
@@ -212,15 +333,17 @@ class MainActivity : Activity() {
     private fun speak(text: String) {
         val clean = text.trim()
         if (clean.isBlank()) {
-            if (resumed && hasMicPermission()) voiceLoop.resumeAfterTts(700)
+            if (resumed && hasMicPermission()) voiceLoop.resumeAfterTts(500L)
             return
         }
+
         voiceLoop.pauseForTts()
         if (!ttsReady) {
             hud.pushEvent("VOICE -> TTS NOT READY; SHOWING TEXT")
-            if (resumed && hasMicPermission() && !brainBusy.get()) voiceLoop.resumeAfterTts(1_000)
+            if (resumed && hasMicPermission() && !brainBusy.get()) voiceLoop.resumeAfterTts(800L)
             return
         }
+
         val result = tts?.speak(
             clean,
             TextToSpeech.QUEUE_FLUSH,
@@ -229,7 +352,23 @@ class MainActivity : Activity() {
         )
         if (result != TextToSpeech.SUCCESS) {
             hud.pushEvent("VOICE -> SPEAK REQUEST FAILED")
-            if (resumed && hasMicPermission() && !brainBusy.get()) voiceLoop.resumeAfterTts(1_100)
+            if (resumed && hasMicPermission() && !brainBusy.get()) voiceLoop.resumeAfterTts(900L)
+        }
+    }
+
+    private fun describeDuration(totalSeconds: Long): String {
+        val safe = totalSeconds.coerceAtLeast(0L)
+        val hours = safe / 3_600L
+        val minutes = (safe % 3_600L) / 60L
+        val seconds = safe % 60L
+        val parts = mutableListOf<String>()
+        if (hours > 0L) parts += "$hours ${if (hours == 1L) "hour" else "hours"}"
+        if (minutes > 0L) parts += "$minutes ${if (minutes == 1L) "minute" else "minutes"}"
+        if (seconds > 0L || parts.isEmpty()) parts += "$seconds ${if (seconds == 1L) "second" else "seconds"}"
+        return when (parts.size) {
+            1 -> parts[0]
+            2 -> "${parts[0]} and ${parts[1]}"
+            else -> "${parts[0]}, ${parts[1]}, and ${parts[2]}"
         }
     }
 
@@ -251,6 +390,7 @@ class MainActivity : Activity() {
             voiceLoop.resume()
         } else if (requestCode == REQ_RECORD_AUDIO) {
             hud.pushEvent("AUTH -> MICROPHONE DENIED")
+            hud.setVoiceState(VoiceLoop.State.UNAVAILABLE)
         }
     }
 
@@ -261,10 +401,13 @@ class MainActivity : Activity() {
 
     override fun onDestroy() {
         if (::voiceLoop.isInitialized) voiceLoop.destroy()
+        if (::countdown.isInitialized) countdown.destroy()
+        if (::soundEngine.isInitialized) soundEngine.release()
         tts?.shutdown()
         super.onDestroy()
     }
 
+    @Suppress("DEPRECATION")
     private fun enterImmersiveMode() {
         window.decorView.systemUiVisibility = (
             View.SYSTEM_UI_FLAG_FULLSCREEN
