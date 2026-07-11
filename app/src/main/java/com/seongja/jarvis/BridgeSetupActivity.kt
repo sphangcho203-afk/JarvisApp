@@ -24,6 +24,7 @@ import java.util.concurrent.Executors
 
 class BridgeSetupActivity : Activity() {
     private val bridge by lazy { LocalBridgeClient(this) }
+    private val deviceController by lazy { UniversalDeviceController(this) }
     private val worker = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
 
@@ -60,7 +61,7 @@ class BridgeSetupActivity : Activity() {
         }
 
         root.addView(label("JARVIS // SECURE BRIDGE", 23f, ACCENT, true))
-        root.addView(label("PHASE 7.1 // MANUAL PAIRING + COMMAND CONSOLE", 12f, MUTED, false).apply {
+        root.addView(label("PHASE 7.2 // UNIVERSAL APPS + WEB + LOCAL CORTEX", 12f, MUTED, false).apply {
             setPadding(0, dp(6), 0, dp(18))
         })
 
@@ -108,14 +109,14 @@ class BridgeSetupActivity : Activity() {
 
         root.addView(sectionTitle("02 // TYPED COMMAND FALLBACK"))
         root.addView(label(
-            "This console bypasses speech recognition. Use it to verify that Android, Termux and the local bridge can communicate.",
+            "Type naturally. Jarvis can open launchable apps by name, open websites, search the web, or send conversation to the local Qwen cortex.",
             13f,
             TEXT,
             false
         ))
 
         commandInput = EditText(this).apply {
-            hint = "Example: battery status"
+            hint = "Example: open Spotify • search for game theory • explain gravity"
             setHintTextColor(MUTED)
             setTextColor(TEXT)
             textSize = 16f
@@ -128,8 +129,13 @@ class BridgeSetupActivity : Activity() {
         }
         root.addView(commandInput, fullWidth(top = 10))
 
-        sendButton = actionButton("SEND THROUGH LOCAL BRIDGE") { submitTypedCommand() }
+        sendButton = actionButton("EXECUTE WITH JARVIS") { submitTypedCommand() }
         root.addView(sendButton, fullWidth(top = 10))
+
+        val appIndexButton = actionButton("SHOW LAUNCHABLE APPS") {
+            showResult(deviceController.installedAppSummary(), true)
+        }
+        root.addView(appIndexButton, fullWidth(top = 8))
 
         resultText = label("CONSOLE // READY", 13f, TEXT, false).apply {
             setTextIsSelectable(true)
@@ -180,20 +186,33 @@ class BridgeSetupActivity : Activity() {
             showResult("COMMAND ERROR // Type a command first.", false)
             return
         }
+
+        deviceController.handle(command)?.let { result ->
+            val report = buildString {
+                appendLine("JARVIS // ${result.reply}")
+                appendLine()
+                appendLine("INTENT // ${result.intent}")
+                appendLine("EXECUTION // ${if (result.ok) "SUCCESS" else "NOT COMPLETED"}")
+                if (result.details.isNotBlank()) append("DETAILS // ${result.details}")
+            }
+            showResult(report, result.ok)
+            return
+        }
+
         if (!bridge.isPaired()) {
-            showResult("COMMAND BLOCKED // Pair the bridge first.", false)
+            showResult("LOCAL CORTEX LOCKED // Pair the bridge first. App launching and web browsing already work without pairing.", false)
             refreshPairingState()
             return
         }
 
-        setBusy(true, "BRIDGE // PROCESSING COMMAND")
+        setBusy(true, "LOCAL QWEN CORTEX // THINKING")
         worker.execute {
             val decision = bridge.ask(command)
             val error = bridge.lastError
             main.post {
                 setBusy(false)
                 if (decision == null) {
-                    showResult("BRIDGE ERROR // $error", false)
+                    showResult("CORTEX ERROR // $error", false)
                     refreshPairingState()
                 } else {
                     val report = buildString {
@@ -236,14 +255,14 @@ class BridgeSetupActivity : Activity() {
             "PAIRING STATUS // UNPAIRED\nRUN // jarvis-pair"
         }
         statusText.setTextColor(if (paired) SUCCESS else WARNING)
-        commandInput.isEnabled = paired
-        sendButton.isEnabled = paired
-        sendButton.alpha = if (paired) 1f else 0.45f
+        commandInput.isEnabled = true
+        sendButton.isEnabled = true
+        sendButton.alpha = 1f
     }
 
     private fun setBusy(busy: Boolean, message: String? = null) {
         pairButton.isEnabled = !busy
-        sendButton.isEnabled = !busy && bridge.isPaired()
+        sendButton.isEnabled = !busy
         if (message != null) resultText.text = message
     }
 

@@ -15,6 +15,7 @@ class JarvisBrain(context: Context) {
         decisionEngine = DecisionEngine(context)
     )
     private val bridge = LocalBridgeClient(context)
+    private val deviceController = UniversalDeviceController(context)
 
     fun respond(rawInput: String): BrainResponse {
         val input = rawInput.trim()
@@ -29,6 +30,10 @@ class JarvisBrain(context: Context) {
         extractPairCode(input)?.let { code ->
             val result = bridge.pair(code)
             return pairingResponse(result)
+        }
+
+        deviceController.handle(input)?.let { result ->
+            return deviceCommandResponse(result)
         }
 
         if (!bridge.isPaired()) {
@@ -95,9 +100,27 @@ class JarvisBrain(context: Context) {
 
     fun contextSnapshot(): List<String> = localEngine.contextSnapshot()
 
+    private fun deviceCommandResponse(result: DeviceCommandResult): BrainResponse = BrainResponse(
+        spoken = result.reply,
+        display = if (result.details.isBlank()) result.reply else "${result.reply}\n\n${result.details}",
+        intent = "android_device/${result.intent.lowercase(Locale.US)}",
+        confidence = if (result.ok) 1f else 0.72f,
+        mode = if (result.ok) BrainMode.ONLINE else BrainMode.ALERT,
+        trace = listOf("android_package_manager", "launcher_activity_index", "user_visible_intent"),
+        memory = memory.summary(),
+        thoughts = listOf(
+            "The command was handled directly by Android.",
+            "No arbitrary shell command was executed.",
+            "Result: ${if (result.ok) "success" else "not completed"}."
+        ),
+        entities = listOf("intent=${result.intent}", "details=${result.details.ifBlank { "none" }}"),
+        decision = "android_device/${result.intent.lowercase(Locale.US)}",
+        action = BrainAction()
+    )
+
     private fun pairingRequiredResponse(): BrainResponse = BrainResponse(
-        spoken = "Secure pairing is required, Sir. In Termux, run jarvis v4 pair code, then say pair code followed by the six digits.",
-        display = "PAIRING REQUIRED\nRun: jarvis-v4-pair-code\nThen say: Pair code 1 2 3 4 5 6",
+        spoken = "Secure pairing is required for the local cortex, Sir. App launching and web browsing remain available directly on Android.",
+        display = "PAIRING REQUIRED FOR LOCAL CORTEX\nRun: jarvis-pair\nOpen the bridge console and paste the six-digit code.",
         intent = "bridge_pairing_required",
         confidence = 1f,
         mode = BrainMode.SECURITY,

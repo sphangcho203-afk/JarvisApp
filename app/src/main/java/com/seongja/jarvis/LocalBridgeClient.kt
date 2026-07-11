@@ -91,7 +91,7 @@ internal class LocalBridgeClient(
                     .put("text", userInput.take(500))
                     .put("speak", false),
                 token = token,
-                readTimeoutMs = 35_000
+                readTimeoutMs = 120_000
             )
 
             if (response.code == HttpURLConnection.HTTP_UNAUTHORIZED) {
@@ -115,7 +115,7 @@ internal class LocalBridgeClient(
             }
 
             LocalBridgeDecision(
-                reply = reply.take(420),
+                reply = reply.take(900),
                 intent = decision.optString("intent", "UNKNOWN").trim(),
                 arguments = decision.optJSONObject("arguments")?.toString().orEmpty(),
                 executionOk = execution?.optBoolean("ok", false) ?: false,
