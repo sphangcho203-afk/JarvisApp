@@ -17,6 +17,9 @@ data class DeviceActionResult(
 
 enum class DeviceActionStatus {
     SUCCESS,
+    IN_PROGRESS,
+    EXECUTED_UNVERIFIED,
+    NEEDS_CLARIFICATION,
     USER_CONFIRMATION_REQUIRED,
     PERMISSION_REQUIRED,
     FAILED

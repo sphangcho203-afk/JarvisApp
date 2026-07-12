@@ -4,10 +4,18 @@ Jarvis is a phone-first Android AI assistant written in Kotlin. It combines a li
 
 ## Current Version
 
-**Phase 9.2A: Android Action Fabric Foundation**
-Version: `0.9.2-action-fabric`
+**Phase 9.2B: System Control Bridge**
+Version: `0.9.2b-system-control`
 
-## What Phase 9.2A Adds
+## What Phase 9.2B Adds
+
+- adds a one-time, user-enabled **Jarvis System Control** service limited to Android Quick Settings
+- executes allow-listed Wi-Fi, mobile-data, hotspot, flight-mode, Bluetooth, location, Eye Comfort, dark-mode, Extra Dim, Do Not Disturb, battery-saver, and NFC tiles
+- checks a visible tile state before pressing it and verifies the result when SystemUI exposes state information
+- searches the first Quick Settings pages with bounded retries and reports genuine failure or unverified execution
+- keeps direct Android APIs for flashlight, volume, brightness, rotation, media, telemetry, and app launching
+
+## Phase 9.2A Foundation
 
 - handles known phone actions locally before sending anything to the cloud
 
@@ -55,8 +63,15 @@ Examples:
 - `auto rotate on`
 - `battery status`
 - `network status`
+- `enable system control`
+- `system control status`
 - `turn on Wi-Fi`
-- `turn on mobile data`
+- `turn off mobile data`
+- `turn on hotspot`
+- `turn off flight mode`
+- `turn on Eye Comfort`
+- `turn on Do Not Disturb`
+- `turn on dark mode`
 - `Bluetooth settings`
 - `play Notion on Spotify`
 - `search Jarvis interface on YouTube`
@@ -67,11 +82,11 @@ Examples:
 
 ## Android Boundaries
 
-Modern Android does not let an ordinary app silently toggle every protected radio. Wi-Fi, mobile data, Bluetooth, location, airplane mode, hotspot, NFC, Do Not Disturb, and battery saver may require a compact system panel or confirmation. Jarvis opens the correct official control surface and reports that confirmation is required instead of pretending the action succeeded.
+Stock Android blocks ordinary apps from directly changing several protected radios. Phase 9.2B works through the same visible Quick Settings controls the operator can press, after the operator enables **Jarvis System Control** once in Accessibility settings. The bridge is restricted to Android SystemUI and an explicit allow-list of tiles.
 
-Brightness and auto-rotate require one-time **Modify system settings** permission. Spotify search opens the requested result. Arbitrary Spotify playback requires a separate Spotify account authorization integration and is not claimed as complete in this phase.
+The phone must be unlocked, and the requested tile should be placed on one of the first Quick Settings pages. Vendor labels and layouts can differ, so Jarvis reports when a tile cannot be found or when Android does not expose a verifiable final state. Lock-screen bypasses, payment approvals, account authentication, arbitrary taps inside apps, and hidden root behavior are outside this bridge.
 
-Foreground voice listening remains active only while Jarvis is visible.
+Brightness and auto-rotate still use the one-time **Modify system settings** permission. Foreground voice listening remains active only while Jarvis is visible.
 
 ## Security
 
@@ -83,7 +98,7 @@ Foreground voice listening remains active only while Jarvis is visible.
 
 ## Build APK With GitHub Actions
 
-1. Apply the Phase 9.1 patch to the repository.
+1. Apply the latest Phase 9.2B installer to the repository.
 2. Push the generated commit to `main`.
 3. Open **Actions → Build Jarvis APK**.
 4. Download `Jarvis-debug-apk` from the successful run.

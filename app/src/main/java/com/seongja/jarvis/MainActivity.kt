@@ -13,8 +13,10 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.view.View
 import android.view.WindowManager
+import com.jarvis.core.device.DeviceActionResult
 import com.jarvis.core.device.DeviceActionStatus
 import com.jarvis.core.device.DeviceCommandRouter
+import com.jarvis.core.device.SystemControlAccess
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
@@ -37,7 +39,9 @@ class MainActivity : Activity() {
     private var processingTimeout: Runnable? = null
     private var ttsResumeWatchdog: Runnable? = null
     private var lastTtsFinishedAt = 0L
-    private val deviceCommandRouter by lazy { DeviceCommandRouter(applicationContext) }
+    private val deviceCommandRouter by lazy {
+        DeviceCommandRouter(applicationContext, ::handleDeferredDeviceResult)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -61,11 +65,12 @@ class MainActivity : Activity() {
         )
 
         setContentView(hud)
-        hud.pushEvent("PHASE 9.2A -> ANDROID ACTION FABRIC")
+        hud.pushEvent("PHASE 9.2B -> SYSTEM CONTROL BRIDGE")
         hud.pushEvent("LOCAL SERVER BRAIN -> PERMANENTLY REMOVED")
         hud.pushEvent("GEMINI NODES -> 6 // GROQ NODES -> 4")
         hud.pushEvent("VOICE -> DIRECT LISTENING; NO HOLD CONTROL")
         hud.pushEvent("SAY CONFIGURE APIS -> SECURE MESH SETUP")
+        hud.pushEvent("SYSTEM CONTROL -> QUICK SETTINGS EXECUTOR")
         hud.pushEvent("TAP -> RECALIBRATE VOICE ARRAY")
 
         initTts()
@@ -155,6 +160,10 @@ class MainActivity : Activity() {
                 if (brain.isCloudConfigured()) "CORTEX MESH -> READY // ${brain.configuredModel()}"
                 else "CORTEX MESH -> CONFIGURATION REQUIRED"
             )
+            hud.pushEvent(
+                if (SystemControlAccess.isEnabled(this)) "SYSTEM CONTROL -> ENABLED"
+                else "SYSTEM CONTROL -> SAY ENABLE SYSTEM CONTROL"
+            )
         }
         if (hasMicPermission() && !brainBusy.get()) {
             voiceLoop.resume()
@@ -215,26 +224,23 @@ class MainActivity : Activity() {
 
         val deviceResult = deviceCommandRouter.executeDetailed(clean)
         if (deviceResult != null) {
-            val mode = if (deviceResult.status == DeviceActionStatus.FAILED) {
-                BrainMode.ALERT
-            } else {
-                BrainMode.EXECUTING
+            val mode = when (deviceResult.status) {
+                DeviceActionStatus.FAILED -> BrainMode.ALERT
+                DeviceActionStatus.EXECUTED_UNVERIFIED -> BrainMode.TACTICAL
+                DeviceActionStatus.NEEDS_CLARIFICATION -> BrainMode.THINKING
+                else -> BrainMode.EXECUTING
             }
             hud.pushEvent(
                 "ACTION -> ${deviceResult.actionId.uppercase(Locale.US)} ${deviceResult.status.name}"
             )
             finishLocalCommand(
                 spoken = deviceResult.spoken,
-                display = buildString {
-                    appendLine(deviceResult.spoken)
-                    appendLine()
-                    append("ACTION ${deviceResult.actionId.uppercase(Locale.US)} // ")
-                    append(deviceResult.status.name)
-                    append(" // ${deviceResult.latencyMs}ms")
-                },
+                display = formatDeviceResult(deviceResult),
                 intent = "device/${deviceResult.actionId}",
                 mode = mode,
-                trace = deviceResult.trace
+                trace = deviceResult.trace,
+                speakResult = deviceResult.status != DeviceActionStatus.IN_PROGRESS,
+                playSuccess = deviceResult.status != DeviceActionStatus.IN_PROGRESS
             )
             return
         }
@@ -277,6 +283,51 @@ class MainActivity : Activity() {
                 speak(response.spoken)
             }
         }.start()
+    }
+
+    private fun handleDeferredDeviceResult(result: DeviceActionResult) {
+        runOnUiThread {
+            val mode = when (result.status) {
+                DeviceActionStatus.FAILED -> BrainMode.ALERT
+                DeviceActionStatus.EXECUTED_UNVERIFIED -> BrainMode.TACTICAL
+                DeviceActionStatus.NEEDS_CLARIFICATION -> BrainMode.THINKING
+                else -> BrainMode.ONLINE
+            }
+            hud.pushEvent(
+                "SYSTEM CONTROL -> ${result.actionId.uppercase(Locale.US)} ${result.status.name}"
+            )
+            hud.submitBrainResponse(
+                BrainResponse(
+                    spoken = result.spoken,
+                    display = formatDeviceResult(result),
+                    intent = "device/${result.actionId}",
+                    confidence = if (result.status == DeviceActionStatus.EXECUTED_UNVERIFIED) 0.72f else 1f,
+                    mode = mode,
+                    trace = result.trace,
+                    memory = brain.memorySnapshot(),
+                    thoughts = listOf("The command was executed through the allow-listed Android SystemUI control bridge."),
+                    entities = listOf("target=${result.target}", "status=${result.status.name}"),
+                    decision = "system_control_${result.status.name.lowercase(Locale.US)}",
+                    action = BrainAction()
+                )
+            )
+            if (result.status == DeviceActionStatus.FAILED) {
+                soundEngine.processing()
+            } else {
+                soundEngine.success()
+            }
+            mainHandler.postDelayed({
+                if (resumed) speak(result.spoken)
+            }, 320L)
+        }
+    }
+
+    private fun formatDeviceResult(result: DeviceActionResult): String = buildString {
+        appendLine(result.spoken)
+        appendLine()
+        append("ACTION ${result.actionId.uppercase(Locale.US)} // ")
+        append(result.status.name)
+        append(" // ${result.latencyMs}ms")
     }
 
     private fun isCloudSetupCommand(input: String): Boolean {
@@ -380,7 +431,9 @@ class MainActivity : Activity() {
         display: String,
         intent: String,
         mode: BrainMode,
-        trace: List<String>
+        trace: List<String>,
+        speakResult: Boolean = true,
+        playSuccess: Boolean = true
     ) {
         hud.submitBrainResponse(
             BrainResponse(
@@ -400,8 +453,12 @@ class MainActivity : Activity() {
         cancelProcessingTimeout()
         hud.setProcessing(false)
         brainBusy.set(false)
-        if (mode != BrainMode.ALERT) soundEngine.success()
-        speak(spoken)
+        if (playSuccess && mode != BrainMode.ALERT) soundEngine.success()
+        if (speakResult) {
+            speak(spoken)
+        } else if (resumed && hasMicPermission()) {
+            voiceLoop.resumeAfterTts(700L)
+        }
     }
 
     private fun handleVoiceState(state: VoiceLoop.State) {

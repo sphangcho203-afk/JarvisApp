@@ -22,7 +22,10 @@ import java.util.Locale
  * produces a typed result so the HUD can distinguish success, permission,
  * confirmation, and failure instead of trusting free-form model language.
  */
-class DeviceCommandRouter(context: Context) {
+class DeviceCommandRouter(
+    context: Context,
+    private val onDeferredResult: (DeviceActionResult) -> Unit = {}
+) {
 
     private val appContext = context.applicationContext
     private val appLauncher = AppLauncher(appContext)
@@ -40,6 +43,8 @@ class DeviceCommandRouter(context: Context) {
         val started = SystemClock.elapsedRealtime()
         val normalized = normalizeNaturalCommand(command)
         if (normalized.isBlank()) return null
+
+        systemControlCommand(normalized, started)?.let { return it }
 
         val spoken = executeNormalized(normalized) ?: return null
         val status = resultStatus(spoken)
@@ -94,7 +99,7 @@ class DeviceCommandRouter(context: Context) {
             command == "what can you control" ||
             command == "what can you do on my phone"
         if (!matches) return null
-        return "Android action fabric online. I can launch installed apps, browse and search, report time, date, battery and network state, control the flashlight, media, volume, brightness and rotation where Android permits it, operate timers, and open protected system control panels when confirmation is required."
+        return "Android action fabric online. I can launch installed apps, browse and search, report time, date, battery and network state, control flashlight, media, volume, brightness and rotation, operate timers, and use the optional System Control bridge for allow-listed Quick Settings tiles."
     }
 
     private fun timeCommand(command: String): String? {
@@ -351,6 +356,129 @@ class DeviceCommandRouter(context: Context) {
         }
     }
 
+    private fun systemControlCommand(
+        command: String,
+        started: Long
+    ): DeviceActionResult? {
+        if (command == "system control status" || command == "controller status") {
+            val enabled = SystemControlAccess.isEnabled(appContext)
+            val connected = JarvisSystemControlService.isConnected()
+            val message = when {
+                enabled && connected -> "System Control is online. Quick Settings execution is ready."
+                enabled -> "System Control is enabled and reconnecting."
+                else -> "System Control is disabled. Say enable system control to open the one-time setup."
+            }
+            return DeviceActionResult(
+                actionId = "system_control_status",
+                target = "system control",
+                status = if (enabled) DeviceActionStatus.SUCCESS else DeviceActionStatus.PERMISSION_REQUIRED,
+                spoken = message,
+                latencyMs = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L),
+                trace = listOf("android_system_control_bridge", "status_probe")
+            )
+        }
+
+        if (command == "enable system control" || command == "open system control" || command == "system control setup") {
+            val opened = SystemControlAccess.openSettings(appContext)
+            return DeviceActionResult(
+                actionId = "system_control_setup",
+                target = "accessibility settings",
+                status = if (opened) DeviceActionStatus.PERMISSION_REQUIRED else DeviceActionStatus.FAILED,
+                spoken = if (opened) {
+                    "Enable Jarvis System Control once. It is restricted to Android Quick Settings."
+                } else {
+                    "I couldn't open the System Control setup."
+                },
+                latencyMs = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L),
+                trace = listOf("android_system_control_bridge", "open_accessibility_settings")
+            )
+        }
+
+        if (command.contains("internet") &&
+            !command.contains("wifi") &&
+            !command.contains("wi fi") &&
+            !command.contains("mobile data") &&
+            !command.contains("cellular data") &&
+            (containsOn(command) || containsOff(command))
+        ) {
+            return DeviceActionResult(
+                actionId = "internet_target",
+                target = "internet",
+                status = DeviceActionStatus.NEEDS_CLARIFICATION,
+                spoken = "Specify Wi-Fi or mobile data, Sir.",
+                latencyMs = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L),
+                trace = listOf("android_system_control_bridge", "ambiguous_internet_target")
+            )
+        }
+
+        val toggle = SystemToggle.fromCommand(command) ?: return null
+        val desired = when {
+            containsOff(command) -> false
+            containsOn(command) -> true
+            else -> return null
+        }
+
+        if (!SystemControlAccess.isEnabled(appContext)) {
+            val opened = SystemControlAccess.openSettings(appContext)
+            return DeviceActionResult(
+                actionId = toggle.id,
+                target = toggle.displayName,
+                status = if (opened) DeviceActionStatus.PERMISSION_REQUIRED else DeviceActionStatus.FAILED,
+                spoken = if (opened) {
+                    "Enable Jarvis System Control once, then repeat the command."
+                } else {
+                    "System Control is unavailable."
+                },
+                latencyMs = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L),
+                trace = listOf(
+                    "android_system_control_bridge",
+                    "target=${toggle.id}",
+                    "accessibility_permission_required"
+                )
+            )
+        }
+
+        if (!JarvisSystemControlService.isConnected()) {
+            return DeviceActionResult(
+                actionId = toggle.id,
+                target = toggle.displayName,
+                status = DeviceActionStatus.FAILED,
+                spoken = "System Control is enabled but not connected yet. Reopen Jarvis and try again.",
+                latencyMs = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L),
+                trace = listOf(
+                    "android_system_control_bridge",
+                    "target=${toggle.id}",
+                    "service_not_connected"
+                )
+            )
+        }
+
+        val accepted = JarvisSystemControlService.request(
+            SystemControlRequest(toggle, desired)
+        ) { outcome ->
+            onDeferredResult(outcome.toDeviceActionResult())
+        }
+
+        return DeviceActionResult(
+            actionId = toggle.id,
+            target = toggle.displayName,
+            status = if (accepted) DeviceActionStatus.IN_PROGRESS else DeviceActionStatus.FAILED,
+            spoken = if (accepted) {
+                "Executing ${toggle.displayName} ${if (desired) "on" else "off"}."
+            } else {
+                "System Control is busy. Try again in a moment."
+            },
+            latencyMs = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L),
+            trace = listOf(
+                "android_system_control_bridge",
+                "systemui_quick_settings",
+                "target=${toggle.id}",
+                "desired=${if (desired) "on" else "off"}",
+                if (accepted) "queued" else "queue_rejected"
+            )
+        )
+    }
+
     private fun settingsCommand(command: String): String? {
         return when {
             command.contains("internet") && (containsOn(command) || containsOff(command) || command.contains("settings")) -> {
@@ -494,7 +622,8 @@ class DeviceCommandRouter(context: Context) {
         command.contains("youtube") -> "youtube"
         command.contains("wifi") || command.contains("mobile data") || command.contains("bluetooth") ||
             command.contains("location") || command.contains("airplane mode") || command.contains("hotspot") ||
-            command.contains("nfc") || command.contains("battery saver") || command.contains("do not disturb") -> "system_panel"
+            command.contains("nfc") || command.contains("battery saver") || command.contains("do not disturb") ||
+            command.contains("flight mode") || command.contains("eye comfort") || command.contains("night light") -> "system_control"
         isExplicitWebCommand(command) -> "web_search"
         isOpenCommand(command) -> if (looksLikeWebsite(removeOpenPrefix(command))) "open_website" else "open_app"
         else -> "open_app"
@@ -518,7 +647,9 @@ class DeviceCommandRouter(context: Context) {
     private fun resultStatus(spoken: String): DeviceActionStatus {
         val lower = spoken.lowercase(Locale.US)
         return when {
-            "one-time permission" in lower || "permission screen" in lower -> DeviceActionStatus.PERMISSION_REQUIRED
+            "executing " in lower -> DeviceActionStatus.IN_PROGRESS
+            "tile was pressed" in lower -> DeviceActionStatus.EXECUTED_UNVERIFIED
+            "one-time permission" in lower || "permission screen" in lower || "enable jarvis system control" in lower -> DeviceActionStatus.PERMISSION_REQUIRED
             "requires one tap" in lower || "requires confirmation" in lower || "controls opened" in lower -> DeviceActionStatus.USER_CONFIRMATION_REQUIRED
             "couldn't" in lower || "did not expose" in lower || "unavailable" in lower || "could not" in lower -> DeviceActionStatus.FAILED
             else -> DeviceActionStatus.SUCCESS

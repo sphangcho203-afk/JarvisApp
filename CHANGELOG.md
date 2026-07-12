@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.2B — System Control Bridge
+
+- Added a one-time, user-enabled AccessibilityService restricted to Android SystemUI Quick Settings.
+- Added direct voice execution for allow-listed Wi-Fi, mobile-data, hotspot, flight-mode, Bluetooth, location, Eye Comfort, dark-mode, Extra Dim, Do Not Disturb, battery-saver, and NFC tiles.
+- Added state-aware tile handling that avoids pressing a control already in the requested state when Android exposes the state.
+- Added post-click verification, bounded retries, Quick Settings page scrolling, and honest unverified-result reporting.
+- Added vendor-friendly tile aliases including Wi-Fi/WLAN, Eye Comfort/Night Shield, and power-saving labels.
+- Added a local `enable system control` setup command and `system control status` diagnostic.
+- Kept accessibility scope out of messages and ordinary apps; the bridge neither types text nor performs arbitrary app automation.
+- Bumped the application version to `0.9.2b-system-control`.
+
 ## 0.9.2 — Android Action Fabric Foundation
 
 - Added typed Android action results with success, permission, confirmation, and failure states.
