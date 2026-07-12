@@ -36,7 +36,16 @@ class DeviceCommandRouter(context: Context) {
                 }
             }
 
-            else -> null
+            else -> tryBareAppName(normalized)
+        }
+    }
+
+    private fun tryBareAppName(command: String): String? {
+        if (command.length > 48 || command.split(" ").size > 4) return null
+
+        return when (val result = appLauncher.openApp(command)) {
+            is AppLauncher.LaunchResult.NotFound -> null
+            else -> appLauncher.describe(result)
         }
     }
 

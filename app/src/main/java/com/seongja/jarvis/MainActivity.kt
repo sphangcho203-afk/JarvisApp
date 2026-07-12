@@ -2,7 +2,6 @@ package com.seongja.jarvis
 
 import android.Manifest
 import android.app.Activity
-import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.os.Bundle
@@ -54,7 +53,6 @@ class MainActivity : Activity() {
         hud.pushEvent("VOICE -> DIRECT LISTENING; NO HOLD CONTROL")
         hud.pushEvent("TIMER -> SAY SET A TIMER FOR FIVE MINUTES")
         hud.pushEvent("TAP -> RECALIBRATE VOICE ARRAY")
-        hud.pushEvent("LONG PRESS -> OPEN SECURE BRIDGE CONSOLE")
 
         initTts()
         hud.postDelayed({ soundEngine.boot() }, 350L)
@@ -69,10 +67,7 @@ class MainActivity : Activity() {
             }
         }
 
-        hud.setOnLongClickListener {
-            startActivity(Intent(this, BridgeSetupActivity::class.java))
-            true
-        }
+        hud.isLongClickable = false
 
         if (!hasMicPermission()) requestMicPermission()
     }

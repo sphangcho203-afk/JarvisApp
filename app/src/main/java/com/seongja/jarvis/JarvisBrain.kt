@@ -37,7 +37,12 @@ class JarvisBrain(context: Context) {
         }
 
         if (!bridge.isPaired()) {
-            return pairingRequiredResponse()
+            return fallback.copy(
+                trace = fallback.trace + listOf("local_android_cortex", "bridge_optional"),
+                thoughts = fallback.thoughts +
+                    "The optional Termux bridge is not paired; the Android-local brain handled this request.",
+                decision = "local_android_fallback"
+            )
         }
 
         val decision = bridge.ask(input)

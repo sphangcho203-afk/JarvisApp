@@ -185,6 +185,7 @@ class VoiceLoop(
     override fun onBeginningOfSpeech() {
         starting = false
         listening = true
+        onRms(0.72f)
         onDiagnostic("ASR -> SPEECH DETECTED")
         onState(State.LISTENING)
     }
@@ -296,7 +297,10 @@ class VoiceLoop(
             .firstOrNull()
             .orEmpty()
             .trim()
-        if (text.isNotBlank()) onPartial(text)
+        if (text.isNotBlank()) {
+            onRms(0.42f)
+            onPartial(text)
+        }
     }
 
     override fun onEvent(eventType: Int, params: Bundle?) = Unit
