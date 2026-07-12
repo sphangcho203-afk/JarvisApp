@@ -11,8 +11,8 @@ android {
         applicationId = "com.seongja.jarvis"
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.8.0-neural-interface"
+        versionCode = 9
+        versionName = "0.8.2-cloud-cortex"
     }
 
     buildTypes {

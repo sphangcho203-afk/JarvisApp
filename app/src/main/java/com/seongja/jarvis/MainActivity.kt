@@ -2,6 +2,7 @@ package com.seongja.jarvis
 
 import android.Manifest
 import android.app.Activity
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.media.AudioAttributes
 import android.os.Bundle
@@ -24,6 +25,7 @@ class MainActivity : Activity() {
     private var ttsReady = false
     private var resumed = false
     private var announcedOnline = false
+    private var setupOpenedThisSession = false
     private val brainBusy = AtomicBoolean(false)
     private val deviceCommandRouter by lazy { DeviceCommandRouter(applicationContext) }
 
@@ -49,9 +51,11 @@ class MainActivity : Activity() {
         )
 
         setContentView(hud)
-        hud.pushEvent("PHASE 8 -> HANDS-FREE NEURAL INTERFACE")
+        hud.pushEvent("PHASE 8.2 -> CLOUD CORTEX")
+        hud.pushEvent("LOCAL SERVER BRAIN -> REMOVED")
+        hud.pushEvent("TERMUX PAIRING -> DISABLED")
         hud.pushEvent("VOICE -> DIRECT LISTENING; NO HOLD CONTROL")
-        hud.pushEvent("TIMER -> SAY SET A TIMER FOR FIVE MINUTES")
+        hud.pushEvent("SAY CONFIGURE API -> SECURE CLOUD SETUP")
         hud.pushEvent("TAP -> RECALIBRATE VOICE ARRAY")
 
         initTts()
@@ -86,7 +90,7 @@ class MainActivity : Activity() {
                     .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
                     .build()
             )
-            val languageResult = tts?.setLanguage(Locale.US) ?: TextToSpeech.LANG_NOT_SUPPORTED
+            val languageResult = tts?.setLanguage(Locale.getDefault()) ?: TextToSpeech.LANG_NOT_SUPPORTED
             ttsReady = languageResult != TextToSpeech.LANG_MISSING_DATA &&
                 languageResult != TextToSpeech.LANG_NOT_SUPPORTED
             tts?.setSpeechRate(0.94f)
@@ -128,7 +132,16 @@ class MainActivity : Activity() {
         super.onResume()
         resumed = true
         enterImmersiveMode()
-        if (hasMicPermission() && !brainBusy.get()) voiceLoop.resume()
+        if (::brain.isInitialized) {
+            hud.pushEvent(
+                if (brain.isCloudConfigured()) "CLOUD -> READY // ${brain.configuredModel()}"
+                else "CLOUD -> CONFIGURATION REQUIRED"
+            )
+        }
+        if (hasMicPermission() && !brainBusy.get()) {
+            voiceLoop.resume()
+            hud.postDelayed({ openCloudSetupIfRequired() }, 450L)
+        }
     }
 
     override fun onPause() {
@@ -166,6 +179,14 @@ class MainActivity : Activity() {
             return
         }
 
+        if (isCloudSetupCommand(clean)) {
+            hud.pushEvent("CLOUD CONFIG -> OPEN")
+            hud.setProcessing(false)
+            brainBusy.set(false)
+            startActivity(Intent(this, CloudConfigActivity::class.java))
+            return
+        }
+
         val deviceResponse = deviceCommandRouter.execute(clean)
         if (deviceResponse != null) {
             finishLocalCommand(
@@ -178,21 +199,21 @@ class MainActivity : Activity() {
             return
         }
 
-        hud.pushEvent("BRIDGE -> REQUEST START")
+        hud.pushEvent("CLOUD -> REQUEST START")
         Thread {
             val started = System.currentTimeMillis()
             val response = runCatching { brain.respond(clean) }.getOrElse { error ->
                 BrainResponse(
-                    spoken = "The secure local bridge failed: ${error.javaClass.simpleName}.",
-                    display = "Local bridge error: ${error.message ?: error.javaClass.simpleName}",
-                    intent = "bridge_error",
+                    spoken = "The cloud cortex request failed: ${error.message ?: error.javaClass.simpleName}.",
+                    display = "CLOUD API ERROR // ${error.message ?: error.javaClass.simpleName}",
+                    intent = "cloud_error",
                     confidence = 0f,
                     mode = BrainMode.ALERT,
-                    trace = listOf("localhost:8765", "exception=${error.javaClass.simpleName}"),
+                    trace = listOf("cloud_https_request", "exception=${error.javaClass.simpleName}", "localhost_disabled"),
                     memory = brain.memorySnapshot(),
-                    thoughts = listOf("The local bridge request threw an exception."),
+                    thoughts = listOf("The cloud request failed. No local server fallback was attempted."),
                     entities = emptyList(),
-                    decision = "bridge_exception",
+                    decision = "cloud_exception",
                     action = BrainAction()
                 )
             }
@@ -200,10 +221,7 @@ class MainActivity : Activity() {
 
             runOnUiThread {
                 hud.submitBrainResponse(response)
-                hud.pushEvent("BRIDGE -> RESPONSE ${elapsed}ms")
-                if (response.trace.any { it.contains("unavailable") }) {
-                    hud.pushEvent("BRIDGE -> OFFLINE; ANDROID FALLBACK USED")
-                }
+                hud.pushEvent("CLOUD -> RESPONSE ${elapsed}ms")
                 if (response.action.type != ActionType.NONE) {
                     val executed = brain.execute(response.action)
                     hud.pushEvent("ACTION -> ${response.action.label.uppercase(Locale.US)} ${if (executed) "OK" else "BLOCKED"}")
@@ -214,6 +232,23 @@ class MainActivity : Activity() {
                 speak(response.spoken)
             }
         }.start()
+    }
+
+    private fun isCloudSetupCommand(input: String): Boolean {
+        val normalized = input.lowercase(Locale.getDefault()).trim()
+        return normalized == "configure api" ||
+            normalized == "api setup" ||
+            normalized == "cloud setup" ||
+            normalized == "configure cloud" ||
+            normalized == "open api settings"
+    }
+
+    private fun openCloudSetupIfRequired() {
+        if (!brain.isCloudConfigured() && !setupOpenedThisSession && !isFinishing) {
+            setupOpenedThisSession = true
+            hud.pushEvent("CLOUD -> OPENING SECURE CONFIGURATION")
+            startActivity(Intent(this, CloudConfigActivity::class.java))
+        }
     }
 
     private fun handleCountdownCommand(command: CountdownCommand) {
@@ -383,6 +418,7 @@ class MainActivity : Activity() {
         if (requestCode == REQ_RECORD_AUDIO && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
             hud.pushEvent("AUTH -> MICROPHONE GRANTED")
             voiceLoop.resume()
+            hud.postDelayed({ openCloudSetupIfRequired() }, 450L)
         } else if (requestCode == REQ_RECORD_AUDIO) {
             hud.pushEvent("AUTH -> MICROPHONE DENIED")
             hud.setVoiceState(VoiceLoop.State.UNAVAILABLE)

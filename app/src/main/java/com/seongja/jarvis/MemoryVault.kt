@@ -14,9 +14,9 @@ class MemoryVault(context: Context) {
             prefs.edit()
                 .putBoolean(KEY_SEEDED, true)
                 .putString(KEY_CALLSIGN, "Seongja")
-                .putString(KEY_PROFILE, "Operator: Seongja // Role: Jarvis creator // Mission: Build a phone-first offline AI assistant.")
+                .putString(KEY_PROFILE, "Operator: Seongja // Role: Jarvis creator // Mission: Build a phone-first cloud-connected AI assistant.")
                 .putString(KEY_FACTS, listOf(
-                    stamped("Jarvis local memory initialized."),
+                    stamped("Jarvis encrypted operator memory initialized."),
                     stamped("Default identity: Seongja, creator/operator of Jarvis."),
                     stamped("Design directive: advanced civilization, geometric, live HUD.")
                 ).joinToString("\n"))

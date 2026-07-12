@@ -9,34 +9,36 @@
 - Native Canvas HUD
 - GitHub Actions APK build
 
-### Phases 4–6
-- Structured local intent engine
-- Entity extraction and decision routing
-- Local llama.cpp bridge design
+### Phases 4–7
+- Intent and entity experiments
 - Safe Android action allowlist
-
-### Phase 7
-- Android and Termux localhost bridge
-- One-time pairing
-- Universal app and web navigation
-- Typed bridge setup console
+- App and web navigation
+- Earlier local bridge experiments, now retired
 
 ### Phase 8
 - Hands-free foreground voice loop
-- Real microphone-reactive HUD
-- Live countdown engine
+- Microphone-reactive HUD
+- Countdown engine
 - Live system telemetry
 - Hardware-accelerated geometric interface
 - Interface sound cues
 
+### Phase 8.2 — Cloud Cortex
+- Removed the local server brain
+- Removed Termux pairing from command routing
+- Added configurable HTTPS cloud-model access
+- Added Android Keystore-encrypted API configuration
+- Added in-app connection testing
+- Rejected localhost and cleartext API endpoints
+
 ## Recommended Next Phase
 
-### Phase 9 — Controlled Background Service
+### Phase 9 — Reliable Assistant Runtime
 
-1. Add a microphone foreground service with a persistent notification.
-2. Add an obvious enable/disable switch and quick-stop action.
-3. Add wake-word gating to avoid processing every nearby conversation.
-4. Add Android Keystore-backed storage for bridge credentials.
-5. Add a local command audit log with timestamps and results.
-6. Add notification intelligence behind explicit access permission.
-7. Add phone-computer sync using mutually authenticated local transport.
+1. Add provider profiles and multi-provider failover.
+2. Add structured tool calling for device actions.
+3. Add network retry, cancellation, and request timeout controls.
+4. Add a visible API health panel and redacted diagnostics.
+5. Add a user-controlled microphone foreground service.
+6. Add wake-word gating and a quick-stop notification action.
+7. Add encrypted conversation storage with export and delete controls.
