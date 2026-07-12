@@ -115,7 +115,7 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
         invalidate()
     }
 
-    fun setCountdown(snapshot: CountdownSnapshot) {
+    internal fun setCountdown(snapshot: CountdownSnapshot) {
         countdownActive = snapshot.active
         countdownLabel = snapshot.label
         countdownRemainingMs = snapshot.remainingMs
