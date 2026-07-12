@@ -81,7 +81,7 @@ class GroqWebResearchClient(private val store: SecureCortexRegistry) {
             }
             return WebResearchResult(
                 answer = answer,
-                spokenSummary = createSpokenSummary(answer),
+                spokenSummary = groqSpokenSummary(answer),
                 sources = sources.take(MAX_SOURCES),
                 searchQueries = searchQueries,
                 model = model,
@@ -312,30 +312,28 @@ class GroqWebResearchClient(private val store: SecureCortexRegistry) {
         root.optJSONObject("error")?.optString("message")
             ?: root.optString("message")
     }.getOrNull().orEmpty()
+}
 
-    private companion object SpokenSummary {
-        fun createSpokenSummary(answer: String): String {
-            val cleaned = answer
-                .replace(Regex("https?://\\S+"), "")
-                .replace(Regex("(?m)^#{1,6}\\s*"), "")
-                .replace("**", "")
-                .replace(Regex("\\s+"), " ")
-                .trim()
+private fun groqSpokenSummary(answer: String): String {
+    val cleaned = answer
+        .replace(Regex("https?://\\S+"), "")
+        .replace(Regex("(?m)^#{1,6}\\s*"), "")
+        .replace("**", "")
+        .replace(Regex("\\s+"), " ")
+        .trim()
 
-            if (cleaned.length <= 850) return cleaned
-            val window = cleaned.take(850)
-            val sentenceEnd = maxOf(
-                window.lastIndexOf(". "),
-                window.lastIndexOf("! "),
-                window.lastIndexOf("? ")
-            )
-            return if (sentenceEnd >= 420) {
-                window.take(sentenceEnd + 1) +
-                    " I have placed the full intelligence report and sources on screen."
-            } else {
-                window.trimEnd() +
-                    "... I have placed the full intelligence report and sources on screen."
-            }
-        }
+    if (cleaned.length <= 850) return cleaned
+    val window = cleaned.take(850)
+    val sentenceEnd = maxOf(
+        window.lastIndexOf(". "),
+        window.lastIndexOf("! "),
+        window.lastIndexOf("? ")
+    )
+    return if (sentenceEnd >= 420) {
+        window.take(sentenceEnd + 1) +
+            " I have placed the full intelligence report and sources on screen."
+    } else {
+        window.trimEnd() +
+            "... I have placed the full intelligence report and sources on screen."
     }
 }
