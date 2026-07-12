@@ -4,12 +4,18 @@ Jarvis is a phone-first Android AI assistant written in Kotlin. It combines a li
 
 ## Current Version
 
-**Phase 9.1: Android Execution Kernel Recovery**
-Version: `0.9.1-execution-kernel`
+**Phase 9.2A: Android Action Fabric Foundation**
+Version: `0.9.2-action-fabric`
 
-## What Phase 9.1 Fixes
+## What Phase 9.2A Adds
 
 - handles known phone actions locally before sending anything to the cloud
+
+- understands natural phrases such as `can you open Instagram for me` before cloud routing
+- returns typed, verified Android action states to the HUD
+- discovers launchable apps dynamically with aliases and typo-tolerant matching
+- answers time and date locally
+- paginates long command-stream responses instead of permanently truncating them
 - reads live battery state from Android's sticky battery broadcast
 - reads validated network state and transport type
 - controls the flashlight through the public camera torch API

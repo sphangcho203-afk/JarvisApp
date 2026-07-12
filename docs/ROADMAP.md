@@ -31,7 +31,14 @@
 
 ## Next
 
-### Phase 9.2 — Structured Tool Calling
+### Phase 9.2A — Android Action Fabric Foundation
+- natural local command normalization
+- dynamic app discovery and typo-tolerant matching
+- typed Android execution results
+- local time/date commands
+- paginated command stream
+
+### Phase 9.2B — Structured Cloud Tool Calling
 - cloud planner outputs typed tool requests
 - Android validates every request
 - deterministic execution and result reporting

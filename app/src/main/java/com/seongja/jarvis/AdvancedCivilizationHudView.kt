@@ -45,10 +45,11 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
             size = Random.nextFloat() * 1.8f + 0.5f
         )
     }
-    private val events = mutableListOf("PHASE 9.1 -> EXECUTION KERNEL READY")
+    private val events = mutableListOf("PHASE 9.2A -> ACTION FABRIC READY")
     private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss", Locale.US)
 
     private var lastResponse = "Neural command system standing by. Speak naturally."
+    private var lastResponseUpdatedAtMs = SystemClock.uptimeMillis()
     private var transcript = ""
     private var intent = "idle"
     private var confidence = 0f
@@ -110,7 +111,7 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
     }
 
     fun setTranscript(value: String) {
-        transcript = value.take(180)
+        transcript = value.take(MAX_STREAM_TEXT)
         invalidate()
     }
 
@@ -125,7 +126,8 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
 
     fun submitBrainResponse(response: BrainResponse) {
         commandCount++
-        lastResponse = response.display
+        lastResponse = response.display.take(MAX_STREAM_TEXT)
+        lastResponseUpdatedAtMs = SystemClock.uptimeMillis()
         intent = response.intent
         confidence = response.confidence
         mode = response.mode
@@ -621,8 +623,8 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
     private fun drawCommandDock(canvas: Canvas, t: Float) {
         val left = width * 0.045f
         val right = width * 0.955f
-        val top = height * 0.715f
-        val bottom = height * 0.93f
+        val top = height * 0.695f
+        val bottom = height * 0.94f
         val accent = modeColor()
         rect.set(left, top, right, bottom)
 
@@ -652,7 +654,7 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
         canvas.drawText("COMMAND STREAM", left + dp(14f), headerY, textPaint)
 
         textPaint.textAlign = Paint.Align.RIGHT
-        textPaint.textSize = sp(7.4f)
+        textPaint.textSize = sp(7.2f)
         textPaint.color = Color.argb(190, 140, 220, 230)
         canvas.drawText("TRACE ${trace.lastOrNull().orEmpty().take(27).uppercase(Locale.US)}", right - dp(14f), headerY, textPaint)
 
@@ -660,16 +662,39 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
         paint.color = Color.argb(75, 0, 230, 255)
         canvas.drawLine(left + dp(14f), top + dp(31f), right - dp(14f), top + dp(31f), paint)
 
+        val contentWidth = right - left - dp(28f)
         textPaint.textAlign = Paint.Align.LEFT
         textPaint.typeface = android.graphics.Typeface.MONOSPACE
-        textPaint.textSize = sp(8.1f)
+        textPaint.textSize = sp(7.9f)
         textPaint.color = Color.argb(235, 220, 250, 252)
         val transcriptText = transcript.ifBlank { "Speak naturally. No hold-to-talk control is active." }
-        drawWrappedText(canvas, "YOU  //  $transcriptText", left + dp(14f), top + dp(50f), right - left - dp(28f), 2, dp(15f), textPaint)
+        val transcriptLines = wrapTextLines("YOU  //  $transcriptText", contentWidth, textPaint)
+        transcriptLines.take(3).forEachIndexed { index, line ->
+            canvas.drawText(line, left + dp(14f), top + dp(49f) + index * dp(13.5f), textPaint)
+        }
+
+        val responseTop = top + dp(94f)
+        val responseBottom = bottom - dp(20f)
+        val lineHeight = dp(13.5f)
+        val linesPerPage = ((responseBottom - responseTop) / lineHeight).toInt().coerceAtLeast(3)
 
         textPaint.color = Color.argb(225, 175, 239, 246)
-        textPaint.textSize = sp(7.8f)
-        drawWrappedText(canvas, "JARVIS  //  $lastResponse", left + dp(14f), top + dp(88f), right - left - dp(28f), 4, dp(14f), textPaint)
+        textPaint.textSize = sp(7.7f)
+        val responseLines = wrapTextLines("JARVIS  //  $lastResponse", contentWidth, textPaint)
+        val pageCount = ((responseLines.size + linesPerPage - 1) / linesPerPage).coerceAtLeast(1)
+        val elapsed = (SystemClock.uptimeMillis() - lastResponseUpdatedAtMs).coerceAtLeast(0L)
+        val pageIndex = if (pageCount <= 1) 0 else ((elapsed / RESPONSE_PAGE_MS) % pageCount).toInt()
+        val pageLines = responseLines.drop(pageIndex * linesPerPage).take(linesPerPage)
+        pageLines.forEachIndexed { index, line ->
+            canvas.drawText(line, left + dp(14f), responseTop + index * lineHeight, textPaint)
+        }
+
+        if (pageCount > 1) {
+            textPaint.textAlign = Paint.Align.RIGHT
+            textPaint.textSize = sp(6.8f)
+            textPaint.color = Color.argb(185, 118, 205, 218)
+            canvas.drawText("RESPONSE PAGE ${pageIndex + 1}/$pageCount", right - dp(14f), bottom - dp(7f), textPaint)
+        }
 
         val pulseX = left + ((t * dp(52f)) % max(dp(1f), right - left))
         paint.style = Paint.Style.FILL
@@ -737,34 +762,27 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
         canvas.drawRoundRect(cx - barWidth / 2f, cy + dp(38f), cx - barWidth / 2f + barWidth * progress, cy + dp(38f) + barHeight, barHeight, barHeight, paint)
     }
 
-    private fun drawWrappedText(
-        canvas: Canvas,
-        text: String,
-        x: Float,
-        y: Float,
-        maxWidth: Float,
-        maxLines: Int,
-        lineHeight: Float,
-        painter: Paint
-    ) {
-        val words = text.replace('\n', ' ').split(Regex("\\s+")).filter { it.isNotBlank() }
-        val lines = mutableListOf<String>()
-        var line = ""
-        for (word in words) {
-            val candidate = if (line.isBlank()) word else "$line $word"
-            if (painter.measureText(candidate) <= maxWidth || line.isBlank()) {
-                line = candidate
-            } else {
-                lines += line
-                line = word
-                if (lines.size == maxLines - 1) break
+    private fun wrapTextLines(text: String, maxWidth: Float, painter: Paint): List<String> {
+        val output = mutableListOf<String>()
+        text.lines().forEach { paragraph ->
+            val words = paragraph.split(Regex("\\s+")).filter { it.isNotBlank() }
+            if (words.isEmpty()) {
+                output += ""
+                return@forEach
             }
+            var line = ""
+            words.forEach { word ->
+                val candidate = if (line.isBlank()) word else "$line $word"
+                if (painter.measureText(candidate) <= maxWidth || line.isBlank()) {
+                    line = candidate
+                } else {
+                    output += line
+                    line = word
+                }
+            }
+            if (line.isNotBlank()) output += line
         }
-        if (line.isNotBlank() && lines.size < maxLines) lines += line
-        lines.take(maxLines).forEachIndexed { index, value ->
-            val finalValue = if (index == maxLines - 1 && words.joinToString(" ").length > lines.joinToString(" ").length) "$value…" else value
-            canvas.drawText(finalValue, x, y + index * lineHeight, painter)
-        }
+        return output.ifEmpty { listOf("") }
     }
 
     private fun voiceLabel(): String = when (voiceState) {
@@ -817,5 +835,7 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
 
     companion object {
         private const val BOOT_SECONDS = 3.8f
+        private const val MAX_STREAM_TEXT = 12_000
+        private const val RESPONSE_PAGE_MS = 4_500L
     }
 }

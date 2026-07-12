@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.9.2 — Android Action Fabric Foundation
+
+- Added typed Android action results with success, permission, confirmation, and failure states.
+- Added natural command normalization for polite and conversational launch phrases.
+- Added local time and date responses.
+- Rebuilt installed-app resolution around a cached dynamic launcher registry, aliases, token matching, and typo tolerance.
+- Removed the hardcoded package map from the compatibility action router.
+- Routed web actions through the same verified Android navigation layer.
+- Reworked the command stream to preserve long responses and automatically paginate them instead of discarding text.
+- Bumped the application version to `0.9.2-action-fabric`.
+
 ## 0.9.1 — Android Execution Kernel Recovery
 
 - Added a deterministic Android command router that runs before cloud reasoning.

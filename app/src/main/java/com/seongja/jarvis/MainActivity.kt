@@ -13,6 +13,7 @@ import android.speech.tts.TextToSpeech
 import android.speech.tts.UtteranceProgressListener
 import android.view.View
 import android.view.WindowManager
+import com.jarvis.core.device.DeviceActionStatus
 import com.jarvis.core.device.DeviceCommandRouter
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
@@ -60,7 +61,7 @@ class MainActivity : Activity() {
         )
 
         setContentView(hud)
-        hud.pushEvent("PHASE 9.1 -> EXECUTION KERNEL RECOVERY")
+        hud.pushEvent("PHASE 9.2A -> ANDROID ACTION FABRIC")
         hud.pushEvent("LOCAL SERVER BRAIN -> PERMANENTLY REMOVED")
         hud.pushEvent("GEMINI NODES -> 6 // GROQ NODES -> 4")
         hud.pushEvent("VOICE -> DIRECT LISTENING; NO HOLD CONTROL")
@@ -212,14 +213,28 @@ class MainActivity : Activity() {
             return
         }
 
-        val deviceResponse = deviceCommandRouter.execute(clean)
-        if (deviceResponse != null) {
+        val deviceResult = deviceCommandRouter.executeDetailed(clean)
+        if (deviceResult != null) {
+            val mode = if (deviceResult.status == DeviceActionStatus.FAILED) {
+                BrainMode.ALERT
+            } else {
+                BrainMode.EXECUTING
+            }
+            hud.pushEvent(
+                "ACTION -> ${deviceResult.actionId.uppercase(Locale.US)} ${deviceResult.status.name}"
+            )
             finishLocalCommand(
-                spoken = deviceResponse,
-                display = deviceResponse,
-                intent = "device_command",
-                mode = BrainMode.EXECUTING,
-                trace = listOf("android_router", "user_visible_intent")
+                spoken = deviceResult.spoken,
+                display = buildString {
+                    appendLine(deviceResult.spoken)
+                    appendLine()
+                    append("ACTION ${deviceResult.actionId.uppercase(Locale.US)} // ")
+                    append(deviceResult.status.name)
+                    append(" // ${deviceResult.latencyMs}ms")
+                },
+                intent = "device/${deviceResult.actionId}",
+                mode = mode,
+                trace = deviceResult.trace
             )
             return
         }

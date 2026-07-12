@@ -7,16 +7,20 @@ import android.hardware.camera2.CameraManager
 import android.media.AudioManager
 import android.net.Uri
 import android.os.Build
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.KeyEvent
+import java.time.LocalDate
+import java.time.LocalTime
+import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 /**
  * Deterministic Android execution kernel.
  *
- * Device actions are handled here before any cloud request. Direct actions are
- * executed only through public Android APIs. Controls that Android reserves for
- * the user or privileged system apps open the smallest official system panel.
+ * Local commands execute before cloud reasoning. Every handled command also
+ * produces a typed result so the HUD can distinguish success, permission,
+ * confirmation, and failure instead of trusting free-form model language.
  */
 class DeviceCommandRouter(context: Context) {
 
@@ -30,37 +34,57 @@ class DeviceCommandRouter(context: Context) {
     @Volatile
     private var torchEnabledByJarvis = false
 
-    fun execute(command: String): String? {
-        val normalized = normalize(command)
+    fun execute(command: String): String? = executeDetailed(command)?.spoken
+
+    fun executeDetailed(command: String): DeviceActionResult? {
+        val started = SystemClock.elapsedRealtime()
+        val normalized = normalizeNaturalCommand(command)
         if (normalized.isBlank()) return null
 
-        capabilityCommand(normalized)?.let { return it }
-        batteryCommand(normalized)?.let { return it }
-        networkStatusCommand(normalized)?.let { return it }
-        flashlightCommand(normalized)?.let { return it }
-        volumeCommand(normalized)?.let { return it }
-        mediaCommand(normalized)?.let { return it }
-        brightnessCommand(normalized)?.let { return it }
-        rotationCommand(normalized)?.let { return it }
-        spotifyCommand(command, normalized)?.let { return it }
-        youtubeCommand(command, normalized)?.let { return it }
-        settingsCommand(normalized)?.let { return it }
+        val spoken = executeNormalized(normalized) ?: return null
+        val status = resultStatus(spoken)
+        val actionId = inferActionId(normalized)
+        return DeviceActionResult(
+            actionId = actionId,
+            target = inferTarget(normalized, actionId),
+            status = status,
+            spoken = spoken,
+            latencyMs = (SystemClock.elapsedRealtime() - started).coerceAtLeast(0L),
+            trace = listOf(
+                "android_action_fabric",
+                "natural_command_normalized",
+                "action=$actionId",
+                "status=${status.name.lowercase(Locale.US)}"
+            )
+        )
+    }
+
+    private fun executeNormalized(command: String): String? {
+        capabilityCommand(command)?.let { return it }
+        timeCommand(command)?.let { return it }
+        dateCommand(command)?.let { return it }
+        batteryCommand(command)?.let { return it }
+        networkStatusCommand(command)?.let { return it }
+        flashlightCommand(command)?.let { return it }
+        volumeCommand(command)?.let { return it }
+        mediaCommand(command)?.let { return it }
+        brightnessCommand(command)?.let { return it }
+        rotationCommand(command)?.let { return it }
+        spotifyCommand(command)?.let { return it }
+        youtubeCommand(command)?.let { return it }
+        settingsCommand(command)?.let { return it }
 
         return when {
-            isExplicitWebCommand(normalized) -> {
-                webNavigator.describe(webNavigator.browse(normalized))
-            }
-
-            isOpenCommand(normalized) -> {
-                val target = removeOpenPrefix(normalized)
+            isExplicitWebCommand(command) -> webNavigator.describe(webNavigator.browse(command))
+            isOpenCommand(command) -> {
+                val target = removeOpenPrefix(command)
                 if (looksLikeWebsite(target)) {
                     webNavigator.describe(webNavigator.openWebsite(target))
                 } else {
                     appLauncher.describe(appLauncher.openApp(target))
                 }
             }
-
-            else -> tryBareAppName(normalized)
+            else -> tryBareAppName(command)
         }
     }
 
@@ -70,7 +94,37 @@ class DeviceCommandRouter(context: Context) {
             command == "what can you control" ||
             command == "what can you do on my phone"
         if (!matches) return null
-        return "Android execution kernel online. I can control the flashlight, media playback, media volume, brightness and rotation after permission, read live battery and network state, open apps and web searches, search Spotify and YouTube, run timers, and open protected Android control panels."
+        return "Android action fabric online. I can launch installed apps, browse and search, report time, date, battery and network state, control the flashlight, media, volume, brightness and rotation where Android permits it, operate timers, and open protected system control panels when confirmation is required."
+    }
+
+    private fun timeCommand(command: String): String? {
+        val matches = command in setOf(
+            "time",
+            "current time",
+            "tell me the time",
+            "what time is it",
+            "what is the time",
+            "whats the time",
+            "give me the time"
+        ) || command.contains("current time")
+        if (!matches) return null
+        val formatted = LocalTime.now().format(DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault()))
+        return "It is $formatted, Sir."
+    }
+
+    private fun dateCommand(command: String): String? {
+        val matches = command in setOf(
+            "date",
+            "current date",
+            "todays date",
+            "what date is it",
+            "what is todays date",
+            "what day is it",
+            "tell me the date"
+        )
+        if (!matches) return null
+        val formatted = LocalDate.now().format(DateTimeFormatter.ofPattern("EEEE, d MMMM yyyy", Locale.getDefault()))
+        return "Today is $formatted, Sir."
     }
 
     private fun batteryCommand(command: String): String? {
@@ -79,7 +133,8 @@ class DeviceCommandRouter(context: Context) {
             command == "battery level" ||
             command.contains("how much battery") ||
             command.contains("battery percentage") ||
-            command.contains("what is my battery")
+            command.contains("what is my battery") ||
+            command.contains("check my battery")
         return if (matches) telemetry.battery().spoken() else null
     }
 
@@ -88,7 +143,8 @@ class DeviceCommandRouter(context: Context) {
             command == "internet status" ||
             command == "am i online" ||
             command == "are we online" ||
-            command.contains("check internet connection")
+            command.contains("check internet connection") ||
+            command.contains("check my internet")
         return if (matches) telemetry.network().spoken() else null
     }
 
@@ -99,9 +155,7 @@ class DeviceCommandRouter(context: Context) {
         return when {
             containsOff(command) -> setTorch(false)
             containsOn(command) -> setTorch(true)
-            command.startsWith("toggle ") || command == "flashlight" || command == "torch" -> {
-                setTorch(!torchEnabledByJarvis)
-            }
+            command.startsWith("toggle ") || command == "flashlight" || command == "torch" -> setTorch(!torchEnabledByJarvis)
             else -> null
         }
     }
@@ -252,13 +306,13 @@ class DeviceCommandRouter(context: Context) {
         return if (enabled) "Auto-rotate enabled." else "Auto-rotate disabled."
     }
 
-    private fun spotifyCommand(raw: String, command: String): String? {
+    private fun spotifyCommand(command: String): String? {
         if (!command.contains("spotify")) return null
         if (isOpenCommand(command) || command == "spotify") {
             return appLauncher.describe(appLauncher.openApp("spotify"))
         }
 
-        val query = extractServiceQuery(raw, "spotify") ?: return null
+        val query = extractServiceQuery(command, "spotify") ?: return null
         val encoded = Uri.encode(query)
         val appIntent = Intent(Intent.ACTION_VIEW, Uri.parse("spotify:search:$encoded")).apply {
             setPackage("com.spotify.music")
@@ -270,23 +324,18 @@ class DeviceCommandRouter(context: Context) {
         }.getOrDefault(false)
 
         if (!opened) {
-            openIntent(
-                Intent(
-                    Intent.ACTION_VIEW,
-                    Uri.parse("https://open.spotify.com/search/$encoded")
-                )
-            )
+            openIntent(Intent(Intent.ACTION_VIEW, Uri.parse("https://open.spotify.com/search/$encoded")))
         }
         return "Opening Spotify search for $query."
     }
 
-    private fun youtubeCommand(raw: String, command: String): String? {
+    private fun youtubeCommand(command: String): String? {
         if (!command.contains("youtube")) return null
         if (isOpenCommand(command) || command == "youtube") {
             return appLauncher.describe(appLauncher.openApp("youtube"))
         }
 
-        val query = extractServiceQuery(raw, "youtube") ?: return null
+        val query = extractServiceQuery(command, "youtube") ?: return null
         val target = "https://www.youtube.com/results?search_query=${Uri.encode(query)}"
         openIntent(Intent(Intent.ACTION_VIEW, Uri.parse(target)))
         return "Opening YouTube results for $query."
@@ -386,10 +435,31 @@ class DeviceCommandRouter(context: Context) {
 
     private fun tryBareAppName(command: String): String? {
         if (command.length > 48 || command.split(" ").size > 4) return null
+        if (QUESTION_PREFIXES.any(command::startsWith)) return null
         return when (val result = appLauncher.openApp(command)) {
             is AppLauncher.LaunchResult.NotFound -> null
             else -> appLauncher.describe(result)
         }
+    }
+
+    private fun normalizeNaturalCommand(value: String): String {
+        var command = normalize(value)
+        command = command.replace(Regex("^(?:hey\\s+)?jarvis\\s+"), "")
+
+        var changed: Boolean
+        do {
+            val before = command
+            command = command
+                .replace(Regex("^(?:please|kindly)\\s+"), "")
+                .replace(Regex("^(?:can|could|would|will)\\s+(?:you|u)\\s+"), "")
+                .replace(Regex("^(?:i\\s+want\\s+you\\s+to|i\\s+need\\s+you\\s+to)\\s+"), "")
+            changed = command != before
+        } while (changed)
+
+        command = command
+            .replace(Regex("\\s+(?:for me|right now|now please|please)$"), "")
+            .trim()
+        return command
     }
 
     private fun isExplicitWebCommand(command: String): Boolean =
@@ -397,18 +467,63 @@ class DeviceCommandRouter(context: Context) {
             command.startsWith("browse for ") ||
             command.startsWith("search ") ||
             command.startsWith("search for ") ||
-            command.startsWith("look up ")
+            command.startsWith("look up ") ||
+            command.startsWith("google ")
 
-    private fun isOpenCommand(command: String): Boolean =
-        command.startsWith("open ") ||
-            command.startsWith("launch ") ||
-            command.startsWith("start ")
+    private fun isOpenCommand(command: String): Boolean = OPEN_PATTERN.matches(command)
 
-    private fun removeOpenPrefix(command: String): String = command
-        .removePrefix("open ")
-        .removePrefix("launch ")
-        .removePrefix("start ")
-        .trim()
+    private fun removeOpenPrefix(command: String): String = OPEN_PATTERN
+        .find(command)
+        ?.groupValues
+        ?.getOrNull(1)
+        ?.trim()
+        ?.replace(Regex("^(?:the)\\s+"), "")
+        ?.replace(Regex("\\s+(?:application|app)$"), "")
+        .orEmpty()
+
+    private fun inferActionId(command: String): String = when {
+        timeCommand(command) != null -> "read_time"
+        dateCommand(command) != null -> "read_date"
+        command.contains("battery") -> "read_battery"
+        command.contains("network") || command.contains("internet status") -> "read_network"
+        command.contains("flashlight") || command.contains("torch") -> "flashlight"
+        command.contains("brightness") -> "brightness"
+        command.contains("auto rotate") || command.contains("screen rotation") -> "rotation"
+        command.contains("volume") || command in setOf("mute", "unmute", "louder", "quieter") -> "media_volume"
+        command.contains("spotify") -> "spotify"
+        command.contains("youtube") -> "youtube"
+        command.contains("wifi") || command.contains("mobile data") || command.contains("bluetooth") ||
+            command.contains("location") || command.contains("airplane mode") || command.contains("hotspot") ||
+            command.contains("nfc") || command.contains("battery saver") || command.contains("do not disturb") -> "system_panel"
+        isExplicitWebCommand(command) -> "web_search"
+        isOpenCommand(command) -> if (looksLikeWebsite(removeOpenPrefix(command))) "open_website" else "open_app"
+        else -> "open_app"
+    }
+
+    private fun inferTarget(command: String, actionId: String): String = when (actionId) {
+        "open_app", "open_website" -> removeOpenPrefix(command)
+        "spotify" -> "spotify"
+        "youtube" -> "youtube"
+        "flashlight" -> "flashlight"
+        "brightness" -> "screen"
+        "rotation" -> "screen"
+        "media_volume" -> "media"
+        "read_battery" -> "battery"
+        "read_network" -> "network"
+        "read_time" -> "clock"
+        "read_date" -> "calendar"
+        else -> command.take(80)
+    }
+
+    private fun resultStatus(spoken: String): DeviceActionStatus {
+        val lower = spoken.lowercase(Locale.US)
+        return when {
+            "one-time permission" in lower || "permission screen" in lower -> DeviceActionStatus.PERMISSION_REQUIRED
+            "requires one tap" in lower || "requires confirmation" in lower || "controls opened" in lower -> DeviceActionStatus.USER_CONFIRMATION_REQUIRED
+            "couldn't" in lower || "did not expose" in lower || "unavailable" in lower || "could not" in lower -> DeviceActionStatus.FAILED
+            else -> DeviceActionStatus.SUCCESS
+        }
+    }
 
     private fun looksLikeWebsite(value: String): Boolean =
         value.startsWith("http://") ||
@@ -424,7 +539,17 @@ class DeviceCommandRouter(context: Context) {
 
     private fun normalize(value: String): String = value
         .lowercase(Locale.getDefault())
+        .replace("what's", "whats")
         .replace(Regex("[^a-z0-9%:/._ -]"), " ")
         .replace(Regex("\\s+"), " ")
         .trim()
+
+    companion object {
+        private val OPEN_PATTERN = Regex(
+            "^(?:open(?: up)?|launch|start|run|bring up|take me to|go to)\\s+(.+)$"
+        )
+        private val QUESTION_PREFIXES = listOf(
+            "what ", "why ", "how ", "when ", "where ", "who ", "tell me ", "explain ", "is ", "are "
+        )
+    }
 }
