@@ -16,11 +16,8 @@ class GroqWebResearchClient(private val store: SecureCortexRegistry) {
         private const val CONNECT_TIMEOUT_MS = 10_000
         private const val READ_TIMEOUT_MS = 45_000
         private const val MAX_SOURCES = 10
+        private const val MAX_REQUEST_BYTES = 8_192
         private const val ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
-        private const val RESEARCH_SYSTEM_PROMPT =
-            "You are Jarvis's live web intelligence engine. Use web search for time-sensitive facts. " +
-                "Prefer authoritative primary sources and reputable reporting. Cross-check important claims. " +
-                "State uncertainty, avoid sensationalism, distinguish facts from analysis, and never claim that stale model memory is live evidence."
     }
 
     fun isConfigured(): Boolean = bestProfile() != null
@@ -32,33 +29,92 @@ class GroqWebResearchClient(private val store: SecureCortexRegistry) {
             )
 
         val worldBrief = WebResearchIntent.isWorldBrief(userInput)
-        val model = if (worldBrief || isDeepResearch(userInput)) {
+        val primaryModel = if (worldBrief || isDeepResearch(userInput)) {
             "groq/compound"
         } else {
             "groq/compound-mini"
         }
 
-        val requestBody = JSONObject().apply {
+        val primaryPrompt = buildResearchPrompt(
+            userInput = userInput,
+            memoryContext = memoryContext,
+            worldBrief = worldBrief
+        )
+
+        val primary = request(profile, primaryModel, primaryPrompt)
+        if (primary.statusCode != 413) return primary.toResult(profile.label)
+
+        // A 413 means Groq rejected the request body size. Retry with the exact
+        // minimal one-message shape from Groq's Compound quickstart.
+        val compactPrompt = buildCompactPrompt(userInput, worldBrief)
+        val retry = request(profile, "groq/compound-mini", compactPrompt)
+        if (retry.statusCode == 413) {
+            throw WebResearchException(
+                "Groq rejected both compact research requests as too large " +
+                    "(${retry.requestBytes} bytes on retry)."
+            )
+        }
+        if (retry.statusCode !in 200..299) {
+            throw WebResearchException(
+                "Groq live research failed after compact retry: ${retry.errorMessage}"
+            )
+        }
+        return retry.toResult(profile.label)
+    }
+
+    private data class RequestResult(
+        val answer: String,
+        val sources: List<WebSource>,
+        val searchQueries: List<String>,
+        val model: String,
+        val statusCode: Int,
+        val elapsedMs: Long,
+        val requestBytes: Int,
+        val errorMessage: String
+    ) {
+        fun toResult(profileLabel: String): WebResearchResult {
+            if (statusCode !in 200..299) {
+                throw WebResearchException("Groq live research failed: $errorMessage")
+            }
+            if (answer.isBlank()) {
+                throw WebResearchException("Groq live research returned an empty answer.")
+            }
+            return WebResearchResult(
+                answer = answer,
+                spokenSummary = createSpokenSummary(answer),
+                sources = sources.take(MAX_SOURCES),
+                searchQueries = searchQueries,
+                model = model,
+                profileLabel = profileLabel,
+                statusCode = statusCode,
+                elapsedMs = elapsedMs
+            )
+        }
+    }
+
+    private fun request(
+        profile: CortexProfile,
+        model: String,
+        prompt: String
+    ): RequestResult {
+        val body = JSONObject().apply {
             put("model", model)
             put(
                 "messages",
-                JSONArray().apply {
-                    put(JSONObject().apply {
-                        put("role", "system")
-                        put("content", RESEARCH_SYSTEM_PROMPT)
-                    })
-                    put(JSONObject().apply {
+                JSONArray().put(
+                    JSONObject().apply {
                         put("role", "user")
-                        put(
-                            "content",
-                            buildResearchPrompt(
-                                userInput = userInput,
-                                memoryContext = memoryContext,
-                                worldBrief = worldBrief
-                            )
-                        )
-                    })
-                }
+                        put("content", prompt)
+                    }
+                )
+            )
+        }.toString()
+
+        val payload = body.toByteArray(Charsets.UTF_8)
+        if (payload.size > MAX_REQUEST_BYTES) {
+            throw WebResearchException(
+                "Jarvis blocked an oversized research request before transmission " +
+                    "(${payload.size} bytes)."
             )
         }
 
@@ -69,15 +125,16 @@ class GroqWebResearchClient(private val store: SecureCortexRegistry) {
             readTimeout = READ_TIMEOUT_MS
             doOutput = true
             useCaches = false
+            setFixedLengthStreamingMode(payload.size)
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
             setRequestProperty("Accept", "application/json")
-            setRequestProperty("Authorization", "Bearer ${profile.apiKey}")
+            setRequestProperty("Authorization", "Bearer ${profile.apiKey.trim()}")
             setRequestProperty("User-Agent", "Jarvis-Android/0.9.3")
         }
 
         try {
             connection.outputStream.use { stream ->
-                stream.write(requestBody.toString().toByteArray(Charsets.UTF_8))
+                stream.write(payload)
                 stream.flush()
             }
 
@@ -86,29 +143,33 @@ class GroqWebResearchClient(private val store: SecureCortexRegistry) {
             val elapsed = System.currentTimeMillis() - started
 
             if (status !in 200..299) {
-                val message = extractApiError(raw).ifBlank { "HTTP $status" }
-                throw WebResearchException("Groq live research failed: $message")
+                return RequestResult(
+                    answer = "",
+                    sources = emptyList(),
+                    searchQueries = emptyList(),
+                    model = model,
+                    statusCode = status,
+                    elapsedMs = elapsed,
+                    requestBytes = payload.size,
+                    errorMessage = extractApiError(raw).ifBlank { "HTTP $status" }
+                )
             }
 
             val parsed = parseResponse(raw)
-            if (parsed.answer.isBlank()) {
-                throw WebResearchException("Groq live research returned an empty answer.")
-            }
-
-            return WebResearchResult(
+            return RequestResult(
                 answer = parsed.answer,
-                spokenSummary = createSpokenSummary(parsed.answer),
-                sources = parsed.sources.take(MAX_SOURCES),
+                sources = parsed.sources,
                 searchQueries = parsed.searchQueries,
                 model = model,
-                profileLabel = profile.label,
                 statusCode = status,
-                elapsedMs = elapsed
+                elapsedMs = elapsed,
+                requestBytes = payload.size,
+                errorMessage = ""
             )
-        } catch (error: WebResearchException) {
-            throw error
         } catch (error: SocketTimeoutException) {
             throw WebResearchException("Live web research timed out. Please try again.")
+        } catch (error: WebResearchException) {
+            throw error
         } catch (error: Exception) {
             throw WebResearchException(
                 "Live web research failed: ${error.message ?: error.javaClass.simpleName}"
@@ -144,33 +205,32 @@ class GroqWebResearchClient(private val store: SecureCortexRegistry) {
         memoryContext: String,
         worldBrief: Boolean
     ): String = buildString {
-        appendLine("Current device time: ${ZonedDateTime.now()}")
-        appendLine("Operator request: $userInput")
+        appendLine("Time: ${ZonedDateTime.now()}")
+        appendLine("Request: ${userInput.take(1_200)}")
         appendLine()
 
         if (worldBrief) {
-            appendLine("Create a WORLD INTELLIGENCE BRIEF using current web-search results.")
-            appendLine("Choose five to seven genuinely important global developments, not filler.")
-            appendLine("For each item include: WHAT HAPPENED, WHY IT MATTERS, and WHAT TO WATCH NEXT.")
-            appendLine("Cover geopolitics, economy, science and technology, climate or disasters, and health only when significant.")
-            appendLine("Use exact dates and distinguish confirmed facts, disputed claims, and uncertainty.")
-            appendLine("End with a compact OVERALL ASSESSMENT.")
+            appendLine("Use live web search. Create a world intelligence brief with 5-7 important developments.")
+            appendLine("For each: WHAT HAPPENED, WHY IT MATTERS, WHAT TO WATCH NEXT.")
+            appendLine("Use exact dates, distinguish facts from uncertainty, and keep citations.")
         } else {
-            appendLine("Research this request using current web results whenever useful.")
-            appendLine("Answer directly, explain it in plain language, and break complex information into clear sections.")
-            appendLine("Use exact dates for time-sensitive claims and compare multiple reliable sources when possible.")
-            appendLine("If credible sources disagree, describe the disagreement instead of choosing silently.")
+            appendLine("Use live web search when needed. Answer directly in clear sections.")
+            appendLine("Cross-check important claims, use exact dates, and keep citations.")
         }
 
-        appendLine("Keep citations supplied by the research system in the answer.")
-        appendLine("Do not invent facts, URLs, quotations, or access to private or paywalled material.")
-        appendLine("Keep the answer information-dense and readable on a phone.")
-
+        appendLine("Never invent facts, URLs, quotes, or access to private content.")
         if (memoryContext.isNotBlank()) {
-            appendLine()
-            appendLine("Relevant operator context, use only when useful:")
-            appendLine(memoryContext.take(2_500))
+            appendLine("Relevant operator context: ${memoryContext.take(500)}")
         }
+    }.take(3_500)
+
+    private fun buildCompactPrompt(userInput: String, worldBrief: Boolean): String {
+        val instruction = if (worldBrief) {
+            "Use web search. Give a concise current world briefing with exact dates and citations."
+        } else {
+            "Use web search. Answer with current facts, exact dates, and citations."
+        }
+        return "$instruction\nQuestion: ${userInput.take(700)}"
     }
 
     private data class ParsedResponse(
@@ -181,9 +241,9 @@ class GroqWebResearchClient(private val store: SecureCortexRegistry) {
 
     private fun parseResponse(raw: String): ParsedResponse {
         val root = JSONObject(raw)
-        val choices = root.optJSONArray("choices")
-            ?: throw WebResearchException("No response choice was returned by Groq.")
-        val message = choices.optJSONObject(0)?.optJSONObject("message")
+        val message = root.optJSONArray("choices")
+            ?.optJSONObject(0)
+            ?.optJSONObject("message")
             ?: throw WebResearchException("No response message was returned by Groq.")
 
         val answer = message.optString("content").trim()
@@ -210,8 +270,7 @@ class GroqWebResearchClient(private val store: SecureCortexRegistry) {
         listOf("query", "search_query", "q").forEach { key ->
             value.optString(key).trim().takeIf { it.isNotBlank() }?.let(output::add)
         }
-        val arguments = value.optJSONObject("arguments")
-        if (arguments != null) {
+        value.optJSONObject("arguments")?.let { arguments ->
             listOf("query", "search_query", "q").forEach { key ->
                 arguments.optString(key).trim().takeIf { it.isNotBlank() }?.let(output::add)
             }
@@ -226,8 +285,7 @@ class GroqWebResearchClient(private val store: SecureCortexRegistry) {
         when (value) {
             is JSONObject -> {
                 collectQuery(value, queries)
-                val results = value.optJSONArray("results")
-                if (results != null) collectResultArray(results, sources)
+                value.optJSONArray("results")?.let { collectResultArray(it, sources) }
             }
             is JSONArray -> collectResultArray(value, sources)
         }
@@ -243,28 +301,6 @@ class GroqWebResearchClient(private val store: SecureCortexRegistry) {
         }
     }
 
-    private fun createSpokenSummary(answer: String): String {
-        val cleaned = answer
-            .replace(Regex("https?://\\S+"), "")
-            .replace(Regex("(?m)^#{1,6}\\s*"), "")
-            .replace("**", "")
-            .replace(Regex("\\s+"), " ")
-            .trim()
-
-        if (cleaned.length <= 850) return cleaned
-        val window = cleaned.take(850)
-        val sentenceEnd = maxOf(
-            window.lastIndexOf(". "),
-            window.lastIndexOf("! "),
-            window.lastIndexOf("? ")
-        )
-        return if (sentenceEnd >= 420) {
-            window.take(sentenceEnd + 1) + " I have placed the full intelligence report and sources on screen."
-        } else {
-            window.trimEnd() + "... I have placed the full intelligence report and sources on screen."
-        }
-    }
-
     private fun readResponse(connection: HttpURLConnection, status: Int): String {
         val stream = if (status in 200..299) connection.inputStream else connection.errorStream
         if (stream == null) return ""
@@ -276,4 +312,30 @@ class GroqWebResearchClient(private val store: SecureCortexRegistry) {
         root.optJSONObject("error")?.optString("message")
             ?: root.optString("message")
     }.getOrNull().orEmpty()
+
+    private companion object SpokenSummary {
+        fun createSpokenSummary(answer: String): String {
+            val cleaned = answer
+                .replace(Regex("https?://\\S+"), "")
+                .replace(Regex("(?m)^#{1,6}\\s*"), "")
+                .replace("**", "")
+                .replace(Regex("\\s+"), " ")
+                .trim()
+
+            if (cleaned.length <= 850) return cleaned
+            val window = cleaned.take(850)
+            val sentenceEnd = maxOf(
+                window.lastIndexOf(". "),
+                window.lastIndexOf("! "),
+                window.lastIndexOf("? ")
+            )
+            return if (sentenceEnd >= 420) {
+                window.take(sentenceEnd + 1) +
+                    " I have placed the full intelligence report and sources on screen."
+            } else {
+                window.trimEnd() +
+                    "... I have placed the full intelligence report and sources on screen."
+            }
+        }
+    }
 }
