@@ -100,6 +100,10 @@ class GeminiWebResearchClient(private val store: SecureCortexRegistry) {
         private const val CONNECT_TIMEOUT_MS = 10_000
         private const val READ_TIMEOUT_MS = 35_000
         private const val MAX_SOURCES = 8
+        private const val RESEARCH_SYSTEM_PROMPT =
+            "You are Jarvis's live web intelligence engine. Ground time-sensitive claims in Google Search. " +
+                "Prefer authoritative primary sources and reputable reporting. Never pretend that model memory is live web evidence. " +
+                "State uncertainty, avoid sensationalism, and separate facts from analysis."
     }
 
     fun isConfigured(): Boolean = bestProfile() != null
@@ -353,11 +357,4 @@ class GeminiWebResearchClient(private val store: SecureCortexRegistry) {
         root.optJSONObject("error")?.optString("message")
             ?: root.optString("message")
     }.getOrNull().orEmpty()
-
-    private companion object Prompt {
-        const val RESEARCH_SYSTEM_PROMPT =
-            "You are Jarvis's live web intelligence engine. Ground time-sensitive claims in Google Search. " +
-                "Prefer authoritative primary sources and reputable reporting. Never pretend that model memory is live web evidence. " +
-                "State uncertainty, avoid sensationalism, and separate facts from analysis."
-    }
 }
