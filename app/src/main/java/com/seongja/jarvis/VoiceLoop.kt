@@ -28,7 +28,7 @@ class VoiceLoop(
     private var listening = false
     private var starting = false
     private var paused = false
-    private var forceSystemRecognizer = false
+    private var forceSystemRecognizer = true
     private var busyCount = 0
     private var generation = 0
 
@@ -165,11 +165,11 @@ class VoiceLoop(
 
     private fun recognitionIntent(): Intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
         putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.US.toLanguageTag())
-        putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, Locale.US.toLanguageTag())
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
+        putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, Locale.getDefault().toLanguageTag())
         putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
         putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
-        putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+        putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false)
         putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 900L)
         putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 650L)
     }
@@ -191,7 +191,7 @@ class VoiceLoop(
 
     override fun onRmsChanged(rmsdB: Float) {
         if (paused || destroyed) return
-        val normalized = ((rmsdB + 2f) / 12f).coerceIn(0f, 1f)
+        val normalized = ((rmsdB + 12f) / 24f).coerceIn(0f, 1f)
         onRms(normalized)
     }
     override fun onBufferReceived(buffer: ByteArray?) = Unit
