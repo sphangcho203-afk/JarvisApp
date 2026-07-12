@@ -9,7 +9,7 @@ class JarvisBrain(context: Context) {
     private val router = ActionRouter(appContext)
     private val registryStore = SecureCortexRegistry(appContext)
     private val cortexMesh = CortexMeshClient(registryStore)
-    private val webResearch = GeminiWebResearchClient(registryStore)
+    private val webResearch = GroqWebResearchClient(registryStore)
 
     fun isCloudConfigured(): Boolean = registryStore.load().configuredProfiles().isNotEmpty()
 
@@ -91,7 +91,7 @@ class JarvisBrain(context: Context) {
             trace = listOf(
                 "android_speech_recognizer",
                 "route=live_web_research",
-                "provider=Gemini Google Search grounding",
+                "provider=Groq Compound web search",
                 "node=${result.profileLabel}",
                 "model=${result.model}",
                 "queries=${result.searchQueries.size}",
@@ -102,11 +102,11 @@ class JarvisBrain(context: Context) {
             memory = memory.summary(),
             thoughts = listOf(
                 "This request required current or externally verified information.",
-                "Jarvis used Google Search grounding through the configured Gemini cortex node.",
+                "Jarvis used Groq Compound with server-side web search.",
                 "The detailed answer and returned sources are displayed on screen."
             ),
             entities = buildList {
-                add("source=google_search_grounding")
+                add("source=groq_compound_web_search")
                 add("node=${result.profileLabel}")
                 add("model=${result.model}")
                 add("sources=${result.sources.size}")
@@ -237,7 +237,7 @@ class JarvisBrain(context: Context) {
         val researchReady = webResearch.isConfigured()
         val summary = buildString {
             appendLine("CORTEX MESH // CONFIGURED ${configured.size}/10 // ONLINE $online // COOLDOWN $cooling")
-            appendLine("WORLD INTELLIGENCE // ${if (researchReady) "READY" else "NEEDS GEMINI NODE"}")
+            appendLine("WORLD INTELLIGENCE // ${if (researchReady) "READY" else "NEEDS GROQ NODE"}")
             configured.forEach { appendLine("${it.label} // ${it.provider.displayName} // ${it.healthLabel()}") }
         }.trim()
 
@@ -249,7 +249,7 @@ class JarvisBrain(context: Context) {
     }
 
     private fun configurationRequiredResponse(): BrainResponse = BrainResponse(
-        spoken = "The cortex mesh is not configured, Sir. Say configure APIs to open the ten-node setup.",
+        spoken = "The cortex mesh is not configured, Sir. Say configure APIs to add a Groq node.",
         display = "CORTEX MESH CONFIGURATION REQUIRED\nSay: configure APIs",
         intent = "cortex_config_required",
         confidence = 1f,
@@ -258,7 +258,7 @@ class JarvisBrain(context: Context) {
         memory = memory.summary(),
         thoughts = listOf(
             "No local server was contacted.",
-            "At least one Gemini or Groq node needs a model ID and encrypted key."
+            "At least one Groq node needs a model ID and encrypted key."
         ),
         entities = listOf("mesh=not_configured", "local_server=disabled"),
         decision = "request_cortex_configuration",
