@@ -1,16 +1,16 @@
-# Phase 9 Validation Report
+# Phase 9.1 Validation Report
 
 ## Passed
 
-- Cortex task classifier compiled and classified coding and reasoning test prompts correctly.
-- Provider scoring compiled and returned finite bounded utility values.
-- Cortex models, transport client, secure registry, setup interface, and Jarvis brain passed isolated Kotlin compilation checks against Android-compatible stubs.
-- The secure registry normalizes exactly six Gemini and four Groq slots.
-- Localhost endpoints are absent from the Phase 9 transport path.
-- Provider endpoints are fixed HTTPS constants.
-- Authentication, rate-limit, server, timeout, and general network failure paths have distinct handling.
+- Device telemetry and execution-router Kotlin components compiled against Android-compatible stubs.
+- Main activity watchdog, request-generation, and speech-output recovery logic compiled against Android-compatible stubs.
+- Voice-loop start and result watchdog logic compiled against Android-compatible stubs.
+- Cortex mesh transport changes compiled against Android-compatible stubs.
+- The countdown visibility modifier remains `internal` and does not expose an internal type through a public API.
 - Android manifest XML parses correctly.
-- No API keys or provider secrets are included.
+- Provider endpoints remain fixed HTTPS constants.
+- No API keys, provider secrets, localhost endpoints, or Termux brain routes are included.
+- Modified text files pass trailing-whitespace checks.
 
 ## Build Metadata
 
@@ -18,7 +18,7 @@
 - Target SDK: 35
 - Minimum SDK: 26
 - Java/Kotlin JVM target: 17
-- Version: `0.9.0-cortex-mesh`
+- Version: `0.9.1-execution-kernel`
 
 ## Final Build
 

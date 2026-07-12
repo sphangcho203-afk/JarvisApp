@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.9.1 — Android Execution Kernel Recovery
+
+- Added a deterministic Android command router that runs before cloud reasoning.
+- Added direct flashlight control through CameraManager torch mode.
+- Added media playback keys, media-volume adjustment, mute, and exact percentage control.
+- Added brightness and auto-rotate controls with one-time Android system-settings permission.
+- Added official Android panels for protected Wi-Fi, mobile-data, Bluetooth, location, airplane-mode, hotspot, NFC, Do Not Disturb, and battery-saver controls.
+- Added Spotify and YouTube search routing.
+- Replaced vendor-sensitive battery capacity reads with Android's sticky battery broadcast and scale calculation.
+- Added validated network and transport telemetry.
+- Added speech start/result watchdogs and hard recognizer recovery.
+- Added a 40-second processing watchdog, stale-response rejection, tap-to-cancel, and TTS recovery.
+- Bounded cloud routing to three attempts and a 36-second total request budget.
+- Updated the cloud system prompt so models never claim Android actions they did not execute.
+- Bumped the application version to `0.9.1-execution-kernel`.
+
 ## 0.9.0 — Ten-Node Cortex Mesh
 
 - Replaced the single cloud profile with six Gemini slots and four Groq slots.

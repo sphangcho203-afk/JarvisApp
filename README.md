@@ -1,15 +1,29 @@
 # Jarvis Android
 
-Jarvis is a phone-first Android AI assistant written in Kotlin. It combines a live sci-fi command HUD, direct foreground voice interaction, encrypted cloud-model configuration, device actions, memory, timers, and a health-aware multi-provider reasoning mesh.
+Jarvis is a phone-first Android AI assistant written in Kotlin. It combines a live sci-fi command HUD, direct foreground voice interaction, encrypted cloud-model configuration, deterministic Android actions, memory, timers, and a health-aware multi-provider reasoning mesh.
 
 ## Current Version
 
-**Phase 9.0: Ten-Node Cortex Mesh**
-Version: `0.9.0-cortex-mesh`
+**Phase 9.1: Android Execution Kernel Recovery**
+Version: `0.9.1-execution-kernel`
+
+## What Phase 9.1 Fixes
+
+- handles known phone actions locally before sending anything to the cloud
+- reads live battery state from Android's sticky battery broadcast
+- reads validated network state and transport type
+- controls the flashlight through the public camera torch API
+- controls media playback and media volume
+- controls brightness and auto-rotate after Android grants one-time system-settings permission
+- opens official Android panels for protected connectivity controls
+- searches Spotify and YouTube directly
+- limits cloud failover to three nodes and a bounded request budget
+- recovers from speech-recognizer stalls, cloud timeouts, and stuck speech output
+- lets a tap cancel an active request and reset the voice array
 
 ## Cortex Mesh
 
-The single cloud endpoint has been replaced by ten encrypted provider slots:
+The ten encrypted provider slots remain available:
 
 - 6 Gemini project profiles
 - 4 Groq project profiles
@@ -17,70 +31,53 @@ The single cloud endpoint has been replaced by ten encrypted provider slots:
 - model ID and API key per node
 - Android Keystore AES-GCM encryption
 - per-node connection tests
-- automatic cooldown for rate limits and temporary failures
-- automatic failover to the next eligible node
-- health metrics for latency, successes, failures, and status
+- automatic cooldown and failover
 
-Jarvis does not call every provider for every command. It classifies the request, scores eligible nodes, selects one, and uses another only when necessary.
-
-## Routing Mathematics
-
-Each node receives a bounded utility score using:
-
-- task suitability
-- Bayesian reliability estimate
-- exponential latency utility
-- node freshness for balanced use
-- configured priority
-- recent failure-streak penalty
-
-This gives deterministic, inspectable routing instead of blind key rotation.
-
-## First Launch
-
-Jarvis opens **Cortex Mesh Setup** when no node is configured.
-
-For each node you want to use:
-
-1. Enter a model ID currently available in that provider console.
-2. Enter the matching API key.
-3. Leave the node enabled.
-4. Tap **Save + Test** for that node, or test every configured node together.
-
-Model availability changes over time, so model IDs are intentionally not hardcoded into the APK.
+Jarvis does not call every provider for every command. Device actions stay local. General questions enter the cloud mesh only after the Android execution kernel declines the request.
 
 ## Voice Commands
 
 Examples:
 
-- `configure APIs`
-- `cortex status`
+- `flashlight on`
+- `flashlight off`
+- `set media volume to 40 percent`
+- `volume up`
+- `pause music`
+- `next track`
+- `brightness to 60 percent`
+- `auto rotate on`
+- `battery status`
+- `network status`
+- `turn on Wi-Fi`
+- `turn on mobile data`
+- `Bluetooth settings`
+- `play Notion on Spotify`
+- `search Jarvis interface on YouTube`
 - `open YouTube`
-- `Spotify`
-- `search for Android Kotlin voice assistant`
 - `remember that favorite game is MLBB`
-- `what do you remember`
 - `set a timer for five minutes`
-- normal questions routed through the cortex mesh
+- `cortex status`
 
-## Local and Cloud Boundaries
+## Android Boundaries
 
-Local Android commands such as opening apps, memory controls, and timers do not consume cloud requests. General questions, coding, and reasoning requests enter the cloud mesh.
+Modern Android does not let an ordinary app silently toggle every protected radio. Wi-Fi, mobile data, Bluetooth, location, airplane mode, hotspot, NFC, Do Not Disturb, and battery saver may require a compact system panel or confirmation. Jarvis opens the correct official control surface and reports that confirmation is required instead of pretending the action succeeded.
 
-Localhost, Termux brain endpoints, cleartext HTTP, and pairing-code routing remain removed.
+Brightness and auto-rotate require one-time **Modify system settings** permission. Spotify search opens the requested result. Arbitrary Spotify playback requires a separate Spotify account authorization integration and is not claimed as complete in this phase.
+
+Foreground voice listening remains active only while Jarvis is visible.
 
 ## Security
 
-- Keys are not stored in source code, GitHub, or the APK.
-- The complete registry is encrypted with Android Keystore.
+- API keys are not stored in source code, GitHub, or the APK.
+- The complete cortex registry is encrypted with Android Keystore.
 - Only the fixed official HTTPS Gemini and Groq gateways are used.
-- Authentication failures automatically disable the affected node.
-- Rate-limited nodes enter cooldown instead of being hammered repeatedly.
-- Use only API projects and credentials you own and operate within each provider's terms.
+- Localhost and Termux brain routing remain removed.
+- Android actions are executed by deterministic code, not by trusting free-form model text.
 
 ## Build APK With GitHub Actions
 
-1. Apply the Phase 9 patch to the repository.
+1. Apply the Phase 9.1 patch to the repository.
 2. Push the generated commit to `main`.
 3. Open **Actions → Build Jarvis APK**.
 4. Download `Jarvis-debug-apk` from the successful run.

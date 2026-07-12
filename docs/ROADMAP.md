@@ -4,11 +4,10 @@
 
 ### Phases 1–8
 - Kotlin Android foundation
-- Native geometric HUD
+- native geometric HUD
 - foreground hands-free speech loop
 - app and web commands
 - memory and countdown systems
-- live telemetry and sound feedback
 - removal of localhost and Termux brain routing
 - encrypted HTTPS cloud cortex
 
@@ -21,18 +20,22 @@
 - automatic failover and cooldown
 - per-node diagnostics
 
-## Next
+### Phase 9.1 — Android Execution Kernel Recovery
+- deterministic local action router
+- direct flashlight, media, volume, brightness, and rotation controls
+- live battery and network telemetry
+- official panels for protected Android controls
+- Spotify and YouTube search routing
+- recognizer, cloud, and TTS watchdogs
+- bounded cloud failover and tap-to-cancel recovery
 
-### Phase 9.1 — Capability Kernel
-- live registry of actual phone abilities
-- permission requirements per capability
-- risk and confirmation levels
-- explicit success and failure contracts
+## Next
 
 ### Phase 9.2 — Structured Tool Calling
 - cloud planner outputs typed tool requests
 - Android validates every request
 - deterministic execution and result reporting
+- confirmation levels for sensitive actions
 
 ### Phase 9.3 — Cognitive Council
 - planner, critic, researcher, memory, and security roles

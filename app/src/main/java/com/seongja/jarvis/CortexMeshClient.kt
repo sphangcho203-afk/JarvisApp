@@ -25,6 +25,12 @@ private data class TransportResult(
 
 class CortexMeshClient(private val store: SecureCortexRegistry) {
 
+    companion object {
+        private const val MAX_ATTEMPTS = 3
+        private const val TOTAL_REQUEST_BUDGET_MS = 36_000L
+        private const val DIAGNOSTIC_BUDGET_MS = 25_000L
+    }
+
     fun ask(userInput: String, memoryContext: String): CortexMeshResult {
         val registry = store.load()
         val task = CortexTaskClassifier.classify(userInput)
@@ -38,6 +44,7 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
         val eligible = configured
             .filterNot { it.isCoolingDown(now) }
             .sortedByDescending { CortexMath.score(it, task, now) }
+            .take(MAX_ATTEMPTS)
             .ifEmpty {
                 val soonest = configured.minByOrNull { it.cooldownUntilMs }
                 val seconds = soonest?.let { ((it.cooldownUntilMs - now) / 1_000L).coerceAtLeast(1L) } ?: 1L
@@ -45,7 +52,9 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
             }
 
         val attempts = mutableListOf<String>()
+        val deadlineMs = System.currentTimeMillis() + TOTAL_REQUEST_BUDGET_MS
         for (profile in eligible) {
+            if (System.currentTimeMillis() >= deadlineMs) break
             attempts += profile.label
             try {
                 val result = request(
@@ -53,7 +62,8 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
                     systemPrompt = registry.systemPrompt,
                     userInput = userInput,
                     memoryContext = memoryContext,
-                    diagnostic = false
+                    diagnostic = false,
+                    deadlineMs = deadlineMs
                 )
                 markSuccess(profile, result)
                 return CortexMeshResult(
@@ -101,7 +111,8 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
                 systemPrompt = registry.systemPrompt,
                 userInput = "Reply with exactly: CORTEX NODE ONLINE",
                 memoryContext = "Connection diagnostic only.",
-                diagnostic = true
+                diagnostic = true,
+                deadlineMs = System.currentTimeMillis() + DIAGNOSTIC_BUDGET_MS
             )
             markSuccess(profile, result)
             CortexMeshResult(
@@ -126,11 +137,13 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
         systemPrompt: String,
         userInput: String,
         memoryContext: String,
-        diagnostic: Boolean
+        diagnostic: Boolean,
+        deadlineMs: Long
     ): TransportResult {
         val requestBody = JSONObject().apply {
             put("model", profile.model)
-            put("temperature", if (diagnostic) 0 else 0.35)
+            put("temperature", if (diagnostic) 0 else 0.30)
+            put("max_tokens", if (diagnostic) 32 else 700)
             put(
                 "messages",
                 JSONArray().apply {
@@ -147,16 +160,17 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
         }
 
         val started = System.currentTimeMillis()
+        val remainingMs = (deadlineMs - started).coerceAtLeast(3_000L)
         val connection = (URL(profile.provider.endpoint).openConnection() as HttpsURLConnection).apply {
             requestMethod = "POST"
-            connectTimeout = if (diagnostic) 15_000 else 20_000
-            readTimeout = if (diagnostic) 30_000 else 70_000
+            connectTimeout = (if (diagnostic) 10_000L else 8_000L).coerceAtMost(remainingMs).toInt()
+            readTimeout = (if (diagnostic) 20_000L else 22_000L).coerceAtMost(remainingMs).toInt()
             doOutput = true
             useCaches = false
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
             setRequestProperty("Accept", "application/json")
             setRequestProperty("Authorization", "Bearer ${profile.apiKey}")
-            setRequestProperty("User-Agent", "Jarvis-Android/0.9.0")
+            setRequestProperty("User-Agent", "Jarvis-Android/0.9.1")
         }
 
         try {

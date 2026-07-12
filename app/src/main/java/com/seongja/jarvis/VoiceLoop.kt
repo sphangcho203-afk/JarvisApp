@@ -33,6 +33,22 @@ class VoiceLoop(
     private var generation = 0
 
     private val delayedStart = Runnable { startNow() }
+    private val readyWatchdog = Runnable {
+        if (!destroyed && !paused && (starting || !listening)) {
+            onDiagnostic("ASR -> START WATCHDOG RESET")
+            onState(State.ERROR)
+            hardReset()
+            startDelayed(1_200L)
+        }
+    }
+    private val resultWatchdog = Runnable {
+        if (!destroyed && !paused) {
+            onDiagnostic("ASR -> RESULT WATCHDOG RESET")
+            onState(State.ERROR)
+            hardReset()
+            startDelayed(1_200L)
+        }
+    }
 
     fun startDelayed(delayMs: Long) {
         if (destroyed || paused) return
@@ -51,6 +67,7 @@ class VoiceLoop(
         paused = true
         onRms(0f)
         handler.removeCallbacks(delayedStart)
+        clearWatchdogs()
         listening = false
         starting = false
         runCatching { recognizer?.cancel() }
@@ -61,6 +78,7 @@ class VoiceLoop(
         paused = true
         onRms(0f)
         handler.removeCallbacks(delayedStart)
+        clearWatchdogs()
         listening = false
         starting = false
         runCatching { recognizer?.cancel() }
@@ -79,6 +97,7 @@ class VoiceLoop(
         paused = true
         onRms(0f)
         handler.removeCallbacks(delayedStart)
+        clearWatchdogs()
         listening = false
         starting = false
         runCatching { recognizer?.cancel() }
@@ -120,6 +139,10 @@ class VoiceLoop(
         onState(State.LISTENING)
         onDiagnostic("ASR -> START REQUEST")
         runCatching { engine.startListening(recognitionIntent()) }
+            .onSuccess {
+                handler.removeCallbacks(readyWatchdog)
+                handler.postDelayed(readyWatchdog, 7_000L)
+            }
             .onFailure {
                 starting = false
                 listening = false
@@ -155,12 +178,18 @@ class VoiceLoop(
 
     private fun hardReset() {
         handler.removeCallbacks(delayedStart)
+        clearWatchdogs()
         listening = false
         starting = false
         runCatching { recognizer?.cancel() }
         runCatching { recognizer?.destroy() }
         recognizer = null
         generation++
+    }
+
+    private fun clearWatchdogs() {
+        handler.removeCallbacks(readyWatchdog)
+        handler.removeCallbacks(resultWatchdog)
     }
 
     private fun recognitionIntent(): Intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
@@ -175,6 +204,7 @@ class VoiceLoop(
     }
 
     override fun onReadyForSpeech(params: Bundle?) {
+        handler.removeCallbacks(readyWatchdog)
         starting = false
         listening = true
         busyCount = 0
@@ -183,6 +213,7 @@ class VoiceLoop(
     }
 
     override fun onBeginningOfSpeech() {
+        handler.removeCallbacks(readyWatchdog)
         starting = false
         listening = true
         onRms(0.72f)
@@ -198,6 +229,9 @@ class VoiceLoop(
     override fun onBufferReceived(buffer: ByteArray?) = Unit
 
     override fun onEndOfSpeech() {
+        handler.removeCallbacks(readyWatchdog)
+        handler.removeCallbacks(resultWatchdog)
+        handler.postDelayed(resultWatchdog, 7_000L)
         listening = false
         starting = false
         onRms(0f)
@@ -206,6 +240,7 @@ class VoiceLoop(
     }
 
     override fun onError(error: Int) {
+        clearWatchdogs()
         listening = false
         starting = false
 
@@ -270,6 +305,7 @@ class VoiceLoop(
     }
 
     override fun onResults(results: Bundle?) {
+        clearWatchdogs()
         listening = false
         starting = false
         onRms(0f)

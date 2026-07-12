@@ -10,9 +10,7 @@ import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.SweepGradient
-import android.net.ConnectivityManager
-import android.net.NetworkCapabilities
-import android.os.BatteryManager
+import com.jarvis.core.device.DeviceTelemetry
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
@@ -30,6 +28,7 @@ import kotlin.random.Random
 
 class AdvancedCivilizationHudView(context: Context) : View(context) {
     private val handler = Handler(Looper.getMainLooper())
+    private val telemetry = DeviceTelemetry(context.applicationContext)
     private val bootStart = SystemClock.uptimeMillis()
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -46,7 +45,7 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
             size = Random.nextFloat() * 1.8f + 0.5f
         )
     }
-    private val events = mutableListOf("PHASE 9 -> CORTEX MESH READY")
+    private val events = mutableListOf("PHASE 9.1 -> EXECUTION KERNEL READY")
     private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss", Locale.US)
 
     private var lastResponse = "Neural command system standing by. Speak naturally."
@@ -54,7 +53,7 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
     private var intent = "idle"
     private var confidence = 0f
     private var memory = "OPERATOR SEONGJA // LOCAL MEMORY ONLINE"
-    private var trace = listOf("phase8_boot", "voice_loop_ready")
+    private var trace = listOf("phase91_boot", "execution_kernel_ready", "voice_loop_ready")
     private var thoughts = listOf("Cognitive lattice initialized.", "Awaiting operator input.")
     private var entities = listOf("operator=Seongja")
     private var decision = "standby"
@@ -174,8 +173,8 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
         if (now - lastTelemetryRefresh < 1_000L) return
         lastTelemetryRefresh = now
         cachedTime = LocalTime.now().format(timeFormatter)
-        cachedBattery = batteryLevel()
-        cachedNetwork = networkType()
+        cachedBattery = telemetry.battery().percent
+        cachedNetwork = telemetry.network().label
         val runtime = Runtime.getRuntime()
         cachedHeapMb = (runtime.totalMemory() - runtime.freeMemory()) / (1024L * 1024L)
     }
@@ -325,7 +324,7 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
         textPaint.typeface = android.graphics.Typeface.MONOSPACE
         textPaint.textSize = sp(9.2f)
         textPaint.color = Color.argb(220, 183, 242, 247)
-        canvas.drawText("PHASE 9  •  TEN-NODE CLOUD CORTEX  •  PHI-LATTICE 1.618", width / 2f, dp(59f), textPaint)
+        canvas.drawText("PHASE 9.1  •  EXECUTION KERNEL  •  TEN-NODE CORTEX", width / 2f, dp(59f), textPaint)
 
         textPaint.textAlign = Paint.Align.LEFT
         textPaint.textSize = sp(8.8f)
@@ -774,24 +773,6 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
         VoiceLoop.State.PROCESSING -> "PROCESSING"
         VoiceLoop.State.ERROR -> "RECALIBRATING"
         VoiceLoop.State.UNAVAILABLE -> "UNAVAILABLE"
-    }
-
-    private fun batteryLevel(): Int {
-        val manager = context.getSystemService(Context.BATTERY_SERVICE) as? BatteryManager
-        return manager?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)?.takeIf { it >= 0 } ?: 0
-    }
-
-    private fun networkType(): String {
-        val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager ?: return "OFFLINE"
-        val network = manager.activeNetwork ?: return "OFFLINE"
-        val capabilities = manager.getNetworkCapabilities(network) ?: return "OFFLINE"
-        return when {
-            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) -> "WIFI"
-            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR) -> "CELL"
-            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET) -> "ETH"
-            capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN) -> "VPN"
-            else -> "ONLINE"
-        }
     }
 
     private fun modeColor(): Int = when (mode) {

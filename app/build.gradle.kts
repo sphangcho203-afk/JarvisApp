@@ -11,8 +11,8 @@ android {
         applicationId = "com.seongja.jarvis"
         minSdk = 26
         targetSdk = 35
-        versionCode = 10
-        versionName = "0.9.0-cortex-mesh"
+        versionCode = 11
+        versionName = "0.9.1-execution-kernel"
     }
 
     buildTypes {
