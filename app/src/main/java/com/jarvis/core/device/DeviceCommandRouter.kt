@@ -329,7 +329,7 @@ class DeviceCommandRouter(context: Context) {
                 "Airplane-mode controls opened."
             }
             command.contains("hotspot") || command.contains("tethering") -> {
-                openIntent(Intent(Settings.ACTION_TETHER_SETTINGS))
+                openIntent(Intent(Settings.ACTION_WIRELESS_SETTINGS))
                 "Hotspot and tethering controls opened."
             }
             command.contains("nfc") -> {
