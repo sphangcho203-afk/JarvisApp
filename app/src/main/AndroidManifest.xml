@@ -40,7 +40,7 @@
         <activity
             android:name=".CloudConfigActivity"
             android:exported="false"
-            android:label="Jarvis Cloud Cortex"
+            android:label="Jarvis Cortex Mesh"
             android:theme="@style/Theme.Jarvis" />
     </application>
 </manifest>

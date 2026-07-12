@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.9.0 — Ten-Node Cortex Mesh
+
+- Replaced the single cloud profile with six Gemini slots and four Groq slots.
+- Added a secure ten-node provider registry encrypted with Android Keystore.
+- Locked provider traffic to official HTTPS Gemini and Groq OpenAI-compatible endpoints.
+- Added request classification for fast, general, reasoning, and coding tasks.
+- Added mathematically weighted provider selection.
+- Added Bayesian reliability scoring, latency utility, freshness balancing, and failure-streak penalties.
+- Added automatic failover across healthy configured nodes.
+- Added cooldown handling for HTTP 429, server failures, timeouts, and network errors.
+- Added automatic node disablement for authentication failures.
+- Added per-node and full-mesh connection testing.
+- Added voice-accessible cortex status diagnostics.
+- Updated the HUD and boot sequence for Phase 9 distributed-cortex operation.
+- Removed the superseded single-provider cloud client and configuration store.
+
 ## 0.8.2 — Cloud Cortex
 
 - Removed the local server brain and localhost inference path.

@@ -51,11 +51,11 @@ class MainActivity : Activity() {
         )
 
         setContentView(hud)
-        hud.pushEvent("PHASE 8.2 -> CLOUD CORTEX")
-        hud.pushEvent("LOCAL SERVER BRAIN -> REMOVED")
-        hud.pushEvent("TERMUX PAIRING -> DISABLED")
+        hud.pushEvent("PHASE 9 -> TEN-NODE CORTEX MESH")
+        hud.pushEvent("LOCAL SERVER BRAIN -> PERMANENTLY REMOVED")
+        hud.pushEvent("GEMINI NODES -> 6 // GROQ NODES -> 4")
         hud.pushEvent("VOICE -> DIRECT LISTENING; NO HOLD CONTROL")
-        hud.pushEvent("SAY CONFIGURE API -> SECURE CLOUD SETUP")
+        hud.pushEvent("SAY CONFIGURE APIS -> SECURE MESH SETUP")
         hud.pushEvent("TAP -> RECALIBRATE VOICE ARRAY")
 
         initTts()
@@ -134,8 +134,8 @@ class MainActivity : Activity() {
         enterImmersiveMode()
         if (::brain.isInitialized) {
             hud.pushEvent(
-                if (brain.isCloudConfigured()) "CLOUD -> READY // ${brain.configuredModel()}"
-                else "CLOUD -> CONFIGURATION REQUIRED"
+                if (brain.isCloudConfigured()) "CORTEX MESH -> READY // ${brain.configuredModel()}"
+                else "CORTEX MESH -> CONFIGURATION REQUIRED"
             )
         }
         if (hasMicPermission() && !brainBusy.get()) {
@@ -180,7 +180,7 @@ class MainActivity : Activity() {
         }
 
         if (isCloudSetupCommand(clean)) {
-            hud.pushEvent("CLOUD CONFIG -> OPEN")
+            hud.pushEvent("CORTEX MESH CONFIG -> OPEN")
             hud.setProcessing(false)
             brainBusy.set(false)
             startActivity(Intent(this, CloudConfigActivity::class.java))
@@ -199,19 +199,19 @@ class MainActivity : Activity() {
             return
         }
 
-        hud.pushEvent("CLOUD -> REQUEST START")
+        hud.pushEvent("CORTEX MESH -> ROUTING REQUEST")
         Thread {
             val started = System.currentTimeMillis()
             val response = runCatching { brain.respond(clean) }.getOrElse { error ->
                 BrainResponse(
-                    spoken = "The cloud cortex request failed: ${error.message ?: error.javaClass.simpleName}.",
-                    display = "CLOUD API ERROR // ${error.message ?: error.javaClass.simpleName}",
+                    spoken = "The cortex mesh request failed: ${error.message ?: error.javaClass.simpleName}.",
+                    display = "CORTEX MESH ERROR // ${error.message ?: error.javaClass.simpleName}",
                     intent = "cloud_error",
                     confidence = 0f,
                     mode = BrainMode.ALERT,
-                    trace = listOf("cloud_https_request", "exception=${error.javaClass.simpleName}", "localhost_disabled"),
+                    trace = listOf("cortex_mesh_request", "exception=${error.javaClass.simpleName}", "localhost_disabled"),
                     memory = brain.memorySnapshot(),
-                    thoughts = listOf("The cloud request failed. No local server fallback was attempted."),
+                    thoughts = listOf("The mesh request failed after its eligible cloud nodes were evaluated. No local server fallback was attempted."),
                     entities = emptyList(),
                     decision = "cloud_exception",
                     action = BrainAction()
@@ -221,7 +221,7 @@ class MainActivity : Activity() {
 
             runOnUiThread {
                 hud.submitBrainResponse(response)
-                hud.pushEvent("CLOUD -> RESPONSE ${elapsed}ms")
+                hud.pushEvent("CORTEX MESH -> RESPONSE ${elapsed}ms")
                 if (response.action.type != ActionType.NONE) {
                     val executed = brain.execute(response.action)
                     hud.pushEvent("ACTION -> ${response.action.label.uppercase(Locale.US)} ${if (executed) "OK" else "BLOCKED"}")
@@ -237,6 +237,10 @@ class MainActivity : Activity() {
     private fun isCloudSetupCommand(input: String): Boolean {
         val normalized = input.lowercase(Locale.getDefault()).trim()
         return normalized == "configure api" ||
+            normalized == "configure apis" ||
+            normalized == "configure cortex" ||
+            normalized == "cortex setup" ||
+            normalized == "mesh setup" ||
             normalized == "api setup" ||
             normalized == "cloud setup" ||
             normalized == "configure cloud" ||
@@ -246,7 +250,7 @@ class MainActivity : Activity() {
     private fun openCloudSetupIfRequired() {
         if (!brain.isCloudConfigured() && !setupOpenedThisSession && !isFinishing) {
             setupOpenedThisSession = true
-            hud.pushEvent("CLOUD -> OPENING SECURE CONFIGURATION")
+            hud.pushEvent("CORTEX MESH -> OPENING SECURE REGISTRY")
             startActivity(Intent(this, CloudConfigActivity::class.java))
         }
     }

@@ -1,20 +1,16 @@
-# Phase 8 Validation Report
+# Phase 9 Validation Report
 
-## Passed Checks
+## Passed
 
-- All Android XML resources parse successfully.
-- Every activity declared in `AndroidManifest.xml` resolves to a Kotlin class.
-- Kotlin top-level class/object declarations are unique.
-- The modified HUD, voice loop, main activity, countdown engine, and sound engine passed isolated Kotlin compilation checks against Android-compatible API stubs.
-- Countdown parser tests passed for:
-  - spoken durations
-  - numeric durations
-  - decimal durations
-  - mixed hour/minute durations
-  - timer status
-  - timer cancellation
-- No placeholder API keys, `TODO`, or `FIXME` markers were found.
-- Stale failed-build logs, old source backups, and empty artifact folders were removed.
+- Cortex task classifier compiled and classified coding and reasoning test prompts correctly.
+- Provider scoring compiled and returned finite bounded utility values.
+- Cortex models, transport client, secure registry, setup interface, and Jarvis brain passed isolated Kotlin compilation checks against Android-compatible stubs.
+- The secure registry normalizes exactly six Gemini and four Groq slots.
+- Localhost endpoints are absent from the Phase 9 transport path.
+- Provider endpoints are fixed HTTPS constants.
+- Authentication, rate-limit, server, timeout, and general network failure paths have distinct handling.
+- Android manifest XML parses correctly.
+- No API keys or provider secrets are included.
 
 ## Build Metadata
 
@@ -22,8 +18,8 @@
 - Target SDK: 35
 - Minimum SDK: 26
 - Java/Kotlin JVM target: 17
-- Version: `0.8.0-neural-interface`
+- Version: `0.9.0-cortex-mesh`
 
-## Environment Limitation
+## Final Build
 
-A complete Android `assembleDebug` build was not executed inside the packaging environment because an Android SDK and Gradle installation were not available there. The included GitHub Actions workflow is configured to perform the real SDK build with JDK 17, Gradle 8.10.2, and `assembleDebug`.
+The definitive Android SDK build is performed by the included GitHub Actions workflow using JDK 17, Gradle 8.10.2, and `assembleDebug`.

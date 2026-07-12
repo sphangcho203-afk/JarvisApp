@@ -7,50 +7,59 @@ class JarvisBrain(context: Context) {
     private val appContext = context.applicationContext
     private val memory = MemoryVault(appContext)
     private val router = ActionRouter(appContext)
-    private val configStore = SecureCloudConfigStore(appContext)
-    private val cloud = CloudBrainClient(configStore)
+    private val registryStore = SecureCortexRegistry(appContext)
+    private val cortexMesh = CortexMeshClient(registryStore)
 
-    fun isCloudConfigured(): Boolean = configStore.load().isConfigured()
+    fun isCloudConfigured(): Boolean = registryStore.load().configuredProfiles().isNotEmpty()
 
-    fun configuredModel(): String = configStore.load().model.ifBlank { "not configured" }
+    fun configuredModel(): String {
+        val registry = registryStore.load()
+        val configured = registry.configuredProfiles()
+        val online = configured.count { it.lastStatusCode in 200..299 && !it.isCoolingDown() }
+        return "${configured.size} nodes // $online online"
+    }
 
     fun respond(rawInput: String): BrainResponse {
         val input = rawInput.trim()
         localMemoryCommand(input)?.let { return it }
+        localMeshCommand(input)?.let { return it }
 
-        if (!isCloudConfigured()) {
-            return configurationRequiredResponse()
-        }
+        if (!isCloudConfigured()) return configurationRequiredResponse()
 
-        val result = cloud.ask(input, memory.promptContext())
+        val result = cortexMesh.ask(input, memory.promptContext())
         memory.addHistory("USER: ${input.take(180)}")
         memory.addHistory("JARVIS: ${result.reply.take(180)}")
 
         return BrainResponse(
             spoken = result.reply,
             display = result.reply,
-            intent = "cloud_cortex/response",
-            confidence = 0.96f,
+            intent = "cortex_mesh/response",
+            confidence = 0.97f,
             mode = BrainMode.ONLINE,
             trace = listOf(
                 "android_speech_recognizer",
-                "https_cloud_api",
+                "task=${result.task.name.lowercase(Locale.US)}",
+                "mesh_route=${result.profileLabel}",
+                "provider=${result.provider.displayName}",
                 "model=${result.model}",
+                "attempts=${result.attempts.joinToString(">")}",
                 "http=${result.statusCode}",
                 "latency=${result.elapsedMs}ms"
             ),
             memory = memory.summary(),
             thoughts = listOf(
-                "Inference source: configured cloud model.",
-                "Localhost inference: disabled.",
-                "Termux pairing: removed from the command path."
+                "The request was classified as ${result.task.name.lowercase(Locale.US)}.",
+                "The cortex mesh selected ${result.profileLabel} using weighted task-fit, reliability, latency, freshness, and stability scoring.",
+                if (result.attempts.size > 1) "Automatic failover was used." else "The primary selected node succeeded."
             ),
             entities = listOf(
-                "source=cloud_api",
+                "source=cortex_mesh",
+                "node=${result.profileLabel}",
+                "provider=${result.provider.displayName}",
                 "model=${result.model}",
                 "status=${result.statusCode}"
             ),
-            decision = "cloud_response",
+            decision = "mesh_response",
             action = BrainAction()
         )
     }
@@ -112,20 +121,47 @@ class JarvisBrain(context: Context) {
         return null
     }
 
+    private fun localMeshCommand(input: String): BrainResponse? {
+        val lower = input.lowercase(Locale.getDefault()).trim()
+        if (lower !in setOf(
+                "cortex status",
+                "api status",
+                "cloud status",
+                "provider status",
+                "mesh status"
+            )
+        ) return null
+
+        val registry = registryStore.load()
+        val configured = registry.configuredProfiles()
+        val online = configured.count { it.lastStatusCode in 200..299 && !it.isCoolingDown() }
+        val cooling = configured.count { it.isCoolingDown() }
+        val summary = buildString {
+            appendLine("CORTEX MESH // CONFIGURED ${configured.size}/10 // ONLINE $online // COOLDOWN $cooling")
+            configured.forEach { appendLine("${it.label} // ${it.provider.displayName} // ${it.healthLabel()}") }
+        }.trim()
+
+        return localResponse(
+            spoken = "The cortex mesh has ${configured.size} configured nodes, with $online currently online, Sir.",
+            display = summary,
+            intent = "cortex_mesh_status"
+        )
+    }
+
     private fun configurationRequiredResponse(): BrainResponse = BrainResponse(
-        spoken = "The cloud cortex is not configured, Sir. Say configure API to open secure setup.",
-        display = "CLOUD API CONFIGURATION REQUIRED\nSay: configure API",
-        intent = "cloud_config_required",
+        spoken = "The cortex mesh is not configured, Sir. Say configure APIs to open the ten-node setup.",
+        display = "CORTEX MESH CONFIGURATION REQUIRED\nSay: configure APIs",
+        intent = "cortex_config_required",
         confidence = 1f,
         mode = BrainMode.ALERT,
-        trace = listOf("cloud_only_mode", "api_config_missing", "localhost_disabled"),
+        trace = listOf("cloud_only_mode", "mesh_config_missing", "localhost_disabled"),
         memory = memory.summary(),
         thoughts = listOf(
             "No local server was contacted.",
-            "No cloud request can run until an HTTPS endpoint and model are configured."
+            "At least one Gemini or Groq node needs a model ID and encrypted key."
         ),
-        entities = listOf("cloud=not_configured", "local_server=disabled"),
-        decision = "request_cloud_configuration",
+        entities = listOf("mesh=not_configured", "local_server=disabled"),
+        decision = "request_cortex_configuration",
         action = BrainAction()
     )
 
@@ -139,9 +175,9 @@ class JarvisBrain(context: Context) {
         intent = intent,
         confidence = 1f,
         mode = BrainMode.ONLINE,
-        trace = listOf("android_control_layer", "encrypted_local_memory"),
+        trace = listOf("android_control_layer", "encrypted_local_state"),
         memory = memory.summary(),
-        thoughts = listOf("This deterministic phone control did not require an AI server."),
+        thoughts = listOf("This deterministic phone control did not require a cloud request."),
         entities = emptyList(),
         decision = intent,
         action = BrainAction()

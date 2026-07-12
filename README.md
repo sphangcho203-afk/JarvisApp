@@ -1,73 +1,86 @@
 # Jarvis Android
 
-Jarvis is a phone-first Android AI assistant written in Kotlin. It combines a live sci-fi command HUD, direct foreground voice interaction, encrypted local configuration, cloud-model reasoning, device actions, memory, timers, and expandable automation modules.
+Jarvis is a phone-first Android AI assistant written in Kotlin. It combines a live sci-fi command HUD, direct foreground voice interaction, encrypted cloud-model configuration, device actions, memory, timers, and a health-aware multi-provider reasoning mesh.
 
 ## Current Version
 
-**Phase 8.2: Cloud Cortex**  
-Version: `0.8.2-cloud-cortex`
+**Phase 9.0: Ten-Node Cortex Mesh**
+Version: `0.9.0-cortex-mesh`
 
-## Architecture
+## Cortex Mesh
 
-- **Voice input:** Android speech recognition
-- **Device actions:** Android intents for apps, web, timers, and settings
-- **Memory:** local operator memory on the phone
-- **AI reasoning:** configurable HTTPS cloud API
-- **API secret storage:** Android Keystore encryption
-- **Local server brain:** removed
-- **Termux pairing:** removed from the assistant command path
+The single cloud endpoint has been replaced by ten encrypted provider slots:
 
-Jarvis will never route a normal question to `localhost`, `127.0.0.1`, or a Termux bridge. Cloud requests require an HTTPS OpenAI-compatible chat-completions endpoint configured inside the app.
+- 6 Gemini project profiles
+- 4 Groq project profiles
+- fixed official HTTPS OpenAI-compatible endpoints
+- model ID and API key per node
+- Android Keystore AES-GCM encryption
+- per-node connection tests
+- automatic cooldown for rate limits and temporary failures
+- automatic failover to the next eligible node
+- health metrics for latency, successes, failures, and status
+
+Jarvis does not call every provider for every command. It classifies the request, scores eligible nodes, selects one, and uses another only when necessary.
+
+## Routing Mathematics
+
+Each node receives a bounded utility score using:
+
+- task suitability
+- Bayesian reliability estimate
+- exponential latency utility
+- node freshness for balanced use
+- configured priority
+- recent failure-streak penalty
+
+This gives deterministic, inspectable routing instead of blind key rotation.
 
 ## First Launch
 
-Jarvis opens **Cloud Cortex Setup** when no cloud provider is configured. Enter:
+Jarvis opens **Cortex Mesh Setup** when no node is configured.
 
-1. The provider's HTTPS chat-completions endpoint
-2. The provider model ID
-3. The API key
-4. An optional system prompt
+For each node you want to use:
 
-Tap **Save and Test Connection**. The key is encrypted on the device and is not committed to GitHub or embedded in the APK.
+1. Enter a model ID currently available in that provider console.
+2. Enter the matching API key.
+3. Leave the node enabled.
+4. Tap **Save + Test** for that node, or test every configured node together.
+
+Model availability changes over time, so model IDs are intentionally not hardcoded into the APK.
 
 ## Voice Commands
 
 Examples:
 
-- `configure API`
+- `configure APIs`
+- `cortex status`
 - `open YouTube`
 - `Spotify`
 - `search for Android Kotlin voice assistant`
 - `remember that favorite game is MLBB`
-- `call me Seongja`
-- `who am I`
 - `what do you remember`
-- `clear memory`
 - `set a timer for five minutes`
-- `timer status`
-- normal questions for the configured cloud model
+- normal questions routed through the cortex mesh
 
-## Touch Controls
+## Local and Cloud Boundaries
 
-- **Tap:** recalibrate the Android speech recognizer
-- **Long press:** disabled
+Local Android commands such as opening apps, memory controls, and timers do not consume cloud requests. General questions, coding, and reasoning requests enter the cloud mesh.
 
-## Voice Scope
+Localhost, Termux brain endpoints, cleartext HTTP, and pairing-code routing remain removed.
 
-Direct listening runs while the Jarvis activity is visible. Recognition stops when the app leaves the foreground. A future background listener must use a visible Android foreground service, persistent notification, and user-controlled kill switch.
+## Security
+
+- Keys are not stored in source code, GitHub, or the APK.
+- The complete registry is encrypted with Android Keystore.
+- Only the fixed official HTTPS Gemini and Groq gateways are used.
+- Authentication failures automatically disable the affected node.
+- Rate-limited nodes enter cooldown instead of being hammered repeatedly.
+- Use only API projects and credentials you own and operate within each provider's terms.
 
 ## Build APK With GitHub Actions
 
-1. Upload the project to the root of the GitHub repository.
-2. Open **Actions → Build Jarvis APK**.
-3. Run the workflow or push a commit.
+1. Apply the Phase 9 patch to the repository.
+2. Push the generated commit to `main`.
+3. Open **Actions → Build Jarvis APK**.
 4. Download `Jarvis-debug-apk` from the successful run.
-
-## Security Boundary
-
-- No API key is included in source code, Git history, or the APK.
-- API configuration is encrypted with Android Keystore.
-- Only HTTPS cloud endpoints are accepted.
-- Localhost endpoints are rejected.
-- Device actions remain limited to visible Android intents.
-- Jarvis does not claim an action succeeded unless Android confirms it.

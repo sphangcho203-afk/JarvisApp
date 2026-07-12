@@ -46,7 +46,7 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
             size = Random.nextFloat() * 1.8f + 0.5f
         )
     }
-    private val events = mutableListOf("PHASE 8 -> NEURAL HUD READY")
+    private val events = mutableListOf("PHASE 9 -> CORTEX MESH READY")
     private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss", Locale.US)
 
     private var lastResponse = "Neural command system standing by. Speak naturally."
@@ -115,7 +115,7 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
         invalidate()
     }
 
-    internal fun setCountdown(snapshot: CountdownSnapshot) {
+    fun setCountdown(snapshot: CountdownSnapshot) {
         countdownActive = snapshot.active
         countdownLabel = snapshot.label
         countdownRemainingMs = snapshot.remainingMs
@@ -319,13 +319,13 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
         textPaint.textSize = sp(16.5f)
         textPaint.color = accent
         textPaint.setShadowLayer(dp(8f), 0f, 0f, Color.argb(120, Color.red(accent), Color.green(accent), Color.blue(accent)))
-        canvas.drawText("JARVIS // NEURAL COMMAND SYSTEM", width / 2f, dp(39f), textPaint)
+        canvas.drawText("JARVIS // DISTRIBUTED CORTEX SYSTEM", width / 2f, dp(39f), textPaint)
         textPaint.clearShadowLayer()
 
         textPaint.typeface = android.graphics.Typeface.MONOSPACE
         textPaint.textSize = sp(9.2f)
         textPaint.color = Color.argb(220, 183, 242, 247)
-        canvas.drawText("PHASE 8  •  HANDS-FREE LOCAL INTERFACE  •  PHI-LATTICE 1.618", width / 2f, dp(59f), textPaint)
+        canvas.drawText("PHASE 9  •  TEN-NODE CLOUD CORTEX  •  PHI-LATTICE 1.618", width / 2f, dp(59f), textPaint)
 
         textPaint.textAlign = Paint.Align.LEFT
         textPaint.textSize = sp(8.8f)
@@ -723,8 +723,8 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
         val stage = when {
             progress < 0.24f -> "GEOMETRY MATRIX"
             progress < 0.48f -> "VOICE ARRAY"
-            progress < 0.72f -> "LOCAL CORTEX"
-            progress < 0.94f -> "SECURE BRIDGE"
+            progress < 0.72f -> "CORTEX MESH"
+            progress < 0.94f -> "HEALTH ROUTER"
             else -> "SYSTEM ONLINE"
         }
         canvas.drawText("$stage // ${(progress * 100).toInt()}%", cx, cy + dp(15f), textPaint)

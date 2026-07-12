@@ -1,44 +1,45 @@
 # Jarvis Roadmap
 
-## Completed Foundation
+## Completed
 
-### Phases 1–3
-- Kotlin Android starter
-- Voice commands
-- Local memory and diagnostics
-- Native Canvas HUD
-- GitHub Actions APK build
+### Phases 1–8
+- Kotlin Android foundation
+- Native geometric HUD
+- foreground hands-free speech loop
+- app and web commands
+- memory and countdown systems
+- live telemetry and sound feedback
+- removal of localhost and Termux brain routing
+- encrypted HTTPS cloud cortex
 
-### Phases 4–7
-- Intent and entity experiments
-- Safe Android action allowlist
-- App and web navigation
-- Earlier local bridge experiments, now retired
+### Phase 9.0 — Ten-Node Cortex Mesh
+- six Gemini profiles
+- four Groq profiles
+- encrypted provider registry
+- request classification
+- weighted health routing
+- automatic failover and cooldown
+- per-node diagnostics
 
-### Phase 8
-- Hands-free foreground voice loop
-- Microphone-reactive HUD
-- Countdown engine
-- Live system telemetry
-- Hardware-accelerated geometric interface
-- Interface sound cues
+## Next
 
-### Phase 8.2 — Cloud Cortex
-- Removed the local server brain
-- Removed Termux pairing from command routing
-- Added configurable HTTPS cloud-model access
-- Added Android Keystore-encrypted API configuration
-- Added in-app connection testing
-- Rejected localhost and cleartext API endpoints
+### Phase 9.1 — Capability Kernel
+- live registry of actual phone abilities
+- permission requirements per capability
+- risk and confirmation levels
+- explicit success and failure contracts
 
-## Recommended Next Phase
+### Phase 9.2 — Structured Tool Calling
+- cloud planner outputs typed tool requests
+- Android validates every request
+- deterministic execution and result reporting
 
-### Phase 9 — Reliable Assistant Runtime
+### Phase 9.3 — Cognitive Council
+- planner, critic, researcher, memory, and security roles
+- selective multi-model deliberation only for difficult tasks
+- response synthesis with evidence and confidence
 
-1. Add provider profiles and multi-provider failover.
-2. Add structured tool calling for device actions.
-3. Add network retry, cancellation, and request timeout controls.
-4. Add a visible API health panel and redacted diagnostics.
-5. Add a user-controlled microphone foreground service.
-6. Add wake-word gating and a quick-stop notification action.
-7. Add encrypted conversation storage with export and delete controls.
+### Phase 9.4 — Mission Control
+- persistent tasks and project state
+- proactive but user-controlled alerts
+- phone and computer device mesh
