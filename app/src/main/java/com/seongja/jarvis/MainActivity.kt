@@ -197,7 +197,12 @@ class MainActivity : Activity() {
             return
         }
         val requestId = requestGeneration.incrementAndGet()
-        armProcessingTimeout(requestId)
+        val timeoutMs = if (WebResearchIntent.shouldUseWeb(clean)) {
+            120_000L
+        } else {
+            40_000L
+        }
+        armProcessingTimeout(requestId, timeoutMs)
         processInput(clean, requestId)
     }
 
@@ -523,13 +528,16 @@ class MainActivity : Activity() {
         return sinceTts in 0..1_800L && normalized.split(" ").size <= 3
     }
 
-    private fun armProcessingTimeout(requestId: Int) {
+    private fun armProcessingTimeout(
+        requestId: Int,
+        timeoutMs: Long = 40_000L
+    ) {
         cancelProcessingTimeout()
         processingTimeout = Runnable {
             if (brainBusy.get() && requestGeneration.get() == requestId) {
                 abortActiveRequest("REQUEST TIMEOUT // VOICE LOOP RECOVERED")
             }
-        }.also { mainHandler.postDelayed(it, 40_000L) }
+        }.also { mainHandler.postDelayed(it, timeoutMs) }
     }
 
     private fun cancelProcessingTimeout() {
