@@ -128,7 +128,8 @@ object SpeechCommandNormalizer {
 
     private fun punctuate(value: String, explicitDictation: Boolean): String {
         if (value.isBlank()) return value
-        var result = sentenceCase(value)
+        var result = improveReadableGrammar(value)
+        result = sentenceCase(result)
         if (explicitDictation) return result
 
         val lower = result.lowercase(Locale.getDefault()).trim()
@@ -137,6 +138,40 @@ object SpeechCommandNormalizer {
             result += if (questionPrefixes.any(lower::startsWith)) "?" else "."
         }
         return result
+    }
+
+    private fun improveReadableGrammar(value: String): String {
+        var result = value
+        val contractions = listOf(
+            Regex("\\bwhats\\b", RegexOption.IGNORE_CASE) to "what's",
+            Regex("\\bdont\\b", RegexOption.IGNORE_CASE) to "don't",
+            Regex("\\bcant\\b", RegexOption.IGNORE_CASE) to "can't",
+            Regex("\\bwont\\b", RegexOption.IGNORE_CASE) to "won't",
+            Regex("\\bisnt\\b", RegexOption.IGNORE_CASE) to "isn't",
+            Regex("\\barent\\b", RegexOption.IGNORE_CASE) to "aren't",
+            Regex("\\bim\\b", RegexOption.IGNORE_CASE) to "I'm",
+            Regex("\\bive\\b", RegexOption.IGNORE_CASE) to "I've",
+            Regex("\\byoure\\b", RegexOption.IGNORE_CASE) to "you're",
+            Regex("\\btheyre\\b", RegexOption.IGNORE_CASE) to "they're"
+        )
+        contractions.forEach { (pattern, replacement) ->
+            result = pattern.replace(result, replacement)
+        }
+
+        result = result
+            .replace(Regex("^Jarvis\\s+", RegexOption.IGNORE_CASE), "Jarvis, ")
+            .replace(Regex("^(Hey|Hello|Hi)\\s+Jarvis$", RegexOption.IGNORE_CASE)) {
+                "${it.groupValues[1]}, Jarvis"
+            }
+            .replace(Regex("^(Good morning|Good afternoon|Good evening)\\s+Jarvis$", RegexOption.IGNORE_CASE)) {
+                "${it.groupValues[1]}, Jarvis"
+            }
+            .replace(Regex("\\s+Jarvis$", RegexOption.IGNORE_CASE), ", Jarvis")
+            .replace(
+                Regex("^(Well|Actually|Basically|However|Therefore|Meanwhile|Please)\\s+", RegexOption.IGNORE_CASE)
+            ) { "${it.groupValues[1]}, " }
+
+        return normalizeSpacing(result)
     }
 
     private fun sentenceCase(value: String): String {
