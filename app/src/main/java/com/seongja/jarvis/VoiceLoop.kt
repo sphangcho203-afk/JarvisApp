@@ -197,10 +197,10 @@ class VoiceLoop(
         putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
         putExtra(RecognizerIntent.EXTRA_LANGUAGE_PREFERENCE, Locale.getDefault().toLanguageTag())
         putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
-        putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 3)
+        putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
         putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, false)
-        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 900L)
-        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 650L)
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_COMPLETE_SILENCE_LENGTH_MILLIS, 1_050L)
+        putExtra(RecognizerIntent.EXTRA_SPEECH_INPUT_POSSIBLY_COMPLETE_SILENCE_LENGTH_MILLIS, 720L)
     }
 
     override fun onReadyForSpeech(params: Bundle?) {
@@ -226,6 +226,7 @@ class VoiceLoop(
         val normalized = ((rmsdB + 12f) / 24f).coerceIn(0f, 1f)
         onRms(normalized)
     }
+
     override fun onBufferReceived(buffer: ByteArray?) = Unit
 
     override fun onEndOfSpeech() {
@@ -310,17 +311,20 @@ class VoiceLoop(
         starting = false
         onRms(0f)
         busyCount = 0
-        val text = results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
-            .orEmpty()
-            .firstOrNull()
-            .orEmpty()
-            .trim()
 
-        if (text.isNotBlank()) {
+        val hypotheses = results
+            ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+            .orEmpty()
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+        val raw = chooseHypothesis(hypotheses)
+        val normalized = SpeechCommandNormalizer.normalize(raw)
+
+        if (normalized.commandText.isNotBlank()) {
             paused = true
-            onDiagnostic("ASR RESULT -> ${text.take(72)}")
+            onDiagnostic("ASR RESULT -> ${normalized.displayText.take(72)}")
             onState(State.PROCESSING)
-            onSpeech(text)
+            onSpeech(normalized.displayText)
         } else {
             onDiagnostic("ASR RESULT -> EMPTY")
             startDelayed(900)
@@ -328,16 +332,52 @@ class VoiceLoop(
     }
 
     override fun onPartialResults(partialResults: Bundle?) {
-        val text = partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+        val raw = partialResults
+            ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
             .orEmpty()
             .firstOrNull()
             .orEmpty()
             .trim()
-        if (text.isNotBlank()) {
+        val formatted = SpeechCommandNormalizer.formatPartial(raw)
+        if (formatted.isNotBlank()) {
             onRms(0.42f)
-            onPartial(text)
+            onPartial(formatted)
         }
     }
 
+    private fun chooseHypothesis(hypotheses: List<String>): String {
+        if (hypotheses.isEmpty()) return ""
+
+        // Wake phrases are often present as a lower-ranked result because the
+        // recognizer treats "Jarvis" as an uncommon proper name. Prefer the
+        // alternative that preserves the wake intent when one exists.
+        val wakeCandidate = hypotheses.firstOrNull { candidate ->
+            val normalized = SpeechCommandNormalizer.normalize(candidate)
+                .commandText
+                .lowercase(Locale.getDefault())
+                .replace(Regex("[^a-z0-9 ]"), " ")
+                .replace(Regex("\\s+"), " ")
+                .trim()
+            normalized in WAKE_PHRASES
+        }
+        return wakeCandidate ?: hypotheses.first()
+    }
+
     override fun onEvent(eventType: Int, params: Bundle?) = Unit
+
+    companion object {
+        private val WAKE_PHRASES = setOf(
+            "jarvis",
+            "hey jarvis",
+            "hello jarvis",
+            "hi jarvis",
+            "wake up jarvis",
+            "jarvis wake up",
+            "good morning jarvis",
+            "good afternoon jarvis",
+            "good evening jarvis",
+            "are you there jarvis",
+            "jarvis are you there"
+        )
+    }
 }
