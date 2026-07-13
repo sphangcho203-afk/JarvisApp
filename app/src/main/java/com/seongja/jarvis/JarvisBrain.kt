@@ -1,6 +1,7 @@
 package com.seongja.jarvis
 
 import android.content.Context
+import java.time.LocalTime
 import java.util.Locale
 
 class JarvisBrain(context: Context) {
@@ -9,20 +10,108 @@ class JarvisBrain(context: Context) {
     private val router = ActionRouter(appContext)
     private val registryStore = SecureCortexRegistry(appContext)
     private val cortexMesh = CortexMeshClient(registryStore)
-    private val webResearch = GroqWebResearchClient(registryStore)
+    private val webResearch = HybridWebResearchClient(registryStore)
 
-    fun isCloudConfigured(): Boolean = registryStore.load().configuredProfiles().isNotEmpty()
+    fun isCloudConfigured(): Boolean =
+        registryStore.load().configuredProfiles().isNotEmpty()
 
     fun configuredModel(): String {
         val registry = registryStore.load()
         val configured = registry.configuredProfiles()
-        val online = configured.count { it.lastStatusCode in 200..299 && !it.isCoolingDown() }
+        val online = configured.count {
+            it.lastStatusCode in 200..299 && !it.isCoolingDown()
+        }
         val researchReady = webResearch.isConfigured()
         return "${configured.size} nodes // $online online // web ${if (researchReady) "ready" else "offline"}"
     }
 
+    /**
+     * Deterministic conversational phrases must be intercepted before Android's
+     * app launcher. Otherwise phrases such as "wake up Jarvis" can be mistaken
+     * for an installed app name.
+     */
+    fun interceptLocalDialogue(rawInput: String): BrainResponse? {
+        val lower = rawInput
+            .lowercase(Locale.getDefault())
+            .replace(Regex("[^a-z0-9 ]"), " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+
+        val wakePhrases = setOf(
+            "jarvis",
+            "hey jarvis",
+            "hello jarvis",
+            "hi jarvis",
+            "wake up jarvis",
+            "jarvis wake up",
+            "jarvis are you there",
+            "are you there jarvis",
+            "good morning jarvis",
+            "good afternoon jarvis",
+            "good evening jarvis"
+        )
+        if (lower in wakePhrases) {
+            val greeting = when {
+                lower.startsWith("good morning") -> "Good morning, Sir. At your service."
+                lower.startsWith("good afternoon") -> "Good afternoon, Sir. At your service."
+                lower.startsWith("good evening") -> "Good evening, Sir. At your service."
+                lower.contains("are you there") -> "Online and listening, Sir."
+                else -> "At your service, Sir."
+            }
+            return localResponse(
+                spoken = greeting,
+                display = "VOICE LINK ESTABLISHED\n$greeting",
+                intent = "dialogue/wake"
+            )
+        }
+
+        if (lower in setOf("who are you", "tell me about yourself", "what are you")) {
+            return localResponse(
+                spoken = "I am Jarvis, your personal intelligence and Android command system. I can reason, research, remember approved information, and operate supported phone controls.",
+                display = "JARVIS // PERSONAL INTELLIGENCE\nCortex reasoning, live research, encrypted memory, voice interaction, and verified Android actions.",
+                intent = "dialogue/self_identity"
+            )
+        }
+
+        val asksCreator = lower.contains("creator") && (
+            lower.contains("who") ||
+                lower.contains("what") ||
+                lower.contains("tell") ||
+                lower.contains("speak") ||
+                lower.contains("know") ||
+                lower.contains("describe")
+            )
+        if (asksCreator) {
+            val operator = memory.callsign()
+            return localResponse(
+                spoken = "My creator and operator is $operator. You designed me as a personal Android intelligence system with voice, research, memory, and device-control capabilities. I only know details that you have deliberately stored or provided.",
+                display = "CREATOR // $operator\nROLE // OPERATOR AND SYSTEM ARCHITECT\nKNOWLEDGE BOUNDARY // USER-PROVIDED AND SECURELY STORED INFORMATION",
+                intent = "dialogue/creator"
+            )
+        }
+
+        if (lower in setOf("thank you", "thanks", "thanks jarvis", "thank you jarvis")) {
+            return localResponse(
+                spoken = "Always, Sir.",
+                display = "ACKNOWLEDGED // ALWAYS AT YOUR SERVICE",
+                intent = "dialogue/thanks"
+            )
+        }
+
+        if (lower in setOf("how are you", "how are you jarvis", "system check jarvis")) {
+            return localResponse(
+                spoken = "Operational and ready, Sir.",
+                display = "SYSTEM STATE // OPERATIONAL\nCORTEX // ${configuredModel()}",
+                intent = "dialogue/status"
+            )
+        }
+
+        return null
+    }
+
     fun respond(rawInput: String): BrainResponse {
         val input = rawInput.trim()
+        interceptLocalDialogue(input)?.let { return it }
         localMemoryCommand(input)?.let { return it }
         localMeshCommand(input)?.let { return it }
 
@@ -30,14 +119,12 @@ class JarvisBrain(context: Context) {
 
         if (WebResearchIntent.shouldUseWeb(input)) {
             return runCatching { webResearchResponse(input) }
-                .getOrElse { error ->
-                    webResearchFallback(input, error)
-                }
+                .getOrElse { error -> webResearchFallback(input, error) }
         }
 
         val result = cortexMesh.ask(input, memory.promptContext())
-        memory.addHistory("USER: ${input.take(180)}")
-        memory.addHistory("JARVIS: ${result.reply.take(180)}")
+        memory.addHistory("USER: ${input.take(240)}")
+        memory.addHistory("JARVIS: ${result.reply.take(240)}")
 
         return BrainResponse(
             spoken = result.reply,
@@ -58,7 +145,7 @@ class JarvisBrain(context: Context) {
             memory = memory.summary(),
             thoughts = listOf(
                 "The request was classified as ${result.task.name.lowercase(Locale.US)}.",
-                "The cortex mesh selected ${result.profileLabel} using weighted task-fit, reliability, latency, freshness, and stability scoring.",
+                "The cortex mesh selected ${result.profileLabel} using task fit, reliability, latency, freshness, and stability.",
                 if (result.attempts.size > 1) "Automatic failover was used." else "The primary selected node succeeded."
             ),
             entities = listOf(
@@ -74,9 +161,10 @@ class JarvisBrain(context: Context) {
     }
 
     private fun webResearchResponse(input: String): BrainResponse {
-        val result = webResearch.research(input, memory.promptContext())
-        memory.addHistory("USER: ${input.take(180)}")
-        memory.addHistory("JARVIS WEB: ${result.answer.take(180)}")
+        val hybrid = webResearch.research(input, memory.promptContext())
+        val result = hybrid.research
+        memory.addHistory("USER: ${input.take(240)}")
+        memory.addHistory("JARVIS WEB: ${result.answer.take(240)}")
 
         return BrainResponse(
             spoken = result.spokenSummary,
@@ -86,12 +174,17 @@ class JarvisBrain(context: Context) {
             } else {
                 "web_research/grounded_answer"
             },
-            confidence = if (result.sources.size >= 2) 0.96f else 0.86f,
+            confidence = when {
+                result.sources.size >= 4 -> 0.98f
+                result.sources.size >= 2 -> 0.95f
+                else -> 0.84f
+            },
             mode = BrainMode.ONLINE,
             trace = listOf(
                 "android_speech_recognizer",
-                "route=live_web_research",
-                "provider=Groq Compound web search",
+                "route=hybrid_live_web_research",
+                "provider=${hybrid.provider}",
+                "attempts=${hybrid.attempts.joinToString(">")}",
                 "node=${result.profileLabel}",
                 "model=${result.model}",
                 "queries=${result.searchQueries.size}",
@@ -102,11 +195,12 @@ class JarvisBrain(context: Context) {
             memory = memory.summary(),
             thoughts = listOf(
                 "This request required current or externally verified information.",
-                "Jarvis used Groq Compound with server-side web search.",
-                "The detailed answer and returned sources are displayed on screen."
+                "Jarvis attempted real web-enabled providers with automatic cross-provider failover.",
+                "The detailed answer and available sources are displayed on screen."
             ),
             entities = buildList {
-                add("source=groq_compound_web_search")
+                add("source=hybrid_web_research")
+                add("provider=${hybrid.provider}")
                 add("node=${result.profileLabel}")
                 add("model=${result.model}")
                 add("sources=${result.sources.size}")
@@ -124,30 +218,31 @@ class JarvisBrain(context: Context) {
         val fallbackPrompt = buildString {
             appendLine(input)
             appendLine()
-            appendLine("Live web search was unavailable: $reason")
-            appendLine("Answer only from your existing knowledge. Clearly state that the information may not be current and do not pretend that you searched the web.")
+            appendLine("Both live web routes were unavailable: $reason")
+            appendLine(JarvisDirective.SUMMARIZATION)
+            appendLine("Answer from existing knowledge only. State clearly that freshness cannot be verified. Do not pretend that web research occurred.")
         }
         val result = cortexMesh.ask(fallbackPrompt, memory.promptContext())
-        memory.addHistory("USER: ${input.take(180)}")
-        memory.addHistory("JARVIS FALLBACK: ${result.reply.take(180)}")
+        memory.addHistory("USER: ${input.take(240)}")
+        memory.addHistory("JARVIS FALLBACK: ${result.reply.take(240)}")
 
         return BrainResponse(
-            spoken = "Live web research was unavailable, Sir. ${result.reply}",
-            display = "LIVE WEB RESEARCH UNAVAILABLE\n$reason\n\n${result.reply}",
+            spoken = "Live information could not be verified. Here is a knowledge-based summary, which may not be current. ${result.reply}",
+            display = "LIVE WEB VERIFICATION UNAVAILABLE\n${reason.take(360)}\n\nKNOWLEDGE-BASED FALLBACK\n${result.reply}",
             intent = "web_research/fallback",
-            confidence = 0.58f,
+            confidence = 0.55f,
             mode = BrainMode.ALERT,
             trace = listOf(
-                "route=web_research",
-                "grounding=failed",
+                "route=hybrid_web_research",
+                "live_routes=failed",
                 "fallback=cortex_mesh",
-                "reason=${reason.take(120)}",
+                "reason=${reason.take(160)}",
                 "node=${result.profileLabel}",
                 "model=${result.model}"
             ),
             memory = memory.summary(),
             thoughts = listOf(
-                "The live web route failed.",
+                "Both live research routes failed.",
                 "A normal cortex answer was returned with an explicit freshness warning."
             ),
             entities = listOf(
@@ -232,24 +327,28 @@ class JarvisBrain(context: Context) {
 
         val registry = registryStore.load()
         val configured = registry.configuredProfiles()
-        val online = configured.count { it.lastStatusCode in 200..299 && !it.isCoolingDown() }
+        val online = configured.count {
+            it.lastStatusCode in 200..299 && !it.isCoolingDown()
+        }
         val cooling = configured.count { it.isCoolingDown() }
         val researchReady = webResearch.isConfigured()
         val summary = buildString {
             appendLine("CORTEX MESH // CONFIGURED ${configured.size}/10 // ONLINE $online // COOLDOWN $cooling")
-            appendLine("WORLD INTELLIGENCE // ${if (researchReady) "READY" else "NEEDS GROQ NODE"}")
-            configured.forEach { appendLine("${it.label} // ${it.provider.displayName} // ${it.healthLabel()}") }
+            appendLine("WORLD INTELLIGENCE // ${if (researchReady) "HYBRID READY" else "NEEDS GROQ OR GEMINI NODE"}")
+            configured.forEach {
+                appendLine("${it.label} // ${it.provider.displayName} // ${it.healthLabel()}")
+            }
         }.trim()
 
         return localResponse(
-            spoken = "The cortex mesh has ${configured.size} configured nodes, with $online currently online. Live web intelligence is ${if (researchReady) "ready" else "not configured"}, Sir.",
+            spoken = "The cortex mesh has ${configured.size} configured nodes, with $online currently online. Hybrid web intelligence is ${if (researchReady) "ready" else "not configured"}, Sir.",
             display = summary,
             intent = "cortex_mesh_status"
         )
     }
 
     private fun configurationRequiredResponse(): BrainResponse = BrainResponse(
-        spoken = "The cortex mesh is not configured, Sir. Say configure APIs to add a Groq node.",
+        spoken = "The cortex mesh is not configured, Sir. Say configure APIs to add a Gemini or Groq node.",
         display = "CORTEX MESH CONFIGURATION REQUIRED\nSay: configure APIs",
         intent = "cortex_config_required",
         confidence = 1f,
@@ -258,7 +357,7 @@ class JarvisBrain(context: Context) {
         memory = memory.summary(),
         thoughts = listOf(
             "No local server was contacted.",
-            "At least one Groq node needs a model ID and encrypted key."
+            "At least one Gemini or Groq node needs a model ID and encrypted key."
         ),
         entities = listOf("mesh=not_configured", "local_server=disabled"),
         decision = "request_cortex_configuration",
@@ -275,9 +374,9 @@ class JarvisBrain(context: Context) {
         intent = intent,
         confidence = 1f,
         mode = BrainMode.ONLINE,
-        trace = listOf("android_control_layer", "encrypted_local_state"),
+        trace = listOf("android_dialogue_layer", "encrypted_local_state"),
         memory = memory.summary(),
-        thoughts = listOf("This deterministic phone control did not require a cloud request."),
+        thoughts = listOf("This deterministic conversational response did not require a cloud request."),
         entities = emptyList(),
         decision = intent,
         action = BrainAction()
