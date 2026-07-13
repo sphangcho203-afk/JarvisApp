@@ -62,6 +62,13 @@ class AppLauncher(private val context: Context) {
         val requested = cleanRequestedName(spokenName)
         if (requested.isBlank()) return LaunchResult.NotFound(spokenName)
 
+        // Last-resort safety gate. The device router should already reject
+        // knowledge questions, but this prevents a sentence from ever matching
+        // a tiny app label such as "X" through substring scoring.
+        if (looksLikeKnowledgeRequest(requested)) {
+            return LaunchResult.NotFound(spokenName)
+        }
+
         val variants = requestedVariants(requested)
         val matches = installedApps().mapNotNull { app ->
             val score = variants.maxOf { variant -> calculateScore(variant, app) }
@@ -169,19 +176,36 @@ class AppLauncher(private val context: Context) {
         return value.trim()
     }
 
+    private fun looksLikeKnowledgeRequest(requested: String): Boolean {
+        val tokens = requested.split(" ").filter { it.isNotBlank() }
+        if (QUESTION_PREFIXES.any(requested::startsWith)) return true
+        if (tokens.size > 5) return true
+        return tokens.size >= 3 && KNOWLEDGE_TERMS.containsMatchIn(requested)
+    }
+
     private fun calculateScore(requested: String, app: InstalledApp): Int {
         val installed = app.normalizedLabel
         if (requested == installed) return EXACT_MATCH_SCORE
-        if (installed.startsWith(requested)) return 94
-        if (requested.startsWith(installed)) return 91
-        if (installed.contains(requested)) return 86
-        if (requested.contains(installed)) return 82
 
-        val requestedTokens = requested.split(" ").filter { it.isNotBlank() }.toSet()
-        val installedTokens = installed.split(" ").filter { it.isNotBlank() }.toSet()
+        // Short app labels need strict matching. Without this, a one-letter app
+        // such as X can hijack unrelated sentences that merely contain that letter.
+        val safeRequested = requested.length >= 2
+        val safeInstalled = installed.length >= 3
+
+        if (safeRequested && installed.startsWith(requested)) return 94
+        if (safeInstalled && requested.startsWith(installed)) return 91
+        if (requested.length >= 3 && installed.contains(requested)) return 86
+        if (safeInstalled && requested.contains(installed)) return 82
+
+        val requestedTokens = requested.split(" ")
+            .filter { it.length >= 2 }
+            .toSet()
+        val installedTokens = installed.split(" ")
+            .filter { it.length >= 2 }
+            .toSet()
         val shared = requestedTokens.intersect(installedTokens).size
-        if (shared > 0) {
-            val coverage = shared.toFloat() / requestedTokens.size.coerceAtLeast(1)
+        if (shared > 0 && requestedTokens.isNotEmpty()) {
+            val coverage = shared.toFloat() / requestedTokens.size
             if (coverage >= 1f) return 79
             if (coverage >= 0.66f) return 70
         }
@@ -189,12 +213,12 @@ class AppLauncher(private val context: Context) {
         val compactRequested = requested.replace(" ", "")
         val compactInstalled = installed.replace(" ", "")
         val maxLength = maxOf(compactRequested.length, compactInstalled.length)
-        if (maxLength == 0 || maxLength > 32) return 0
+        if (maxLength < 3 || maxLength > 32) return 0
         val distance = levenshtein(compactRequested, compactInstalled)
         val similarity = 1f - distance.toFloat() / maxLength
         return when {
             similarity >= 0.88f -> 76
-            similarity >= 0.78f -> 64
+            similarity >= 0.78f && minOf(compactRequested.length, compactInstalled.length) >= 5 -> 64
             else -> 0
         }
     }
@@ -233,5 +257,15 @@ class AppLauncher(private val context: Context) {
         private const val EXACT_MATCH_SCORE = 100
         private const val MINIMUM_MATCH_SCORE = 60
         private const val AMBIGUITY_WINDOW = 4
+
+        private val QUESTION_PREFIXES = listOf(
+            "what ", "whats ", "why ", "how ", "when ", "where ", "who ",
+            "tell me ", "explain ", "research ", "find out ", "is ", "are ",
+            "do ", "does ", "did ", "can ", "could ", "would ", "should "
+        )
+
+        private val KNOWLEDGE_TERMS = Regex(
+            "\\b(happening|happened|latest|today|news|world|current|recent|explain|research|information|know|meaning|reason|compare|summarize|summary)\\b"
+        )
     }
 }
