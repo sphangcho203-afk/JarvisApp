@@ -65,11 +65,12 @@ data class CortexRegistry(
 
     companion object {
         const val DEFAULT_SYSTEM_PROMPT =
-            "You are Jarvis, Seongja's advanced phone assistant. Be precise, capable, calm, and concise. " +
-                "Use supplied memory only when relevant. Android executes supported phone actions before requests reach you: " +
-                "apps and web, flashlight, media controls, volume, brightness, rotation, battery and network telemetry, timers, " +
-                "Spotify and YouTube search, and official connectivity/settings panels. Never claim an action succeeded unless " +
-                "Android confirms it. Never invent device state. When uncertain, state the uncertainty instead of inventing facts."
+            "You are Jarvis, Seongja's personal intelligence and Android command assistant. " +
+                "Understand imperfect natural speech, infer the intended request carefully, and communicate with correct punctuation. " +
+                "Be calm, direct, capable, and concise by default. Use supplied memory only when relevant. Android executes supported " +
+                "phone actions before requests reach you, including apps, web navigation, flashlight, media, volume, brightness, " +
+                "rotation, device telemetry, timers, searches, and approved settings controls. Never claim an action succeeded unless " +
+                "Android confirms it. Never invent device state, current facts, sources, memory, or permissions."
     }
 }
 
@@ -112,11 +113,19 @@ object CortexDefaults {
 
 object CortexTaskClassifier {
     private val codingTerms = Regex(
-        "\\b(code|coding|kotlin|java|python|javascript|typescript|gradle|github|compile|compiler|debug|bug|function|class|api|json|sql|html|css)\\b",
+        "\\b(code|coding|kotlin|java|python|javascript|typescript|gradle|github|compile|compiler|debug|bug|function|class|" +
+            "api|json|sql|html|css|android|repository|stack trace|exception|implementation|refactor)\\b",
         RegexOption.IGNORE_CASE
     )
+
     private val reasoningTerms = Regex(
-        "\\b(analy[sz]e|reason|strategy|plan|compare|evaluate|derive|prove|calculate|mathematics|physics|architecture|optimi[sz]e|why|deep)\\b",
+        "\\b(analy[sz]e|reason|strategy|plan|compare|evaluate|derive|prove|calculate|mathematics|physics|architecture|" +
+            "optimi[sz]e|why|deep|investigate|diagnose|design|trade-?off|consequence|best approach|step by step)\\b",
+        RegexOption.IGNORE_CASE
+    )
+
+    private val summaryTerms = Regex(
+        "\\b(summarize|summarise|summary|break down|breakdown|brief me|key points|bottom line|explain simply|in simple terms)\\b",
         RegexOption.IGNORE_CASE
     )
 
@@ -124,6 +133,7 @@ object CortexTaskClassifier {
         val clean = input.trim()
         if (codingTerms.containsMatchIn(clean)) return CortexTask.CODING
         if (reasoningTerms.containsMatchIn(clean) || clean.length > 260) return CortexTask.REASONING
+        if (summaryTerms.containsMatchIn(clean) && clean.length > 120) return CortexTask.REASONING
         if (clean.length <= 48 && clean.split(Regex("\\s+")).size <= 8) return CortexTask.FAST
         return CortexTask.GENERAL
     }
@@ -163,15 +173,15 @@ object CortexMath {
     private fun taskFit(profile: CortexProfile, task: CortexTask): Double {
         val model = profile.model.lowercase(Locale.US)
         var fit = when (task) {
-            CortexTask.FAST -> if (profile.provider == CortexProvider.GROQ) 1.0 else 0.86
-            CortexTask.GENERAL -> if (profile.provider == CortexProvider.GEMINI) 0.98 else 0.90
-            CortexTask.REASONING -> if (profile.provider == CortexProvider.GEMINI) 1.0 else 0.92
-            CortexTask.CODING -> if (profile.provider == CortexProvider.GROQ) 0.98 else 0.94
+            CortexTask.FAST -> if (profile.provider == CortexProvider.GROQ) 1.0 else 0.88
+            CortexTask.GENERAL -> if (profile.provider == CortexProvider.GEMINI) 0.99 else 0.91
+            CortexTask.REASONING -> if (profile.provider == CortexProvider.GEMINI) 1.0 else 0.94
+            CortexTask.CODING -> if (profile.provider == CortexProvider.GROQ) 0.99 else 0.96
         }
 
         if (task == CortexTask.FAST && ("flash" in model || "instant" in model || "8b" in model)) fit += 0.05
-        if (task == CortexTask.REASONING && ("pro" in model || "70b" in model || "32b" in model)) fit += 0.05
-        if (task == CortexTask.CODING && ("qwen" in model || "coder" in model || "code" in model)) fit += 0.06
+        if (task == CortexTask.REASONING && ("pro" in model || "70b" in model || "32b" in model || "3.1" in model)) fit += 0.05
+        if (task == CortexTask.CODING && ("qwen" in model || "coder" in model || "code" in model || "70b" in model)) fit += 0.05
         return fit.coerceIn(0.0, 1.0)
     }
 }
