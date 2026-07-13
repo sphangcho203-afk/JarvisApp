@@ -93,7 +93,7 @@ object SpeechCommandNormalizer {
             "multiplication sign" to "×",
             "times sign" to "×",
             "euro sign" to "€",
-            "dollar sign" to "$",
+            "dollar sign" to "${'$'}",
             "cent sign" to "¢",
             "equals sign" to "=",
             "equal sign" to "=",
@@ -113,18 +113,16 @@ object SpeechCommandNormalizer {
         )
 
         replacements.sortedByDescending { it.first.length }.forEach { (spoken, symbol) ->
-            output = output.replace(
-                Regex("\\b${Regex.escape(spoken)}\\b", RegexOption.IGNORE_CASE),
-                symbol
-            )
+            val pattern = Regex("\\b${Regex.escape(spoken)}\\b", RegexOption.IGNORE_CASE)
+            output = pattern.replace(output) { symbol }
         }
         return output
     }
 
     private fun normalizeSpacing(value: String): String = value
         .replace(Regex("[ \\t]+"), " ")
-        .replace(Regex("\\s+([,.;:!?%)}\\]])"), "$1")
-        .replace(Regex("([({\\[])\\s+"), "$1")
+        .replace(Regex("\\s+([,.;:!?%)}\\]])"), "\$1")
+        .replace(Regex("([({\\[])\\s+"), "\$1")
         .replace(Regex("\\n{3,}"), "\n\n")
         .trim()
 
@@ -153,8 +151,6 @@ object SpeechCommandNormalizer {
             }
             if (char == '.' || char == '?' || char == '!' || char == '\n') {
                 capitalizeNext = true
-            } else if (!char.isWhitespace() && capitalizeNext && !char.isLetter()) {
-                // Keep waiting for the first letter after punctuation or a symbol.
             }
         }
         return String(chars)
