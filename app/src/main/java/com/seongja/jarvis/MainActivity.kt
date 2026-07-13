@@ -197,11 +197,7 @@ class MainActivity : Activity() {
             return
         }
         val requestId = requestGeneration.incrementAndGet()
-        val timeoutMs = if (WebResearchIntent.shouldUseWeb(clean)) {
-            120_000L
-        } else {
-            40_000L
-        }
+        val timeoutMs = JarvisDirective.timeoutFor(clean)
         armProcessingTimeout(requestId, timeoutMs)
         processInput(clean, requestId)
     }
