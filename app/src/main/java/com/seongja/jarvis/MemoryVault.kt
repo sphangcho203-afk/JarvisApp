@@ -290,7 +290,8 @@ class MemoryVault(context: Context) {
             return "+$digits"
         }
         if (digits.length == 11 && digits.startsWith("0")) digits = digits.drop(1)
-        if (digits.length != 10 || digits.firstOrNull() !in '6'..'9') return null
+        val validIndianMobile = digits.length == 10 && digits.firstOrNull()?.let { it in '6'..'9' } == true
+        if (!validIndianMobile) return null
         return if (hasPlus) "+$digits" else digits
     }
 
