@@ -32,6 +32,10 @@ class VoiceLoop(
     private var busyCount = 0
     private var generation = 0
 
+    init {
+        JarvisConversationBus.initialize(activity.applicationContext)
+    }
+
     private val delayedStart = Runnable { startNow() }
     private val readyWatchdog = Runnable {
         if (!destroyed && !paused && (starting || !listening)) {
@@ -324,6 +328,7 @@ class VoiceLoop(
             paused = true
             onDiagnostic("ASR RESULT -> ${normalized.displayText.take(72)}")
             onState(State.PROCESSING)
+            JarvisConversationBus.recordUser(normalized.displayText)
             onSpeech(normalized.displayText)
         } else {
             onDiagnostic("ASR RESULT -> EMPTY")
@@ -348,9 +353,6 @@ class VoiceLoop(
     private fun chooseHypothesis(hypotheses: List<String>): String {
         if (hypotheses.isEmpty()) return ""
 
-        // Wake phrases are often present as a lower-ranked result because the
-        // recognizer treats "Jarvis" as an uncommon proper name. Prefer the
-        // alternative that preserves the wake intent when one exists.
         val wakeCandidate = hypotheses.firstOrNull { candidate ->
             val normalized = SpeechCommandNormalizer.normalize(candidate)
                 .commandText
