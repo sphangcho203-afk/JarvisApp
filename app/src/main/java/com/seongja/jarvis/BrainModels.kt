@@ -70,4 +70,8 @@ data class BrainResponse(
     val entities: List<String>,
     val decision: String,
     val action: BrainAction = BrainAction()
-)
+) {
+    init {
+        JarvisConversationBus.recordAssistant(spoken)
+    }
+}
