@@ -10,11 +10,12 @@ import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.Shader
 import android.graphics.SweepGradient
-import com.jarvis.core.device.DeviceTelemetry
+import android.graphics.Typeface
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.view.View
+import com.jarvis.core.device.DeviceTelemetry
 import java.time.LocalTime
 import java.time.format.DateTimeFormatter
 import java.util.Locale
@@ -26,43 +27,78 @@ import kotlin.math.min
 import kotlin.math.sin
 import kotlin.random.Random
 
+/**
+ * JARVIS // HELIX
+ *
+ * A state-driven cinematic HUD. Every large movement communicates listening,
+ * cognition, research, execution, speech, or recovery. Decorative motion is
+ * intentionally slower and dimmer than operational motion.
+ */
 class AdvancedCivilizationHudView(context: Context) : View(context) {
+
+    private enum class VisualState {
+        BOOT,
+        READY,
+        LISTENING,
+        THINKING,
+        RESEARCHING,
+        EXECUTING,
+        SPEAKING,
+        SUCCESS,
+        WARNING,
+        ERROR,
+        STANDBY
+    }
+
+    private data class Particle(
+        val x: Float,
+        val y: Float,
+        val depth: Float,
+        val phase: Float,
+        val size: Float
+    )
+
     private val handler = Handler(Looper.getMainLooper())
     private val telemetry = DeviceTelemetry(context.applicationContext)
-    private val bootStart = SystemClock.uptimeMillis()
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        typeface = android.graphics.Typeface.MONOSPACE
-    }
+    private val textPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val rect = RectF()
     private val path = Path()
-    private val particles = List(110) {
+    private val bootStartedAt = SystemClock.uptimeMillis()
+    private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss", Locale.US)
+
+    private val particles = List(58) {
         Particle(
             x = Random.nextFloat(),
             y = Random.nextFloat(),
-            speed = Random.nextFloat() * 1.9f + 0.28f,
+            depth = Random.nextFloat() * 0.75f + 0.25f,
             phase = Random.nextFloat() * 360f,
-            size = Random.nextFloat() * 1.8f + 0.5f
+            size = Random.nextFloat() * 1.4f + 0.45f
         )
     }
-    private val events = mutableListOf("PHASE 9.2A -> ACTION FABRIC READY")
-    private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss", Locale.US)
 
-    private var lastResponse = "Neural command system standing by. Speak naturally."
-    private var lastResponseUpdatedAtMs = SystemClock.uptimeMillis()
+    private val events = mutableListOf("HELIX VISUAL KERNEL ONLINE")
+
     private var transcript = ""
-    private var intent = "idle"
+    private var lastResponse = "Neural command channel standing by."
+    private var lastResponseUpdatedAtMs = SystemClock.uptimeMillis()
+    private var intent = "standby"
     private var confidence = 0f
-    private var memory = "OPERATOR SEONGJA // LOCAL MEMORY ONLINE"
-    private var trace = listOf("phase91_boot", "execution_kernel_ready", "voice_loop_ready")
-    private var thoughts = listOf("Cognitive lattice initialized.", "Awaiting operator input.")
-    private var entities = listOf("operator=Seongja")
+    private var memory = "OPERATOR MEMORY // SECURE"
+    private var trace = listOf("helix_boot", "voice_array_ready")
+    private var thoughts = listOf("Awaiting operator input.")
+    private var entities = emptyList<String>()
     private var decision = "standby"
-    private var voiceState = VoiceLoop.State.READY
     private var mode = BrainMode.BOOT
+    private var voiceState = VoiceLoop.State.READY
     private var commandCount = 0
+
+    private var visualState = VisualState.BOOT
+    private var previousVisualState = VisualState.BOOT
+    private var stateChangedAtMs = SystemClock.uptimeMillis()
     private var targetVoiceEnergy = 0f
     private var displayVoiceEnergy = 0f
+    private var responsePulse = 0f
 
     private var countdownActive = false
     private var countdownLabel = "MISSION TIMER"
@@ -79,26 +115,39 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
     private val animator = object : Runnable {
         override fun run() {
             invalidate()
-            handler.postDelayed(this, 16L)
+            handler.postDelayed(this, FRAME_DELAY_MS)
         }
     }
 
     init {
         isFocusable = true
         isClickable = true
+        textPaint.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.NORMAL)
         handler.post(animator)
     }
 
     fun setVoiceState(state: VoiceLoop.State) {
         voiceState = state
-        mode = when (state) {
-            VoiceLoop.State.LISTENING -> BrainMode.LISTENING
-            VoiceLoop.State.PROCESSING -> BrainMode.THINKING
-            VoiceLoop.State.ERROR -> BrainMode.ALERT
-            VoiceLoop.State.UNAVAILABLE -> BrainMode.SECURITY
-            VoiceLoop.State.READY -> if (mode == BrainMode.BOOT || mode == BrainMode.LISTENING || mode == BrainMode.THINKING) BrainMode.ONLINE else mode
+        when (state) {
+            VoiceLoop.State.LISTENING -> transitionTo(VisualState.LISTENING)
+            VoiceLoop.State.PROCESSING -> transitionTo(
+                if (isResearchRequest()) VisualState.RESEARCHING else VisualState.THINKING
+            )
+            VoiceLoop.State.ERROR -> transitionTo(VisualState.ERROR)
+            VoiceLoop.State.UNAVAILABLE -> transitionTo(VisualState.WARNING)
+            VoiceLoop.State.READY -> {
+                if (visualState in setOf(
+                        VisualState.BOOT,
+                        VisualState.LISTENING,
+                        VisualState.THINKING,
+                        VisualState.RESEARCHING,
+                        VisualState.SPEAKING
+                    )
+                ) {
+                    transitionTo(VisualState.READY)
+                }
+            }
         }
-        invalidate()
     }
 
     fun setVoiceAmplitude(value: Float) {
@@ -106,12 +155,18 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
     }
 
     fun setProcessing(processing: Boolean) {
-        mode = if (processing) BrainMode.THINKING else if (mode == BrainMode.THINKING) BrainMode.ONLINE else mode
-        invalidate()
+        if (processing) {
+            transitionTo(if (isResearchRequest()) VisualState.RESEARCHING else VisualState.THINKING)
+        } else if (visualState == VisualState.THINKING || visualState == VisualState.RESEARCHING) {
+            transitionTo(VisualState.READY)
+        }
     }
 
     fun setTranscript(value: String) {
         transcript = value.take(MAX_STREAM_TEXT)
+        if (visualState == VisualState.THINKING && isResearchRequest()) {
+            transitionTo(VisualState.RESEARCHING)
+        }
         invalidate()
     }
 
@@ -131,43 +186,87 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
         intent = response.intent
         confidence = response.confidence
         mode = response.mode
-        trace = response.trace.takeLast(8)
+        trace = response.trace.takeLast(10)
         thoughts = response.thoughts.takeLast(4)
-        entities = response.entities.takeLast(4)
+        entities = response.entities.takeLast(8)
         decision = response.decision
         memory = response.memory
-        pushEvent("BRAIN -> ${response.intent.uppercase(Locale.US)} ${(response.confidence * 100).toInt()}%")
-        invalidate()
+        responsePulse = 1f
+
+        val next = when {
+            response.mode == BrainMode.ALERT -> VisualState.ERROR
+            response.mode == BrainMode.EXECUTING || response.mode == BrainMode.TACTICAL -> VisualState.EXECUTING
+            response.intent.startsWith("web_research/") -> VisualState.SPEAKING
+            response.intent.startsWith("device/") -> VisualState.SUCCESS
+            else -> VisualState.SPEAKING
+        }
+        transitionTo(next)
+        pushEvent("CORTEX -> ${response.intent.uppercase(Locale.US)} ${(response.confidence * 100).toInt()}%")
     }
 
     fun pushEvent(event: String) {
-        events.add(0, event.take(74))
-        while (events.size > 10) events.removeLast()
+        val clean = event.take(88)
+        events.add(0, clean)
+        while (events.size > 12) events.removeLast()
+
+        val upper = clean.uppercase(Locale.US)
+        when {
+            "VOICE -> SPEAKING" in upper -> transitionTo(VisualState.SPEAKING)
+            "VOICE -> COMPLETE" in upper -> transitionTo(VisualState.READY)
+            "ROUTING REQUEST" in upper -> transitionTo(
+                if (isResearchRequest()) VisualState.RESEARCHING else VisualState.THINKING
+            )
+            "FAILED" in upper || " ERROR" in upper || upper.startsWith("ERROR") -> transitionTo(VisualState.ERROR)
+            "PERMISSION" in upper || "CONFIRMATION" in upper -> transitionTo(VisualState.WARNING)
+            "ACTION ->" in upper && "SUCCESS" in upper -> transitionTo(VisualState.SUCCESS)
+        }
         invalidate()
     }
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val t = (SystemClock.uptimeMillis() - bootStart) / 1000f
+        val now = SystemClock.uptimeMillis()
+        val t = (now - bootStartedAt) / 1000f
         refreshTelemetry()
         updateAnimationState()
+        resolveTransientState(now)
 
-        drawBackdrop(canvas, t)
-        drawPerspectiveGrid(canvas, t)
+        drawVoid(canvas, t)
+        drawDepthGrid(canvas, t)
         drawParticleField(canvas, t)
-        drawFrameGeometry(canvas, t)
+        drawFrame(canvas, t)
         drawHeader(canvas, t)
-        drawSidePanels(canvas, t)
-        drawNeuralCore(canvas, t)
-        drawVoiceArray(canvas, t)
-        drawCommandDock(canvas, t)
+        drawCortexRail(canvas, t)
+        drawContextModules(canvas, t)
+        drawHelixCore(canvas, t)
+        drawVoiceRibbon(canvas, t)
+        drawCommandSurface(canvas, t)
         drawEventRail(canvas)
-        drawBootOverlay(canvas, t)
+        drawBootSequence(canvas, t)
     }
 
     override fun onDetachedFromWindow() {
         handler.removeCallbacksAndMessages(null)
         super.onDetachedFromWindow()
+    }
+
+    private fun transitionTo(next: VisualState) {
+        if (next == visualState) return
+        previousVisualState = visualState
+        visualState = next
+        stateChangedAtMs = SystemClock.uptimeMillis()
+        invalidate()
+    }
+
+    private fun resolveTransientState(now: Long) {
+        val elapsed = now - stateChangedAtMs
+        if (visualState == VisualState.SUCCESS && elapsed > 2_400L) transitionTo(VisualState.READY)
+        if (visualState == VisualState.WARNING && elapsed > 5_500L && voiceState == VoiceLoop.State.READY) {
+            transitionTo(VisualState.READY)
+        }
+        if (visualState == VisualState.SPEAKING && elapsed > 30_000L && voiceState == VoiceLoop.State.READY) {
+            transitionTo(VisualState.READY)
+        }
     }
 
     private fun refreshTelemetry() {
@@ -182,13 +281,15 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
     }
 
     private fun updateAnimationState() {
-        val desired = if (voiceState == VoiceLoop.State.LISTENING) targetVoiceEnergy else 0f
-        val factor = if (desired > displayVoiceEnergy) 0.32f else 0.11f
-        displayVoiceEnergy += (desired - displayVoiceEnergy) * factor
-        if (displayVoiceEnergy < 0.005f) displayVoiceEnergy = 0f
+        val desired = if (visualState == VisualState.LISTENING) targetVoiceEnergy else 0f
+        val responseFactor = if (desired > displayVoiceEnergy) 0.34f else 0.10f
+        displayVoiceEnergy += (desired - displayVoiceEnergy) * responseFactor
+        if (displayVoiceEnergy < 0.004f) displayVoiceEnergy = 0f
+        responsePulse *= 0.94f
+        if (responsePulse < 0.004f) responsePulse = 0f
     }
 
-    private fun drawBackdrop(canvas: Canvas, t: Float) {
+    private fun drawVoid(canvas: Canvas, t: Float) {
         paint.style = Paint.Style.FILL
         paint.shader = LinearGradient(
             0f,
@@ -196,220 +297,240 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
             width.toFloat(),
             height.toFloat(),
             intArrayOf(
-                Color.rgb(1, 5, 11),
-                Color.rgb(3, 14, 23),
-                Color.rgb(8, 8, 24),
-                Color.rgb(2, 5, 10)
+                Color.rgb(5, 8, 16),
+                Color.rgb(7, 14, 25),
+                Color.rgb(10, 9, 24),
+                Color.rgb(4, 7, 13)
             ),
-            floatArrayOf(0f, 0.34f, 0.72f, 1f),
+            floatArrayOf(0f, 0.38f, 0.72f, 1f),
             Shader.TileMode.CLAMP
         )
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
         paint.shader = null
 
-        val scanY = ((t * dp(76f)) % (height + dp(180f))) - dp(90f)
-        paint.color = Color.argb(22, 0, 255, 235)
-        canvas.drawRect(0f, scanY, width.toFloat(), scanY + dp(2.2f), paint)
-        paint.shader = LinearGradient(
-            0f,
-            scanY - dp(28f),
-            0f,
-            scanY + dp(28f),
-            intArrayOf(Color.TRANSPARENT, Color.argb(12, 0, 245, 255), Color.TRANSPARENT),
-            null,
+        val accent = stateColor()
+        val centerX = width / 2f
+        val centerY = height * 0.37f
+        val glowRadius = min(width, height) * 0.54f
+        paint.shader = RadialGradient(
+            centerX,
+            centerY,
+            glowRadius,
+            intArrayOf(
+                Color.argb(22 + (stateIntensity() * 24).toInt(), Color.red(accent), Color.green(accent), Color.blue(accent)),
+                Color.argb(8, 16, 70, 92),
+                Color.TRANSPARENT
+            ),
+            floatArrayOf(0f, 0.44f, 1f),
             Shader.TileMode.CLAMP
         )
-        canvas.drawRect(0f, scanY - dp(28f), width.toFloat(), scanY + dp(28f), paint)
+        canvas.drawCircle(centerX, centerY, glowRadius, paint)
         paint.shader = null
+
+        if (visualState in setOf(VisualState.RESEARCHING, VisualState.ERROR, VisualState.WARNING)) {
+            val scanY = ((t * dp(if (visualState == VisualState.RESEARCHING) 58f else 34f)) % (height + dp(120f))) - dp(60f)
+            paint.shader = LinearGradient(
+                0f,
+                scanY - dp(30f),
+                0f,
+                scanY + dp(30f),
+                intArrayOf(Color.TRANSPARENT, withAlpha(accent, 22), Color.TRANSPARENT),
+                null,
+                Shader.TileMode.CLAMP
+            )
+            canvas.drawRect(0f, scanY - dp(30f), width.toFloat(), scanY + dp(30f), paint)
+            paint.shader = null
+        }
     }
 
-    private fun drawPerspectiveGrid(canvas: Canvas, t: Float) {
-        val horizon = height * 0.62f
+    private fun drawDepthGrid(canvas: Canvas, t: Float) {
+        val horizon = height * 0.61f
         val centerX = width / 2f
+        val accent = stateColor()
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = dp(0.45f)
-        paint.color = Color.argb(40, 20, 224, 255)
+        paint.color = Color.argb(25, Color.red(accent), Color.green(accent), Color.blue(accent))
 
-        val rayCount = 24
-        for (i in 0..rayCount) {
-            val bottomX = width * (i / rayCount.toFloat())
-            val topX = centerX + (bottomX - centerX) * 0.13f
+        for (i in 0..18) {
+            val bottomX = width * (i / 18f)
+            val topX = centerX + (bottomX - centerX) * 0.09f
             canvas.drawLine(topX, horizon, bottomX, height.toFloat(), paint)
         }
 
-        val phase = (t * 0.18f) % 1f
-        for (i in 0 until 18) {
-            val p = ((i + phase) / 18f).coerceIn(0f, 1f)
+        val phase = (t * 0.12f) % 1f
+        for (i in 0 until 15) {
+            val p = ((i + phase) / 15f).coerceIn(0f, 1f)
             val eased = p * p
             val y = horizon + eased * (height - horizon)
-            val inset = (1f - eased) * width * 0.43f
+            val inset = (1f - eased) * width * 0.45f
             canvas.drawLine(inset, y, width - inset, y, paint)
         }
 
-        paint.color = Color.argb(25, 127, 82, 255)
-        paint.strokeWidth = dp(0.5f)
-        val hexRadius = dp(18f)
-        var y = height * 0.08f
-        while (y < height * 0.62f) {
-            var x = -hexRadius
-            val row = (y / (hexRadius * 1.7f)).toInt()
-            if (row % 2 != 0) x += hexRadius * 0.9f
-            while (x < width + hexRadius) {
-                drawHex(canvas, x, y, hexRadius, paint)
-                x += hexRadius * 3.1f
+        paint.color = Color.argb(16, 105, 118, 185)
+        val radius = dp(18f)
+        var y = height * 0.10f
+        while (y < horizon) {
+            var x = -radius
+            val row = (y / (radius * 2.4f)).toInt()
+            if (row % 2 != 0) x += radius * 1.55f
+            while (x < width + radius) {
+                drawHex(canvas, x, y, radius, paint)
+                x += radius * 3.1f
             }
-            y += hexRadius * 2.7f
+            y += radius * 2.7f
         }
     }
 
     private fun drawParticleField(canvas: Canvas, t: Float) {
+        val accent = stateColor()
+        val activity = stateIntensity()
         paint.style = Paint.Style.FILL
         particles.forEachIndexed { index, particle ->
-            val drift = (t * particle.speed * 15f + particle.phase) % 360f
-            val x = ((particle.x * width) + sin(drift.toRad()) * dp(18f) + width) % width
-            val y = ((particle.y * height) + t * particle.speed * dp(5f) + height) % height
-            val pulse = ((sin((t * 2.1f + index * 0.41f).toDouble()).toFloat() + 1f) * 0.5f)
-            val violet = if (index % 7 == 0) 126 else 0
-            paint.color = Color.argb((26 + pulse * 82).toInt(), violet, 234, 255)
-            canvas.drawCircle(x, y, dp(particle.size * (0.7f + pulse * 0.6f)), paint)
+            val drift = (particle.phase + t * (3f + particle.depth * 8f)).toRad()
+            val x = ((particle.x * width) + sin(drift) * dp(10f) + width) % width
+            val y = ((particle.y * height) + t * particle.depth * dp(2.2f) + height) % height
+            val pulse = (sin((t * 1.4f + index * 0.63f).toDouble()).toFloat() + 1f) * 0.5f
+            val alpha = (14 + particle.depth * 28 + pulse * 26 + activity * 20).toInt().coerceIn(0, 104)
+            paint.color = if (index % 11 == 0) {
+                Color.argb(alpha, 148, 106, 255)
+            } else {
+                Color.argb(alpha, Color.red(accent), Color.green(accent), Color.blue(accent))
+            }
+            canvas.drawCircle(x, y, dp(particle.size * particle.depth), paint)
         }
     }
 
-    private fun drawFrameGeometry(canvas: Canvas, t: Float) {
+    private fun drawFrame(canvas: Canvas, t: Float) {
+        val accent = stateColor()
         val inset = dp(14f)
-        val corner = dp(48f)
-        val accent = modeColor()
+        val arm = dp(54f)
+        val alpha = 105 + (pulse(t, 1.8f) * 36).toInt()
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = dp(1.1f)
-        paint.color = Color.argb(125, Color.red(accent), Color.green(accent), Color.blue(accent))
+        paint.color = Color.argb(alpha, Color.red(accent), Color.green(accent), Color.blue(accent))
 
-        path.reset()
-        path.moveTo(inset, inset + corner)
-        path.lineTo(inset, inset)
-        path.lineTo(inset + corner, inset)
-        canvas.drawPath(path, paint)
-        path.reset()
-        path.moveTo(width - inset - corner, inset)
-        path.lineTo(width - inset, inset)
-        path.lineTo(width - inset, inset + corner)
-        canvas.drawPath(path, paint)
-        path.reset()
-        path.moveTo(inset, height - inset - corner)
-        path.lineTo(inset, height - inset)
-        path.lineTo(inset + corner, height - inset)
-        canvas.drawPath(path, paint)
-        path.reset()
-        path.moveTo(width - inset - corner, height - inset)
-        path.lineTo(width - inset, height - inset)
-        path.lineTo(width - inset, height - inset - corner)
-        canvas.drawPath(path, paint)
+        cornerPath(canvas, inset, inset, arm, true, true)
+        cornerPath(canvas, width - inset, inset, arm, false, true)
+        cornerPath(canvas, inset, height - inset, arm, true, false)
+        cornerPath(canvas, width - inset, height - inset, arm, false, false)
 
-        val pulseAlpha = (45 + pulse(t, 2.4f) * 75).toInt()
-        paint.color = Color.argb(pulseAlpha, 0, 245, 255)
-        val marks = 12
-        for (i in 0 until marks) {
-            val x = width * (0.08f + i * 0.84f / (marks - 1f))
-            canvas.drawLine(x, dp(78f), x + dp(9f), dp(78f), paint)
-        }
+        val progress = ((t * 0.075f) % 1f)
+        val startX = dp(28f)
+        val endX = width - dp(28f)
+        val x = startX + (endX - startX) * progress
+        paint.strokeWidth = dp(1.8f)
+        paint.color = withAlpha(accent, 190)
+        canvas.drawLine(x, dp(94f), min(endX, x + dp(28f)), dp(94f), paint)
+    }
+
+    private fun cornerPath(canvas: Canvas, x: Float, y: Float, arm: Float, left: Boolean, top: Boolean) {
+        path.reset()
+        path.moveTo(x, y + if (top) arm else -arm)
+        path.lineTo(x, y)
+        path.lineTo(x + if (left) arm else -arm, y)
+        canvas.drawPath(path, paint)
     }
 
     private fun drawHeader(canvas: Canvas, t: Float) {
-        val accent = modeColor()
+        val accent = stateColor()
         textPaint.textAlign = Paint.Align.CENTER
-        textPaint.typeface = android.graphics.Typeface.create(android.graphics.Typeface.MONOSPACE, android.graphics.Typeface.BOLD)
-        textPaint.textSize = sp(16.5f)
-        textPaint.color = accent
-        textPaint.setShadowLayer(dp(8f), 0f, 0f, Color.argb(120, Color.red(accent), Color.green(accent), Color.blue(accent)))
-        canvas.drawText("JARVIS // DISTRIBUTED CORTEX SYSTEM", width / 2f, dp(39f), textPaint)
+        textPaint.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        textPaint.textSize = sp(17.2f)
+        textPaint.color = withAlpha(accent, 245)
+        textPaint.setShadowLayer(dp(8f), 0f, 0f, withAlpha(accent, 90))
+        canvas.drawText("JARVIS // HELIX", width / 2f, dp(37f), textPaint)
         textPaint.clearShadowLayer()
 
-        textPaint.typeface = android.graphics.Typeface.MONOSPACE
-        textPaint.textSize = sp(9.2f)
-        textPaint.color = Color.argb(220, 183, 242, 247)
-        canvas.drawText("PHASE 9.1  •  EXECUTION KERNEL  •  TEN-NODE CORTEX", width / 2f, dp(59f), textPaint)
+        textPaint.typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
+        textPaint.textSize = sp(8.3f)
+        textPaint.color = Color.argb(205, 177, 218, 229)
+        canvas.drawText("ADAPTIVE INTELLIGENCE LAYER  •  CINEMATIC KERNEL", width / 2f, dp(55f), textPaint)
 
+        drawStatusPill(canvas, width / 2f, dp(73f), stateTitle(), accent)
+
+        textPaint.typeface = Typeface.MONOSPACE
+        textPaint.textSize = sp(7.9f)
         textPaint.textAlign = Paint.Align.LEFT
-        textPaint.textSize = sp(8.8f)
-        textPaint.color = Color.argb(210, 128, 214, 225)
-        canvas.drawText("TIME $cachedTime  //  LINK $cachedNetwork", dp(24f), dp(84f), textPaint)
+        textPaint.color = Color.argb(185, 128, 193, 209)
+        canvas.drawText("$cachedTime  //  $cachedNetwork", dp(24f), dp(91f), textPaint)
 
         textPaint.textAlign = Paint.Align.RIGHT
-        canvas.drawText("BAT $cachedBattery%  //  HEAP ${cachedHeapMb}MB", width - dp(24f), dp(84f), textPaint)
+        canvas.drawText("BAT $cachedBattery%  //  HEAP ${cachedHeapMb}MB", width - dp(24f), dp(91f), textPaint)
+    }
 
+    private fun drawStatusPill(canvas: Canvas, cx: Float, cy: Float, label: String, color: Int) {
+        textPaint.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        textPaint.textSize = sp(7.2f)
+        val padding = dp(13f)
+        val textWidth = textPaint.measureText(label)
+        rect.set(cx - textWidth / 2f - padding, cy - dp(9f), cx + textWidth / 2f + padding, cy + dp(6f))
+        paint.style = Paint.Style.FILL
+        paint.color = withAlpha(color, 18)
+        canvas.drawRoundRect(rect, dp(9f), dp(9f), paint)
         paint.style = Paint.Style.STROKE
         paint.strokeWidth = dp(0.8f)
-        paint.color = Color.argb(100, 0, 240, 255)
-        canvas.drawLine(dp(24f), dp(94f), width - dp(24f), dp(94f), paint)
-
-        val sweepX = dp(24f) + ((t * dp(85f)) % max(dp(1f), width - dp(48f)))
-        paint.strokeWidth = dp(1.8f)
-        paint.color = Color.argb(210, 0, 255, 225)
-        canvas.drawLine(sweepX, dp(92f), min(width - dp(24f), sweepX + dp(26f)), dp(92f), paint)
+        paint.color = withAlpha(color, 115)
+        canvas.drawRoundRect(rect, dp(9f), dp(9f), paint)
+        textPaint.textAlign = Paint.Align.CENTER
+        textPaint.color = withAlpha(color, 235)
+        canvas.drawText(label, cx, cy + dp(1f), textPaint)
     }
 
-    private fun drawSidePanels(canvas: Canvas, t: Float) {
-        val panelTop = height * 0.115f
-        val panelWidth = width * 0.30f
-        val panelHeight = height * 0.164f
-        val margin = width * 0.035f
+    private fun drawCortexRail(canvas: Canvas, t: Float) {
+        val y = height * 0.105f
+        val left = width * 0.18f
+        val right = width * 0.82f
+        val accent = stateColor()
+        val active = activeNodeIndex()
 
-        drawPanel(
-            canvas = canvas,
-            x = margin,
-            y = panelTop,
-            w = panelWidth,
-            h = panelHeight,
-            title = "COGNITION",
-            lines = listOf(
-                "INTENT ${intent.take(15).uppercase(Locale.US)}",
-                "CONF ${(confidence * 100).toInt()}%",
-                "DEC ${decision.take(16).uppercase(Locale.US)}",
-                "MODE ${mode.name}"
-            ),
-            pulse = pulse(t, 2.2f)
-        )
+        paint.style = Paint.Style.STROKE
+        paint.strokeWidth = dp(0.7f)
+        paint.color = Color.argb(54, 115, 180, 196)
+        canvas.drawLine(left, y, right, y, paint)
 
-        drawPanel(
-            canvas = canvas,
-            x = width - margin - panelWidth,
-            y = panelTop,
-            w = panelWidth,
-            h = panelHeight,
-            title = "SYSTEM",
-            lines = listOf(
-                "VOICE ${voiceLabel()}",
-                "RMS ${(displayVoiceEnergy * 100).toInt()}%",
-                "CMDS $commandCount",
-                "AUTH LOCAL"
-            ),
-            pulse = pulse(t + 0.8f, 2.2f)
-        )
+        for (index in 0 until 10) {
+            val p = index / 9f
+            val x = left + (right - left) * p
+            val nodeActive = index == active
+            val radius = dp(if (nodeActive) 3.3f else 1.7f)
+            paint.style = Paint.Style.FILL
+            paint.color = if (nodeActive) accent else Color.argb(115, 112, 178, 194)
+            canvas.drawCircle(x, y, radius + if (nodeActive) pulse(t, 3.2f) * dp(0.8f) else 0f, paint)
 
-        val lowerY = height * 0.52f
-        val lowerHeight = height * 0.105f
-        drawPanel(
-            canvas,
-            margin,
-            lowerY,
-            panelWidth,
-            lowerHeight,
-            "THOUGHT BUS",
-            thoughts.takeLast(3).map { it.take(25) },
-            pulse(t + 1.4f, 1.7f)
-        )
-        drawPanel(
-            canvas,
-            width - margin - panelWidth,
-            lowerY,
-            panelWidth,
-            lowerHeight,
-            "ENTITY MAP",
-            entities.takeLast(3).map { it.take(25) },
-            pulse(t + 2.1f, 1.7f)
-        )
+            textPaint.textAlign = Paint.Align.CENTER
+            textPaint.typeface = Typeface.MONOSPACE
+            textPaint.textSize = sp(5.7f)
+            textPaint.color = if (nodeActive) withAlpha(accent, 235) else Color.argb(115, 128, 188, 199)
+            val label = if (index < 6) "G${index + 1}" else "Q${index - 5}"
+            canvas.drawText(label, x, y + dp(12f), textPaint)
+        }
     }
 
-    private fun drawPanel(
+    private fun drawContextModules(canvas: Canvas, t: Float) {
+        val top = height * 0.145f
+        val w = width * 0.275f
+        val h = height * 0.122f
+        val margin = width * 0.045f
+        val activeAlpha = if (visualState == VisualState.READY) 0.55f else 1f
+
+        val leftLines = listOf(
+            "INTENT  ${intentLabel()}",
+            "CONF    ${(confidence * 100).toInt()}%",
+            "ROUTE   ${routeLabel()}",
+            "DEC     ${decision.take(18).uppercase(Locale.US)}"
+        )
+        drawModule(canvas, margin, top, w, h, "COGNITION", leftLines, activeAlpha, t)
+
+        val rightLines = listOf(
+            "VOICE   ${voiceLabel()}",
+            "RMS     ${(displayVoiceEnergy * 100).toInt()}%",
+            "CMDS    $commandCount",
+            "NODE    ${activeNodeLabel()}"
+        )
+        drawModule(canvas, width - margin - w, top, w, h, "SYSTEM", rightLines, activeAlpha, t + 0.7f)
+    }
+
+    private fun drawModule(
         canvas: Canvas,
         x: Float,
         y: Float,
@@ -417,9 +538,10 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
         h: Float,
         title: String,
         lines: List<String>,
-        pulse: Float
+        visibility: Float,
+        t: Float
     ) {
-        val accent = modeColor()
+        val accent = stateColor()
         rect.set(x, y, x + w, y + h)
         paint.style = Paint.Style.FILL
         paint.shader = LinearGradient(
@@ -427,107 +549,142 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
             y,
             x + w,
             y + h,
-            intArrayOf(Color.argb(72, 2, 27, 39), Color.argb(28, 25, 8, 45)),
+            intArrayOf(
+                Color.argb((62 * visibility).toInt(), 9, 28, 39),
+                Color.argb((28 * visibility).toInt(), 24, 12, 43)
+            ),
             null,
             Shader.TileMode.CLAMP
         )
-        canvas.drawRoundRect(rect, dp(9f), dp(9f), paint)
+        canvas.drawRoundRect(rect, dp(12f), dp(12f), paint)
         paint.shader = null
 
         paint.style = Paint.Style.STROKE
-        paint.strokeWidth = dp(0.9f)
-        paint.color = Color.argb((105 + pulse * 55).toInt(), Color.red(accent), Color.green(accent), Color.blue(accent))
-        canvas.drawRoundRect(rect, dp(9f), dp(9f), paint)
+        paint.strokeWidth = dp(0.85f)
+        paint.color = withAlpha(accent, ((82 + pulse(t, 1.6f) * 34) * visibility).toInt())
+        canvas.drawRoundRect(rect, dp(12f), dp(12f), paint)
 
-        val cut = dp(13f)
-        paint.strokeWidth = dp(1.6f)
-        canvas.drawLine(x, y + cut, x + cut, y, paint)
-        canvas.drawLine(x + w - cut, y, x + w, y + cut, paint)
+        paint.strokeWidth = dp(1.8f)
+        canvas.drawLine(x + dp(10f), y, x + w * 0.42f, y, paint)
 
-        textPaint.typeface = android.graphics.Typeface.create(android.graphics.Typeface.MONOSPACE, android.graphics.Typeface.BOLD)
         textPaint.textAlign = Paint.Align.LEFT
-        textPaint.textSize = sp(8.4f)
-        textPaint.color = accent
-        canvas.drawText(title, x + dp(10f), y + dp(18f), textPaint)
+        textPaint.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        textPaint.textSize = sp(7.4f)
+        textPaint.color = withAlpha(accent, (235 * visibility).toInt())
+        canvas.drawText(title, x + dp(10f), y + dp(17f), textPaint)
 
-        textPaint.typeface = android.graphics.Typeface.MONOSPACE
-        textPaint.textSize = sp(7.8f)
-        textPaint.color = Color.argb(220, 205, 242, 247)
-        val lineGap = max(dp(14f), h / 6f)
+        textPaint.typeface = Typeface.MONOSPACE
+        textPaint.textSize = sp(6.7f)
+        textPaint.color = Color.argb((204 * visibility).toInt(), 196, 228, 235)
+        val gap = (h - dp(29f)) / 4f
         lines.take(4).forEachIndexed { index, line ->
-            canvas.drawText(line, x + dp(10f), y + dp(38f) + index * lineGap, textPaint)
+            canvas.drawText(line.take(25), x + dp(10f), y + dp(35f) + gap * index, textPaint)
         }
     }
 
-    private fun drawNeuralCore(canvas: Canvas, t: Float) {
+    private fun drawHelixCore(canvas: Canvas, t: Float) {
         val cx = width / 2f
-        val cy = height * 0.37f
-        val base = min(width * 0.205f, height * 0.118f)
-        val accent = modeColor()
-        val energy = 0.18f + displayVoiceEnergy * 0.82f
+        val cy = height * 0.39f
+        val base = min(width * 0.205f, height * 0.112f)
+        val accent = stateColor()
+        val intensity = stateIntensity()
+        val transition = ((SystemClock.uptimeMillis() - stateChangedAtMs) / 650f).coerceIn(0f, 1f)
+        val breathing = 1f + pulse(t, if (visualState == VisualState.READY) 0.65f else 1.45f) * 0.025f
+        val activeScale = 1f + intensity * 0.08f + displayVoiceEnergy * 0.10f
+        val coreBase = base * breathing * activeScale
 
         paint.style = Paint.Style.FILL
         paint.shader = RadialGradient(
             cx,
             cy,
-            base * 1.65f,
+            coreBase * 1.9f,
             intArrayOf(
-                Color.argb((70 + energy * 85).toInt(), Color.red(accent), Color.green(accent), Color.blue(accent)),
-                Color.argb(28, 0, 220, 255),
+                withAlpha(accent, 60 + (intensity * 50).toInt()),
+                withAlpha(accent, 18),
                 Color.TRANSPARENT
             ),
-            floatArrayOf(0f, 0.46f, 1f),
+            floatArrayOf(0f, 0.48f, 1f),
             Shader.TileMode.CLAMP
         )
-        canvas.drawCircle(cx, cy, base * 1.65f, paint)
+        canvas.drawCircle(cx, cy, coreBase * 1.9f, paint)
         paint.shader = null
 
+        val ringCount = if (visualState == VisualState.RESEARCHING) 8 else 6
         paint.style = Paint.Style.STROKE
         paint.strokeCap = Paint.Cap.ROUND
-        for (i in 0 until 10) {
-            val radius = base * (0.52f + i * 0.12f)
-            val direction = if (i % 2 == 0) 1f else -1f
-            val start = (t * (13f + i * 2.8f) * direction + i * 37f) % 360f
-            val sweep = 22f + (i % 4) * 17f + displayVoiceEnergy * 15f
-            paint.strokeWidth = dp(if (i % 3 == 0) 2.2f else 1.05f)
-            paint.color = if (i % 4 == 0) {
-                Color.argb(185, 145, 86, 255)
+        for (index in 0 until ringCount) {
+            val radius = coreBase * (0.54f + index * 0.16f)
+            val direction = if (index % 2 == 0) 1f else -1f
+            val speed = stateRotationSpeed() * (1f + index * 0.15f)
+            val start = (t * speed * direction + index * 43f) % 360f
+            val sweep = 25f + (index % 3) * 19f + intensity * 18f
+            paint.strokeWidth = dp(if (index % 3 == 0) 2.15f else 1.0f)
+            paint.color = if (index % 4 == 3) {
+                Color.argb(170, 142, 96, 255)
             } else {
-                Color.argb(175, Color.red(accent), Color.green(accent), Color.blue(accent))
+                withAlpha(accent, 135 + index * 8)
             }
             rect.set(cx - radius, cy - radius, cx + radius, cy + radius)
             canvas.drawArc(rect, start, sweep, false, paint)
-            canvas.drawArc(rect, start + 180f, sweep * 0.62f, false, paint)
+            canvas.drawArc(rect, start + 180f, sweep * 0.58f, false, paint)
         }
 
-        drawScannerSweep(canvas, cx, cy, base * 1.45f, t, accent)
-        drawOrbitalNodes(canvas, cx, cy, base, t, accent)
+        drawStateScanner(canvas, cx, cy, coreBase * 1.46f, t, accent)
+        drawCoreNodes(canvas, cx, cy, coreBase, t, accent)
 
-        val coreRadius = base * (0.19f + pulse(t, 4.8f) * 0.025f + displayVoiceEnergy * 0.045f)
+        val nucleusRadius = coreBase * (0.20f + displayVoiceEnergy * 0.05f + responsePulse * 0.04f)
         paint.style = Paint.Style.FILL
-        paint.color = Color.argb(24, Color.red(accent), Color.green(accent), Color.blue(accent))
-        canvas.drawCircle(cx, cy, coreRadius * 2.6f, paint)
-        paint.color = Color.argb(62, Color.red(accent), Color.green(accent), Color.blue(accent))
-        canvas.drawCircle(cx, cy, coreRadius * 1.85f, paint)
-        paint.color = Color.argb(150, Color.red(accent), Color.green(accent), Color.blue(accent))
-        canvas.drawCircle(cx, cy, coreRadius * 1.35f, paint)
+        paint.color = withAlpha(accent, 22)
+        canvas.drawCircle(cx, cy, nucleusRadius * 3.2f, paint)
+        paint.color = withAlpha(accent, 64)
+        canvas.drawCircle(cx, cy, nucleusRadius * 2.1f, paint)
+        paint.color = withAlpha(accent, 155)
+        canvas.drawCircle(cx, cy, nucleusRadius * 1.45f, paint)
         paint.color = accent
-        canvas.drawCircle(cx, cy, coreRadius, paint)
-        paint.color = Color.argb(230, 235, 255, 255)
-        canvas.drawCircle(cx, cy, coreRadius * 0.34f, paint)
+        canvas.drawCircle(cx, cy, nucleusRadius, paint)
+        paint.color = Color.argb(240, 239, 255, 255)
+        canvas.drawCircle(cx, cy, nucleusRadius * 0.31f, paint)
 
-        drawCountdownLayer(canvas, cx, cy, base, accent)
+        drawCountdownRing(canvas, cx, cy, coreBase, accent)
+
+        textPaint.textAlign = Paint.Align.CENTER
+        textPaint.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        textPaint.textSize = sp(if (countdownActive) 14.8f else 9.2f)
+        textPaint.color = Color.argb((180 + 60 * transition).toInt(), 235, 255, 255)
+        canvas.drawText(if (countdownActive) timerText() else stateTitle(), cx, cy + dp(4f), textPaint)
+
+        textPaint.typeface = Typeface.MONOSPACE
+        textPaint.textSize = sp(6.3f)
+        textPaint.color = Color.argb(190, 151, 214, 225)
+        canvas.drawText(
+            if (countdownActive) countdownLabel.take(24) else stateSubtitle(t),
+            cx,
+            cy + dp(21f),
+            textPaint
+        )
     }
 
-    private fun drawScannerSweep(canvas: Canvas, cx: Float, cy: Float, radius: Float, t: Float, accent: Int) {
+    private fun drawStateScanner(canvas: Canvas, cx: Float, cy: Float, radius: Float, t: Float, accent: Int) {
+        val shouldScan = visualState in setOf(
+            VisualState.THINKING,
+            VisualState.RESEARCHING,
+            VisualState.EXECUTING,
+            VisualState.ERROR
+        )
+        if (!shouldScan) return
         canvas.save()
-        canvas.rotate((t * 34f) % 360f, cx, cy)
+        canvas.rotate((t * stateRotationSpeed() * 0.8f) % 360f, cx, cy)
         paint.style = Paint.Style.FILL
         paint.shader = SweepGradient(
             cx,
             cy,
-            intArrayOf(Color.TRANSPARENT, Color.argb(8, Color.red(accent), Color.green(accent), Color.blue(accent)), Color.argb(75, Color.red(accent), Color.green(accent), Color.blue(accent)), Color.TRANSPARENT),
-            floatArrayOf(0f, 0.76f, 0.96f, 1f)
+            intArrayOf(
+                Color.TRANSPARENT,
+                withAlpha(accent, 4),
+                withAlpha(accent, 68),
+                Color.TRANSPARENT
+            ),
+            floatArrayOf(0f, 0.78f, 0.96f, 1f)
         )
         rect.set(cx - radius, cy - radius, cx + radius, cy + radius)
         canvas.drawArc(rect, 0f, 360f, true, paint)
@@ -535,97 +692,91 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
         canvas.restore()
     }
 
-    private fun drawOrbitalNodes(canvas: Canvas, cx: Float, cy: Float, base: Float, t: Float, accent: Int) {
-        paint.style = Paint.Style.STROKE
-        paint.strokeWidth = dp(0.65f)
-        paint.color = Color.argb(78, 180, 235, 255)
-        for (i in 0 until 12) {
-            val angle = (i * 30f + t * (if (i % 2 == 0) 13f else -9f)).toRad()
-            val radius = base * (1.12f + (i % 3) * 0.11f)
+    private fun drawCoreNodes(canvas: Canvas, cx: Float, cy: Float, base: Float, t: Float, accent: Int) {
+        val count = when (visualState) {
+            VisualState.RESEARCHING -> 14
+            VisualState.THINKING -> 10
+            VisualState.EXECUTING -> 8
+            else -> 6
+        }
+        paint.strokeWidth = dp(0.55f)
+        for (index in 0 until count) {
+            val angle = (index * (360f / count) + t * if (index % 2 == 0) 7f else -5f).toRad()
+            val radius = base * (1.12f + (index % 3) * 0.12f)
             val x = cx + cos(angle) * radius
             val y = cy + sin(angle) * radius
+            paint.style = Paint.Style.STROKE
+            paint.color = Color.argb(if (visualState == VisualState.RESEARCHING) 82 else 45, 174, 226, 235)
             canvas.drawLine(cx, cy, x, y, paint)
             paint.style = Paint.Style.FILL
-            paint.color = if (i % 4 == 0) Color.rgb(155, 90, 255) else accent
-            canvas.drawCircle(x, y, dp(if (i % 3 == 0) 2.5f else 1.35f), paint)
-            paint.style = Paint.Style.STROKE
-            paint.color = Color.argb(78, 180, 235, 255)
+            paint.color = if (index % 5 == 0) Color.rgb(153, 92, 255) else accent
+            canvas.drawCircle(x, y, dp(if (index % 4 == 0) 2.4f else 1.25f), paint)
         }
     }
 
-    private fun drawCountdownLayer(canvas: Canvas, cx: Float, cy: Float, base: Float, accent: Int) {
-        if (countdownTotalMs > 0L) {
-            val radius = base * 1.62f
-            rect.set(cx - radius, cy - radius, cx + radius, cy + radius)
-            paint.style = Paint.Style.STROKE
-            paint.strokeWidth = dp(3.2f)
-            paint.color = Color.argb(36, 210, 240, 255)
-            canvas.drawArc(rect, -90f, 360f, false, paint)
-            paint.shader = SweepGradient(
-                cx,
-                cy,
-                intArrayOf(accent, Color.rgb(155, 90, 255), accent),
-                null
-            )
-            paint.color = Color.WHITE
-            canvas.drawArc(rect, -90f, 360f * countdownProgress, false, paint)
-            paint.shader = null
-        }
-
-        textPaint.textAlign = Paint.Align.CENTER
-        textPaint.typeface = android.graphics.Typeface.create(android.graphics.Typeface.MONOSPACE, android.graphics.Typeface.BOLD)
-        textPaint.color = Color.argb(235, 230, 255, 255)
-        textPaint.textSize = sp(if (countdownActive) 15.5f else 9.3f)
-        val primary = if (countdownActive) formatCountdown((countdownRemainingMs + 999L) / 1_000L) else mode.name
-        canvas.drawText(primary, cx, cy + dp(5f), textPaint)
-
-        textPaint.typeface = android.graphics.Typeface.MONOSPACE
-        textPaint.textSize = sp(6.9f)
-        textPaint.color = Color.argb(190, 150, 230, 238)
-        val secondary = if (countdownActive) countdownLabel else voiceLabel()
-        canvas.drawText(secondary.take(25), cx, cy + dp(23f), textPaint)
+    private fun drawCountdownRing(canvas: Canvas, cx: Float, cy: Float, base: Float, accent: Int) {
+        if (countdownTotalMs <= 0L) return
+        val radius = base * 1.66f
+        rect.set(cx - radius, cy - radius, cx + radius, cy + radius)
+        paint.style = Paint.Style.STROKE
+        paint.strokeCap = Paint.Cap.ROUND
+        paint.strokeWidth = dp(3f)
+        paint.color = Color.argb(35, 210, 240, 255)
+        canvas.drawArc(rect, -90f, 360f, false, paint)
+        paint.shader = SweepGradient(cx, cy, intArrayOf(accent, Color.rgb(155, 90, 255), accent), null)
+        paint.color = Color.WHITE
+        canvas.drawArc(rect, -90f, 360f * countdownProgress, false, paint)
+        paint.shader = null
     }
 
-    private fun drawVoiceArray(canvas: Canvas, t: Float) {
+    private fun drawVoiceRibbon(canvas: Canvas, t: Float) {
         val centerX = width / 2f
-        val y = height * 0.655f
-        val arrayWidth = width * 0.80f
-        val bars = 61
-        val spacing = arrayWidth / bars
-        val accent = modeColor()
+        val y = height * 0.625f
+        val totalWidth = width * 0.76f
+        val bars = 55
+        val step = totalWidth / bars
+        val accent = stateColor()
+        val activeBoost = when (visualState) {
+            VisualState.LISTENING -> 1f
+            VisualState.SPEAKING -> 0.72f
+            VisualState.RESEARCHING -> 0.42f
+            else -> 0.22f
+        }
 
         paint.style = Paint.Style.FILL
-        for (i in 0 until bars) {
-            val normalizedX = (i - bars / 2f) / (bars / 2f)
-            val envelope = (1f - abs(normalizedX)).coerceAtLeast(0.12f)
-            val organic = abs(sin((t * 4.2f + i * 0.47f).toDouble())).toFloat()
-            val idle = 0.08f + organic * 0.12f
-            val active = idle + displayVoiceEnergy * envelope * (0.55f + organic * 0.45f)
-            val barHeight = dp(4f) + active * dp(48f)
-            val x = centerX + (i - bars / 2f) * spacing
-            val alpha = (90 + active * 165).toInt().coerceIn(0, 255)
-            paint.color = if (i % 9 == 0) {
-                Color.argb(alpha, 155, 82, 255)
+        for (index in 0 until bars) {
+            val normalized = (index - bars / 2f) / (bars / 2f)
+            val envelope = (1f - abs(normalized)).coerceAtLeast(0.14f)
+            val wave = abs(sin((t * (2.3f + activeBoost * 2f) + index * 0.47f).toDouble())).toFloat()
+            val live = displayVoiceEnergy * envelope
+            val syntheticSpeech = if (visualState == VisualState.SPEAKING) wave * envelope * 0.42f else 0f
+            val researchPulse = if (visualState == VisualState.RESEARCHING) wave * 0.18f else 0f
+            val value = 0.06f + live * 0.85f + syntheticSpeech + researchPulse
+            val h = dp(4f) + value * dp(39f)
+            val x = centerX + (index - bars / 2f) * step
+            val alpha = (74 + value * 175).toInt().coerceIn(0, 255)
+            paint.color = if (index % 9 == 0) {
+                Color.argb(alpha, 147, 92, 255)
             } else {
                 Color.argb(alpha, Color.red(accent), Color.green(accent), Color.blue(accent))
             }
-            rect.set(x - dp(1.1f), y - barHeight / 2f, x + dp(1.1f), y + barHeight / 2f)
-            canvas.drawRoundRect(rect, dp(2f), dp(2f), paint)
+            rect.set(x - dp(1.0f), y - h / 2f, x + dp(1.0f), y + h / 2f)
+            canvas.drawRoundRect(rect, dp(1.5f), dp(1.5f), paint)
         }
 
         textPaint.textAlign = Paint.Align.CENTER
-        textPaint.typeface = android.graphics.Typeface.create(android.graphics.Typeface.MONOSPACE, android.graphics.Typeface.BOLD)
-        textPaint.textSize = sp(7.7f)
-        textPaint.color = Color.argb(210, 169, 239, 245)
-        canvas.drawText("VOICE ARRAY // ${voiceLabel()} // LIVE RMS ${(displayVoiceEnergy * 100).toInt()}%", centerX, y + dp(42f), textPaint)
+        textPaint.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        textPaint.textSize = sp(6.6f)
+        textPaint.color = Color.argb(185, 157, 213, 223)
+        canvas.drawText("VOICE ARRAY // ${voiceLabel()} // RMS ${(displayVoiceEnergy * 100).toInt()}%", centerX, y + dp(35f), textPaint)
     }
 
-    private fun drawCommandDock(canvas: Canvas, t: Float) {
+    private fun drawCommandSurface(canvas: Canvas, t: Float) {
         val left = width * 0.045f
         val right = width * 0.955f
-        val top = height * 0.695f
-        val bottom = height * 0.94f
-        val accent = modeColor()
+        val top = height * 0.675f
+        val bottom = height * 0.945f
+        val accent = stateColor()
         rect.set(left, top, right, bottom)
 
         paint.style = Paint.Style.FILL
@@ -634,132 +785,287 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
             top,
             right,
             bottom,
-            intArrayOf(Color.argb(100, 2, 20, 31), Color.argb(78, 17, 7, 34), Color.argb(100, 2, 20, 31)),
+            intArrayOf(
+                Color.argb(112, 8, 24, 35),
+                Color.argb(78, 16, 12, 34),
+                Color.argb(108, 7, 22, 31)
+            ),
             null,
             Shader.TileMode.CLAMP
         )
-        canvas.drawRoundRect(rect, dp(12f), dp(12f), paint)
+        canvas.drawRoundRect(rect, dp(16f), dp(16f), paint)
         paint.shader = null
 
         paint.style = Paint.Style.STROKE
-        paint.strokeWidth = dp(1f)
-        paint.color = Color.argb(145, Color.red(accent), Color.green(accent), Color.blue(accent))
-        canvas.drawRoundRect(rect, dp(12f), dp(12f), paint)
+        paint.strokeWidth = dp(0.9f)
+        paint.color = withAlpha(accent, 125)
+        canvas.drawRoundRect(rect, dp(16f), dp(16f), paint)
+        paint.strokeWidth = dp(2f)
+        canvas.drawLine(left + dp(16f), top, left + (right - left) * 0.44f, top, paint)
 
-        val headerY = top + dp(22f)
         textPaint.textAlign = Paint.Align.LEFT
-        textPaint.typeface = android.graphics.Typeface.create(android.graphics.Typeface.MONOSPACE, android.graphics.Typeface.BOLD)
-        textPaint.textSize = sp(8.5f)
-        textPaint.color = accent
-        canvas.drawText("COMMAND STREAM", left + dp(14f), headerY, textPaint)
+        textPaint.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        textPaint.textSize = sp(8.0f)
+        textPaint.color = withAlpha(accent, 240)
+        canvas.drawText("COMMAND CHANNEL", left + dp(15f), top + dp(23f), textPaint)
 
         textPaint.textAlign = Paint.Align.RIGHT
-        textPaint.textSize = sp(7.2f)
-        textPaint.color = Color.argb(190, 140, 220, 230)
-        canvas.drawText("TRACE ${trace.lastOrNull().orEmpty().take(27).uppercase(Locale.US)}", right - dp(14f), headerY, textPaint)
+        textPaint.textSize = sp(6.5f)
+        textPaint.color = Color.argb(170, 132, 196, 207)
+        canvas.drawText("${stateTitle()}  //  ${activeNodeLabel()}", right - dp(15f), top + dp(23f), textPaint)
 
-        paint.strokeWidth = dp(0.6f)
-        paint.color = Color.argb(75, 0, 230, 255)
-        canvas.drawLine(left + dp(14f), top + dp(31f), right - dp(14f), top + dp(31f), paint)
+        paint.strokeWidth = dp(0.55f)
+        paint.color = Color.argb(55, 91, 184, 203)
+        canvas.drawLine(left + dp(15f), top + dp(33f), right - dp(15f), top + dp(33f), paint)
 
-        val contentWidth = right - left - dp(28f)
+        val contentWidth = right - left - dp(30f)
         textPaint.textAlign = Paint.Align.LEFT
-        textPaint.typeface = android.graphics.Typeface.MONOSPACE
-        textPaint.textSize = sp(7.9f)
-        textPaint.color = Color.argb(235, 220, 250, 252)
-        val transcriptText = transcript.ifBlank { "Speak naturally. No hold-to-talk control is active." }
-        val transcriptLines = wrapTextLines("YOU  //  $transcriptText", contentWidth, textPaint)
-        transcriptLines.take(3).forEachIndexed { index, line ->
-            canvas.drawText(line, left + dp(14f), top + dp(49f) + index * dp(13.5f), textPaint)
+        textPaint.typeface = Typeface.create(Typeface.SANS_SERIF, Typeface.NORMAL)
+        textPaint.textSize = sp(8.1f)
+        textPaint.color = Color.argb(235, 222, 242, 246)
+        val heard = transcript.ifBlank { "Listening channel ready." }
+        val heardLines = wrapTextLines("YOU // $heard", contentWidth, textPaint)
+        heardLines.take(3).forEachIndexed { index, line ->
+            canvas.drawText(line, left + dp(15f), top + dp(53f) + index * dp(14f), textPaint)
         }
 
-        val responseTop = top + dp(94f)
-        val responseBottom = bottom - dp(20f)
-        val lineHeight = dp(13.5f)
+        val responseTop = top + dp(103f)
+        val responseBottom = bottom - dp(22f)
+        val lineHeight = dp(14f)
         val linesPerPage = ((responseBottom - responseTop) / lineHeight).toInt().coerceAtLeast(3)
-
-        textPaint.color = Color.argb(225, 175, 239, 246)
-        textPaint.textSize = sp(7.7f)
-        val responseLines = wrapTextLines("JARVIS  //  $lastResponse", contentWidth, textPaint)
+        textPaint.textSize = sp(7.8f)
+        textPaint.color = Color.argb(225, 170, 222, 231)
+        val responseLines = wrapTextLines("JARVIS // $lastResponse", contentWidth, textPaint)
         val pageCount = ((responseLines.size + linesPerPage - 1) / linesPerPage).coerceAtLeast(1)
         val elapsed = (SystemClock.uptimeMillis() - lastResponseUpdatedAtMs).coerceAtLeast(0L)
-        val pageIndex = if (pageCount <= 1) 0 else ((elapsed / RESPONSE_PAGE_MS) % pageCount).toInt()
-        val pageLines = responseLines.drop(pageIndex * linesPerPage).take(linesPerPage)
-        pageLines.forEachIndexed { index, line ->
-            canvas.drawText(line, left + dp(14f), responseTop + index * lineHeight, textPaint)
+        val pageIndex = if (pageCount == 1) 0 else ((elapsed / RESPONSE_PAGE_MS) % pageCount).toInt()
+        responseLines.drop(pageIndex * linesPerPage).take(linesPerPage).forEachIndexed { index, line ->
+            canvas.drawText(line, left + dp(15f), responseTop + index * lineHeight, textPaint)
         }
 
-        if (pageCount > 1) {
-            textPaint.textAlign = Paint.Align.RIGHT
-            textPaint.textSize = sp(6.8f)
-            textPaint.color = Color.argb(185, 118, 205, 218)
-            canvas.drawText("RESPONSE PAGE ${pageIndex + 1}/$pageCount", right - dp(14f), bottom - dp(7f), textPaint)
+        textPaint.textAlign = Paint.Align.RIGHT
+        textPaint.typeface = Typeface.MONOSPACE
+        textPaint.textSize = sp(6.2f)
+        textPaint.color = Color.argb(160, 111, 179, 192)
+        val footer = if (pageCount > 1) {
+            "PAGE ${pageIndex + 1}/$pageCount  //  ${sourceCount()} SOURCES"
+        } else {
+            "${sourceCount()} SOURCES  //  ${trace.lastOrNull().orEmpty().take(24).uppercase(Locale.US)}"
         }
+        canvas.drawText(footer, right - dp(15f), bottom - dp(9f), textPaint)
 
-        val pulseX = left + ((t * dp(52f)) % max(dp(1f), right - left))
+        val pulseX = left + dp(16f) + ((t * dp(46f)) % max(dp(1f), right - left - dp(32f)))
         paint.style = Paint.Style.FILL
-        paint.color = Color.argb(150, 0, 255, 225)
-        canvas.drawCircle(pulseX.coerceIn(left + dp(8f), right - dp(8f)), bottom - dp(8f), dp(1.5f), paint)
+        paint.color = withAlpha(accent, 150)
+        canvas.drawCircle(pulseX, bottom - dp(9f), dp(1.35f), paint)
     }
 
     private fun drawEventRail(canvas: Canvas) {
-        val y = height * 0.968f
         textPaint.textAlign = Paint.Align.CENTER
-        textPaint.typeface = android.graphics.Typeface.MONOSPACE
-        textPaint.textSize = sp(7.1f)
-        textPaint.color = Color.argb(185, 118, 205, 218)
-        val event = events.firstOrNull().orEmpty()
-        canvas.drawText("EVENT // $event", width / 2f, y, textPaint)
+        textPaint.typeface = Typeface.MONOSPACE
+        textPaint.textSize = sp(6.5f)
+        textPaint.color = Color.argb(150, 112, 177, 190)
+        canvas.drawText("EVENT // ${events.firstOrNull().orEmpty()}", width / 2f, height * 0.972f, textPaint)
     }
 
-    private fun drawBootOverlay(canvas: Canvas, t: Float) {
+    private fun drawBootSequence(canvas: Canvas, t: Float) {
         if (t > BOOT_SECONDS) return
-        val fade = if (t < BOOT_SECONDS - 0.7f) 1f else ((BOOT_SECONDS - t) / 0.7f).coerceIn(0f, 1f)
-        val alpha = (245 * fade).toInt()
+        val progress = (t / BOOT_SECONDS).coerceIn(0f, 1f)
+        val fade = if (progress < 0.80f) 1f else ((1f - progress) / 0.20f).coerceIn(0f, 1f)
+        val alpha = (248 * fade).toInt()
+        val accent = Color.rgb(82, 245, 207)
+
         paint.style = Paint.Style.FILL
-        paint.color = Color.argb(alpha, 1, 4, 10)
+        paint.color = Color.argb(alpha, 4, 7, 14)
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
 
-        val progress = (t / BOOT_SECONDS).coerceIn(0f, 1f)
         val cx = width / 2f
         val cy = height / 2f
         val radius = min(width, height) * 0.19f
         paint.style = Paint.Style.STROKE
         paint.strokeCap = Paint.Cap.ROUND
-        paint.strokeWidth = dp(2.4f)
+        paint.strokeWidth = dp(2f)
         rect.set(cx - radius, cy - radius, cx + radius, cy + radius)
-        paint.color = Color.argb((80 * fade).toInt(), 0, 230, 255)
+        paint.color = Color.argb((58 * fade).toInt(), 82, 245, 207)
         canvas.drawArc(rect, -90f, 360f, false, paint)
-        paint.color = Color.argb((235 * fade).toInt(), 0, 255, 225)
+        paint.color = Color.argb((235 * fade).toInt(), 82, 245, 207)
         canvas.drawArc(rect, -90f, 360f * progress, false, paint)
 
+        for (index in 0 until 4) {
+            val ring = radius * (0.52f + index * 0.16f)
+            rect.set(cx - ring, cy - ring, cx + ring, cy + ring)
+            paint.strokeWidth = dp(if (index == 0) 1.7f else 0.8f)
+            paint.color = Color.argb((145 * fade).toInt(), if (index == 3) 145 else 82, if (index == 3) 96 else 245, if (index == 3) 255 else 207)
+            canvas.drawArc(rect, progress * 210f * if (index % 2 == 0) 1f else -1f, 52f + index * 16f, false, paint)
+        }
+
         textPaint.textAlign = Paint.Align.CENTER
-        textPaint.typeface = android.graphics.Typeface.create(android.graphics.Typeface.MONOSPACE, android.graphics.Typeface.BOLD)
-        textPaint.textSize = sp(18f)
-        textPaint.color = Color.argb(alpha, 0, 255, 230)
-        textPaint.setShadowLayer(dp(12f), 0f, 0f, Color.argb((150 * fade).toInt(), 0, 255, 230))
-        canvas.drawText("JARVIS", cx, cy - dp(18f), textPaint)
+        textPaint.typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        textPaint.textSize = sp(20f)
+        textPaint.color = Color.argb(alpha, 224, 255, 248)
+        textPaint.setShadowLayer(dp(14f), 0f, 0f, Color.argb((120 * fade).toInt(), 82, 245, 207))
+        canvas.drawText("JARVIS", cx, cy - dp(17f), textPaint)
         textPaint.clearShadowLayer()
 
-        textPaint.typeface = android.graphics.Typeface.MONOSPACE
-        textPaint.textSize = sp(8.5f)
-        textPaint.color = Color.argb((220 * fade).toInt(), 190, 245, 250)
+        textPaint.textSize = sp(8.0f)
+        textPaint.color = Color.argb((215 * fade).toInt(), 151, 221, 224)
         val stage = when {
-            progress < 0.24f -> "GEOMETRY MATRIX"
-            progress < 0.48f -> "VOICE ARRAY"
-            progress < 0.72f -> "CORTEX MESH"
-            progress < 0.94f -> "HEALTH ROUTER"
-            else -> "SYSTEM ONLINE"
+            progress < 0.22f -> "GEOMETRY MATRIX"
+            progress < 0.44f -> "VOICE ARRAY"
+            progress < 0.66f -> "CORTEX MESH"
+            progress < 0.86f -> "ACTION FABRIC"
+            else -> "SYSTEM READY"
         }
-        canvas.drawText("$stage // ${(progress * 100).toInt()}%", cx, cy + dp(15f), textPaint)
+        canvas.drawText("$stage // ${(progress * 100).toInt()}%", cx, cy + dp(17f), textPaint)
 
-        val barWidth = min(width * 0.58f, dp(320f))
-        val barHeight = dp(3f)
+        val barWidth = min(width * 0.58f, dp(330f))
         paint.style = Paint.Style.FILL
-        paint.color = Color.argb((75 * fade).toInt(), 80, 170, 185)
-        canvas.drawRoundRect(cx - barWidth / 2f, cy + dp(38f), cx + barWidth / 2f, cy + dp(38f) + barHeight, barHeight, barHeight, paint)
-        paint.color = Color.argb((235 * fade).toInt(), 0, 255, 225)
-        canvas.drawRoundRect(cx - barWidth / 2f, cy + dp(38f), cx - barWidth / 2f + barWidth * progress, cy + dp(38f) + barHeight, barHeight, barHeight, paint)
+        paint.color = Color.argb((52 * fade).toInt(), 130, 183, 192)
+        canvas.drawRoundRect(cx - barWidth / 2f, cy + dp(40f), cx + barWidth / 2f, cy + dp(43f), dp(2f), dp(2f), paint)
+        paint.color = Color.argb((235 * fade).toInt(), 82, 245, 207)
+        canvas.drawRoundRect(cx - barWidth / 2f, cy + dp(40f), cx - barWidth / 2f + barWidth * progress, cy + dp(43f), dp(2f), dp(2f), paint)
+    }
+
+    private fun isResearchRequest(): Boolean = runCatching {
+        WebResearchIntent.shouldUseWeb(transcript)
+    }.getOrDefault(false)
+
+    private fun stateTitle(): String = when (visualState) {
+        VisualState.BOOT -> "BOOTING"
+        VisualState.READY -> "READY"
+        VisualState.LISTENING -> "LISTENING"
+        VisualState.THINKING -> "THINKING"
+        VisualState.RESEARCHING -> "RESEARCHING"
+        VisualState.EXECUTING -> "EXECUTING"
+        VisualState.SPEAKING -> "SPEAKING"
+        VisualState.SUCCESS -> "VERIFIED"
+        VisualState.WARNING -> "CONFIRMATION"
+        VisualState.ERROR -> "ALERT"
+        VisualState.STANDBY -> "STANDBY"
+    }
+
+    private fun stateSubtitle(t: Float): String = when (visualState) {
+        VisualState.BOOT -> "INITIALIZING"
+        VisualState.READY -> "AWAITING COMMAND"
+        VisualState.LISTENING -> "VOICE ARRAY ACTIVE"
+        VisualState.THINKING -> when (((SystemClock.uptimeMillis() - stateChangedAtMs) / 1_700L).toInt() % 3) {
+            0 -> "CLASSIFYING REQUEST"
+            1 -> "SELECTING CORTEX"
+            else -> "SYNTHESIZING"
+        }
+        VisualState.RESEARCHING -> when (((SystemClock.uptimeMillis() - stateChangedAtMs) / 2_200L).toInt() % 4) {
+            0 -> "PLANNING QUERIES"
+            1 -> "SCANNING SOURCES"
+            2 -> "CROSS-CHECKING"
+            else -> "ASSEMBLING BRIEF"
+        }
+        VisualState.EXECUTING -> "ACTION FABRIC ACTIVE"
+        VisualState.SPEAKING -> "VOICE OUTPUT ACTIVE"
+        VisualState.SUCCESS -> "ACTION CONFIRMED"
+        VisualState.WARNING -> "OPERATOR INPUT REQUIRED"
+        VisualState.ERROR -> "RECOVERY CHANNEL ACTIVE"
+        VisualState.STANDBY -> "LOW ACTIVITY MODE"
+    }
+
+    private fun stateColor(): Int = when (visualState) {
+        VisualState.BOOT -> Color.rgb(82, 210, 255)
+        VisualState.READY -> Color.rgb(82, 245, 207)
+        VisualState.LISTENING -> Color.rgb(45, 218, 255)
+        VisualState.THINKING -> Color.rgb(142, 108, 255)
+        VisualState.RESEARCHING -> Color.rgb(255, 184, 76)
+        VisualState.EXECUTING -> Color.rgb(70, 238, 155)
+        VisualState.SPEAKING -> Color.rgb(150, 225, 255)
+        VisualState.SUCCESS -> Color.rgb(96, 255, 174)
+        VisualState.WARNING -> Color.rgb(255, 180, 72)
+        VisualState.ERROR -> Color.rgb(255, 72, 108)
+        VisualState.STANDBY -> Color.rgb(92, 119, 160)
+    }
+
+    private fun stateIntensity(): Float = when (visualState) {
+        VisualState.BOOT -> 0.65f
+        VisualState.READY -> 0.18f
+        VisualState.LISTENING -> 0.68f + displayVoiceEnergy * 0.32f
+        VisualState.THINKING -> 0.62f
+        VisualState.RESEARCHING -> 0.82f
+        VisualState.EXECUTING -> 0.74f
+        VisualState.SPEAKING -> 0.55f
+        VisualState.SUCCESS -> 0.80f
+        VisualState.WARNING -> 0.62f
+        VisualState.ERROR -> 0.85f
+        VisualState.STANDBY -> 0.08f
+    }
+
+    private fun stateRotationSpeed(): Float = when (visualState) {
+        VisualState.READY, VisualState.STANDBY -> 5.5f
+        VisualState.LISTENING -> 11f
+        VisualState.THINKING -> 24f
+        VisualState.RESEARCHING -> 31f
+        VisualState.EXECUTING -> 21f
+        VisualState.SPEAKING -> 9f
+        VisualState.SUCCESS -> 15f
+        VisualState.WARNING -> 13f
+        VisualState.ERROR -> 18f
+        VisualState.BOOT -> 17f
+    }
+
+    private fun voiceLabel(): String = when (voiceState) {
+        VoiceLoop.State.READY -> "READY"
+        VoiceLoop.State.LISTENING -> "LISTENING"
+        VoiceLoop.State.PROCESSING -> "PROCESSING"
+        VoiceLoop.State.ERROR -> "RECALIBRATING"
+        VoiceLoop.State.UNAVAILABLE -> "UNAVAILABLE"
+    }
+
+    private fun intentLabel(): String = intent
+        .replace('_', '/')
+        .take(18)
+        .uppercase(Locale.US)
+
+    private fun routeLabel(): String = when {
+        intent.startsWith("web_research/") -> "LIVE WEB"
+        intent.startsWith("device/") -> "ANDROID"
+        intent.startsWith("memory_") -> "MEMORY"
+        else -> "CORTEX"
+    }
+
+    private fun activeNodeIndex(): Int {
+        val joined = (trace + entities).joinToString(" ").uppercase(Locale.US)
+        val gemini = Regex("GEMINI\\s*0?([1-6])").find(joined)?.groupValues?.getOrNull(1)?.toIntOrNull()
+        if (gemini != null) return gemini - 1
+        val groq = Regex("GROQ\\s*0?([1-4])").find(joined)?.groupValues?.getOrNull(1)?.toIntOrNull()
+        if (groq != null) return 5 + groq
+        return if (visualState == VisualState.RESEARCHING) 6 else -1
+    }
+
+    private fun activeNodeLabel(): String {
+        val index = activeNodeIndex()
+        return when {
+            index in 0..5 -> "GEMINI ${index + 1}"
+            index in 6..9 -> "GROQ ${index - 5}"
+            else -> "AUTO"
+        }
+    }
+
+    private fun sourceCount(): Int {
+        val joined = entities.joinToString(" ")
+        return Regex("sources=(\\d+)", RegexOption.IGNORE_CASE)
+            .find(joined)
+            ?.groupValues
+            ?.getOrNull(1)
+            ?.toIntOrNull()
+            ?: 0
+    }
+
+    private fun timerText(): String {
+        val totalSeconds = ((countdownRemainingMs + 999L) / 1_000L).coerceAtLeast(0L)
+        val hours = totalSeconds / 3_600L
+        val minutes = (totalSeconds % 3_600L) / 60L
+        val seconds = totalSeconds % 60L
+        return if (hours > 0L) {
+            "%02d:%02d:%02d".format(Locale.US, hours, minutes, seconds)
+        } else {
+            "%02d:%02d".format(Locale.US, minutes, seconds)
+        }
     }
 
     private fun wrapTextLines(text: String, maxWidth: Float, painter: Paint): List<String> {
@@ -785,39 +1091,26 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
         return output.ifEmpty { listOf("") }
     }
 
-    private fun voiceLabel(): String = when (voiceState) {
-        VoiceLoop.State.READY -> "READY"
-        VoiceLoop.State.LISTENING -> "LISTENING"
-        VoiceLoop.State.PROCESSING -> "PROCESSING"
-        VoiceLoop.State.ERROR -> "RECALIBRATING"
-        VoiceLoop.State.UNAVAILABLE -> "UNAVAILABLE"
-    }
-
-    private fun modeColor(): Int = when (mode) {
-        BrainMode.BOOT -> Color.rgb(0, 224, 255)
-        BrainMode.ALERT -> Color.rgb(255, 68, 94)
-        BrainMode.STEALTH -> Color.rgb(100, 124, 255)
-        BrainMode.TACTICAL -> Color.rgb(255, 205, 82)
-        BrainMode.LEARNING -> Color.rgb(160, 255, 120)
-        BrainMode.EXECUTING -> Color.rgb(255, 164, 76)
-        BrainMode.SECURITY -> Color.rgb(255, 86, 220)
-        BrainMode.THINKING -> Color.rgb(111, 255, 183)
-        BrainMode.LISTENING -> Color.rgb(0, 255, 224)
-        BrainMode.ONLINE -> Color.rgb(0, 230, 255)
-    }
-
     private fun drawHex(canvas: Canvas, cx: Float, cy: Float, radius: Float, painter: Paint) {
         path.reset()
-        for (i in 0..6) {
-            val angle = (PI / 3.0 * i + PI / 6.0).toFloat()
+        for (index in 0..6) {
+            val angle = (PI / 3.0 * index + PI / 6.0).toFloat()
             val x = cx + cos(angle) * radius
             val y = cy + sin(angle) * radius
-            if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
         }
         canvas.drawPath(path, painter)
     }
 
-    private fun pulse(t: Float, speed: Float): Float = ((sin((t * speed).toDouble()).toFloat() + 1f) * 0.5f)
+    private fun pulse(t: Float, speed: Float): Float =
+        (sin((t * speed).toDouble()).toFloat() + 1f) * 0.5f
+
+    private fun withAlpha(color: Int, alpha: Int): Int = Color.argb(
+        alpha.coerceIn(0, 255),
+        Color.red(color),
+        Color.green(color),
+        Color.blue(color)
+    )
 
     private fun Float.toRad(): Float = (this * PI / 180.0).toFloat()
 
@@ -825,17 +1118,10 @@ class AdvancedCivilizationHudView(context: Context) : View(context) {
 
     private fun sp(value: Float): Float = value * resources.displayMetrics.scaledDensity
 
-    private data class Particle(
-        val x: Float,
-        val y: Float,
-        val speed: Float,
-        val phase: Float,
-        val size: Float
-    )
-
     companion object {
-        private const val BOOT_SECONDS = 3.8f
-        private const val MAX_STREAM_TEXT = 12_000
-        private const val RESPONSE_PAGE_MS = 4_500L
+        private const val FRAME_DELAY_MS = 16L
+        private const val BOOT_SECONDS = 3.2f
+        private const val MAX_STREAM_TEXT = 14_000
+        private const val RESPONSE_PAGE_MS = 5_500L
     }
 }
