@@ -62,10 +62,10 @@ class AppLauncher(private val context: Context) {
         val requested = cleanRequestedName(spokenName)
         if (requested.isBlank()) return LaunchResult.NotFound(spokenName)
 
-        // Last-resort safety gate. The device router should already reject
-        // knowledge questions, but this prevents a sentence from ever matching
-        // a tiny app label such as "X" through substring scoring.
-        if (looksLikeKnowledgeRequest(requested)) {
+        // Last-resort safety gate. Conversational sentences and knowledge
+        // requests must reach Jarvis's dialogue/cortex layer instead of being
+        // fuzzily matched to an app with a similar label.
+        if (looksLikeNonAppRequest(requested)) {
             return LaunchResult.NotFound(spokenName)
         }
 
@@ -176,8 +176,9 @@ class AppLauncher(private val context: Context) {
         return value.trim()
     }
 
-    private fun looksLikeKnowledgeRequest(requested: String): Boolean {
+    private fun looksLikeNonAppRequest(requested: String): Boolean {
         val tokens = requested.split(" ").filter { it.isNotBlank() }
+        if (DIALOGUE_PATTERN.containsMatchIn(requested)) return true
         if (QUESTION_PREFIXES.any(requested::startsWith)) return true
         if (tokens.size > 5) return true
         return tokens.size >= 3 && KNOWLEDGE_TERMS.containsMatchIn(requested)
@@ -264,8 +265,15 @@ class AppLauncher(private val context: Context) {
             "do ", "does ", "did ", "can ", "could ", "would ", "should "
         )
 
+        private val DIALOGUE_PATTERN = Regex(
+            "^(?:jarvis|hey jarvis|hello jarvis|hi jarvis|wake up jarvis|jarvis wake up|" +
+                "good morning jarvis|good afternoon jarvis|good evening jarvis|" +
+                "are you there jarvis|jarvis are you there|thank you(?: jarvis)?|" +
+                "thanks(?: jarvis)?|how are you(?: jarvis)?)$"
+        )
+
         private val KNOWLEDGE_TERMS = Regex(
-            "\\b(happening|happened|latest|today|news|world|current|recent|explain|research|information|know|meaning|reason|compare|summarize|summary)\\b"
+            "\\b(happening|happened|latest|today|news|world|current|recent|explain|research|information|know|meaning|reason|compare|summarize|summary|creator|yourself)\\b"
         )
     }
 }
