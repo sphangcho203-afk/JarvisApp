@@ -27,7 +27,7 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
 
     companion object {
         private const val MAX_ATTEMPTS = 3
-        private const val TOTAL_REQUEST_BUDGET_MS = 36_000L
+        private const val TOTAL_REQUEST_BUDGET_MS = 60_000L
         private const val DIAGNOSTIC_BUDGET_MS = 25_000L
     }
 
@@ -47,8 +47,12 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
             .take(MAX_ATTEMPTS)
             .ifEmpty {
                 val soonest = configured.minByOrNull { it.cooldownUntilMs }
-                val seconds = soonest?.let { ((it.cooldownUntilMs - now) / 1_000L).coerceAtLeast(1L) } ?: 1L
-                throw CortexMeshException("Every configured cortex node is cooling down. Retry in about $seconds seconds.")
+                val seconds = soonest?.let {
+                    ((it.cooldownUntilMs - now) / 1_000L).coerceAtLeast(1L)
+                } ?: 1L
+                throw CortexMeshException(
+                    "Every configured cortex node is cooling down. Retry in about $seconds seconds."
+                )
             }
 
         val attempts = mutableListOf<String>()
@@ -62,6 +66,7 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
                     systemPrompt = registry.systemPrompt,
                     userInput = userInput,
                     memoryContext = memoryContext,
+                    task = task,
                     diagnostic = false,
                     deadlineMs = deadlineMs
                 )
@@ -103,7 +108,9 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
         val registry = store.load()
         val profile = registry.profiles.firstOrNull { it.id == profileId }
             ?: throw CortexMeshException("Unknown cortex profile: $profileId")
-        if (!profile.isConfigured()) throw CortexMeshException("${profile.label} is not fully configured.")
+        if (!profile.isConfigured()) {
+            throw CortexMeshException("${profile.label} is not fully configured.")
+        }
 
         return try {
             val result = request(
@@ -111,6 +118,7 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
                 systemPrompt = registry.systemPrompt,
                 userInput = "Reply with exactly: CORTEX NODE ONLINE",
                 memoryContext = "Connection diagnostic only.",
+                task = CortexTask.FAST,
                 diagnostic = true,
                 deadlineMs = System.currentTimeMillis() + DIAGNOSTIC_BUDGET_MS
             )
@@ -137,23 +145,47 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
         systemPrompt: String,
         userInput: String,
         memoryContext: String,
+        task: CortexTask,
         diagnostic: Boolean,
         deadlineMs: Long
     ): TransportResult {
+        val temperature = when {
+            diagnostic -> 0.0
+            task == CortexTask.CODING -> 0.18
+            task == CortexTask.REASONING -> 0.22
+            else -> 0.30
+        }
+        val tokenBudget = when {
+            diagnostic -> 32
+            task == CortexTask.FAST -> 500
+            task == CortexTask.GENERAL -> 1_100
+            else -> 1_600
+        }
+        val operatingDirective = if (diagnostic) {
+            "Connection diagnostic. Follow the requested exact output."
+        } else {
+            JarvisDirective.instructionFor(userInput, task)
+        }
+
         val requestBody = JSONObject().apply {
             put("model", profile.model)
-            put("temperature", if (diagnostic) 0 else 0.30)
-            put("max_tokens", if (diagnostic) 32 else 700)
+            put("temperature", temperature)
+            put("max_tokens", tokenBudget)
             put(
                 "messages",
                 JSONArray().apply {
                     put(JSONObject().apply {
                         put("role", "system")
-                        put("content", systemPrompt + "\n\nOperator memory:\n" + memoryContext.take(6_000))
+                        put(
+                            "content",
+                            systemPrompt + "\n\n" + operatingDirective +
+                                "\n\nRELEVANT OPERATOR MEMORY:\n" +
+                                memoryContext.take(4_500)
+                        )
                     })
                     put(JSONObject().apply {
                         put("role", "user")
-                        put("content", userInput.take(10_000))
+                        put("content", userInput.take(12_000))
                     })
                 }
             )
@@ -163,14 +195,18 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
         val remainingMs = (deadlineMs - started).coerceAtLeast(3_000L)
         val connection = (URL(profile.provider.endpoint).openConnection() as HttpsURLConnection).apply {
             requestMethod = "POST"
-            connectTimeout = (if (diagnostic) 10_000L else 8_000L).coerceAtMost(remainingMs).toInt()
-            readTimeout = (if (diagnostic) 20_000L else 22_000L).coerceAtMost(remainingMs).toInt()
+            connectTimeout = (if (diagnostic) 10_000L else 10_000L)
+                .coerceAtMost(remainingMs)
+                .toInt()
+            readTimeout = (if (diagnostic) 20_000L else 45_000L)
+                .coerceAtMost(remainingMs)
+                .toInt()
             doOutput = true
             useCaches = false
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
             setRequestProperty("Accept", "application/json")
-            setRequestProperty("Authorization", "Bearer ${profile.apiKey}")
-            setRequestProperty("User-Agent", "Jarvis-Android/0.9.1")
+            setRequestProperty("Authorization", "Bearer ${profile.apiKey.trim()}")
+            setRequestProperty("User-Agent", "Jarvis-Android/0.9.4")
         }
 
         try {
@@ -189,14 +225,20 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
             }
 
             val reply = parseReply(raw)
-            if (reply.isBlank()) throw CortexTransportException(status, 10_000L, "Empty model response")
+            if (reply.isBlank()) {
+                throw CortexTransportException(status, 10_000L, "Empty model response")
+            }
             return TransportResult(reply, status, elapsed)
         } catch (error: CortexTransportException) {
             throw error
         } catch (error: SocketTimeoutException) {
             throw CortexTransportException(0, 25_000L, "Network timeout")
         } catch (error: Exception) {
-            throw CortexTransportException(0, 20_000L, error.message ?: error.javaClass.simpleName)
+            throw CortexTransportException(
+                0,
+                20_000L,
+                error.message ?: error.javaClass.simpleName
+            )
         } finally {
             connection.disconnect()
         }
@@ -257,7 +299,10 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
         val choices = root.optJSONArray("choices")
         if (choices != null && choices.length() > 0) {
             val first = choices.optJSONObject(0)
-            val content = first?.optJSONObject("message")?.optString("content").orEmpty().trim()
+            val content = first?.optJSONObject("message")
+                ?.optString("content")
+                .orEmpty()
+                .trim()
             if (content.isNotBlank()) return content
             val text = first?.optString("text").orEmpty().trim()
             if (text.isNotBlank()) return text
@@ -268,7 +313,9 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
     }
 
     private fun retryAfterMs(connection: HttpURLConnection, status: Int): Long {
-        val seconds = connection.getHeaderField("Retry-After")?.trim()?.toLongOrNull()
+        val seconds = connection.getHeaderField("Retry-After")
+            ?.trim()
+            ?.toLongOrNull()
         if (seconds != null) return seconds.coerceIn(1L, 3_600L) * 1_000L
         return when (status) {
             429 -> 90_000L
