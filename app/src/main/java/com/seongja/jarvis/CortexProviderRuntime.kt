@@ -125,7 +125,16 @@ object CortexModelCatalog {
                 )
             }
         }
-        return (listOf(configured) + ordered)
+        val active = when (profile.provider) {
+            CortexProvider.GEMINI -> geminiActive
+            CortexProvider.GROQ -> groqActive
+        }
+        val sequence = if (configured in active) {
+            ordered + configured
+        } else {
+            listOf(configured) + ordered
+        }
+        return sequence
             .map(::normalize)
             .filter { it.isNotBlank() }
             .distinct()
