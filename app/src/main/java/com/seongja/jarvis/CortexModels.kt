@@ -3,18 +3,29 @@ package com.seongja.jarvis
 import java.util.Locale
 import kotlin.math.exp
 
-/** Fixed providers supported by the Phase 9 mesh. Endpoints are not user-editable. */
+enum class CortexQuotaScope {
+    PROJECT_KEY,
+    ORGANIZATION
+}
+
+/** Fixed providers supported by the owner-bound mesh. Endpoints are not user-editable. */
 enum class CortexProvider(
     val displayName: String,
-    val endpoint: String
+    val endpoint: String,
+    val routeLabel: String,
+    val quotaScope: CortexQuotaScope
 ) {
     GEMINI(
         displayName = "Gemini",
-        endpoint = "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"
+        endpoint = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
+        routeLabel = "Gemini API // global",
+        quotaScope = CortexQuotaScope.PROJECT_KEY
     ),
     GROQ(
         displayName = "Groq",
-        endpoint = "https://api.groq.com/openai/v1/chat/completions"
+        endpoint = "https://api.groq.com/openai/v1/chat/completions",
+        routeLabel = "GroqCloud // organization quota",
+        quotaScope = CortexQuotaScope.ORGANIZATION
     )
 }
 
@@ -43,16 +54,20 @@ data class CortexProfile(
     val lastStatusCode: Int = 0,
     val lastError: String = ""
 ) {
-    fun isConfigured(): Boolean = enabled && model.isNotBlank() && apiKey.isNotBlank()
+    fun isConfigured(): Boolean =
+        enabled && model.isNotBlank() && apiKey.isNotBlank()
 
-    fun isCoolingDown(nowMs: Long = System.currentTimeMillis()): Boolean = cooldownUntilMs > nowMs
+    fun isCoolingDown(nowMs: Long = System.currentTimeMillis()): Boolean =
+        cooldownUntilMs > nowMs
 
     fun healthLabel(nowMs: Long = System.currentTimeMillis()): String = when {
         !enabled -> "DISABLED"
         model.isBlank() || apiKey.isBlank() -> "NOT CONFIGURED"
-        isCoolingDown(nowMs) -> "COOLDOWN ${((cooldownUntilMs - nowMs) / 1_000L).coerceAtLeast(1L)}s"
+        isCoolingDown(nowMs) ->
+            "COOLDOWN ${((cooldownUntilMs - nowMs) / 1_000L).coerceAtLeast(1L)}s"
         lastStatusCode in 200..299 -> "ONLINE ${lastLatencyMs}ms"
-        lastError.isNotBlank() -> "ERROR ${lastStatusCode.takeIf { it > 0 } ?: "NET"}"
+        lastError.isNotBlank() ->
+            "ERROR ${lastStatusCode.takeIf { it > 0 } ?: "NET"}"
         else -> "READY"
     }
 }
@@ -61,7 +76,8 @@ data class CortexRegistry(
     val profiles: List<CortexProfile> = CortexDefaults.profiles(),
     val systemPrompt: String = DEFAULT_SYSTEM_PROMPT
 ) {
-    fun configuredProfiles(): List<CortexProfile> = profiles.filter { it.isConfigured() }
+    fun configuredProfiles(): List<CortexProfile> =
+        profiles.filter { it.isConfigured() }
 
     companion object {
         const val DEFAULT_SYSTEM_PROMPT =
@@ -94,7 +110,11 @@ object CortexDefaults {
                     id = "gemini_${index + 1}",
                     label = "GEMINI %02d".format(Locale.US, index + 1),
                     provider = CortexProvider.GEMINI,
-                    priority = 7
+                    model = CortexModelCatalog.defaultModel(
+                        CortexProvider.GEMINI,
+                        index
+                    ),
+                    priority = 8
                 )
             )
         }
@@ -104,7 +124,11 @@ object CortexDefaults {
                     id = "groq_${index + 1}",
                     label = "GROQ %02d".format(Locale.US, index + 1),
                     provider = CortexProvider.GROQ,
-                    priority = 6
+                    model = CortexModelCatalog.defaultModel(
+                        CortexProvider.GROQ,
+                        index
+                    ),
+                    priority = 7
                 )
             )
         }
@@ -132,9 +156,15 @@ object CortexTaskClassifier {
     fun classify(input: String): CortexTask {
         val clean = input.trim()
         if (codingTerms.containsMatchIn(clean)) return CortexTask.CODING
-        if (reasoningTerms.containsMatchIn(clean) || clean.length > 260) return CortexTask.REASONING
-        if (summaryTerms.containsMatchIn(clean) && clean.length > 120) return CortexTask.REASONING
-        if (clean.length <= 48 && clean.split(Regex("\\s+")).size <= 8) return CortexTask.FAST
+        if (reasoningTerms.containsMatchIn(clean) || clean.length > 260) {
+            return CortexTask.REASONING
+        }
+        if (summaryTerms.containsMatchIn(clean) && clean.length > 120) {
+            return CortexTask.REASONING
+        }
+        if (clean.length <= 48 && clean.split(Regex("\\s+")).size <= 8) {
+            return CortexTask.FAST
+        }
         return CortexTask.GENERAL
     }
 }
@@ -142,20 +172,27 @@ object CortexTaskClassifier {
 /**
  * Provider selection uses a bounded utility score rather than blind key rotation.
  * Reliability is the posterior mean of a Beta(1,1) model.
- * Latency and freshness use exponential response curves so one bad sample cannot dominate forever.
  */
 object CortexMath {
     fun score(profile: CortexProfile, task: CortexTask, nowMs: Long): Double {
-        if (!profile.isConfigured() || profile.isCoolingDown(nowMs)) return Double.NEGATIVE_INFINITY
+        if (!profile.isConfigured() || profile.isCoolingDown(nowMs)) {
+            return Double.NEGATIVE_INFINITY
+        }
 
         val taskFit = taskFit(profile, task)
-        val reliability = (profile.successes + 1.0) / (profile.successes + profile.failures + 2.0)
+        val reliability =
+            (profile.successes + 1.0) /
+                (profile.successes + profile.failures + 2.0)
         val latencyUtility = if (profile.lastLatencyMs <= 0L) {
             0.72
         } else {
             exp(-profile.lastLatencyMs.coerceAtMost(30_000L) / 3_500.0)
         }
-        val idleMs = if (profile.lastUsedAtMs <= 0L) 180_000L else (nowMs - profile.lastUsedAtMs).coerceAtLeast(0L)
+        val idleMs = if (profile.lastUsedAtMs <= 0L) {
+            180_000L
+        } else {
+            (nowMs - profile.lastUsedAtMs).coerceAtLeast(0L)
+        }
         val freshness = 1.0 - exp(-idleMs / 45_000.0)
         val priorityUtility = profile.priority.coerceIn(1, 10) / 10.0
         val stability = exp(-profile.failureStreak.coerceAtMost(8) / 2.5)
@@ -173,15 +210,31 @@ object CortexMath {
     private fun taskFit(profile: CortexProfile, task: CortexTask): Double {
         val model = profile.model.lowercase(Locale.US)
         var fit = when (task) {
-            CortexTask.FAST -> if (profile.provider == CortexProvider.GROQ) 1.0 else 0.88
-            CortexTask.GENERAL -> if (profile.provider == CortexProvider.GEMINI) 0.99 else 0.91
-            CortexTask.REASONING -> if (profile.provider == CortexProvider.GEMINI) 1.0 else 0.94
-            CortexTask.CODING -> if (profile.provider == CortexProvider.GROQ) 0.99 else 0.96
+            CortexTask.FAST ->
+                if (profile.provider == CortexProvider.GROQ) 1.0 else 0.92
+            CortexTask.GENERAL ->
+                if (profile.provider == CortexProvider.GEMINI) 1.0 else 0.93
+            CortexTask.REASONING ->
+                if (profile.provider == CortexProvider.GEMINI) 1.0 else 0.97
+            CortexTask.CODING ->
+                if (profile.provider == CortexProvider.GROQ) 1.0 else 0.98
         }
 
-        if (task == CortexTask.FAST && ("flash" in model || "instant" in model || "8b" in model)) fit += 0.05
-        if (task == CortexTask.REASONING && ("pro" in model || "70b" in model || "32b" in model || "3.1" in model)) fit += 0.05
-        if (task == CortexTask.CODING && ("qwen" in model || "coder" in model || "code" in model || "70b" in model)) fit += 0.05
+        if (
+            task == CortexTask.FAST &&
+            listOf("flash-lite", "instant", "8b", "scout").any(model::contains)
+        ) fit += 0.05
+
+        if (
+            task == CortexTask.REASONING &&
+            listOf("3.5", "2.5", "70b", "qwen3", "32b").any(model::contains)
+        ) fit += 0.05
+
+        if (
+            task == CortexTask.CODING &&
+            listOf("qwen", "coder", "scout", "3.5", "70b").any(model::contains)
+        ) fit += 0.05
+
         return fit.coerceIn(0.0, 1.0)
     }
 }
