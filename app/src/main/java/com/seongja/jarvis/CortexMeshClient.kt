@@ -1,35 +1,11 @@
 package com.seongja.jarvis
 
-import org.json.JSONArray
-import org.json.JSONObject
-import java.io.BufferedReader
-import java.io.InputStreamReader
-import java.net.HttpURLConnection
-import java.net.SocketTimeoutException
-import java.net.URL
-import javax.net.ssl.HttpsURLConnection
+import java.util.Locale
 
 class CortexMeshException(message: String) : Exception(message)
 
-private class CortexTransportException(
-    val statusCode: Int,
-    val retryAfterMs: Long,
-    message: String
-) : Exception(message)
-
-private data class TransportResult(
-    val reply: String,
-    val statusCode: Int,
-    val elapsedMs: Long
-)
-
 class CortexMeshClient(private val store: SecureCortexRegistry) {
-
-    companion object {
-        private const val MAX_ATTEMPTS = 3
-        private const val TOTAL_REQUEST_BUDGET_MS = 60_000L
-        private const val DIAGNOSTIC_BUDGET_MS = 25_000L
-    }
+    private val transport = CortexProviderTransport()
 
     fun ask(userInput: String, memoryContext: String): CortexMeshResult {
         val registry = store.load()
@@ -41,67 +17,123 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
             throw CortexMeshException("No Gemini or Groq cortex node is configured.")
         }
 
-        val eligible = configured
-            .filterNot { it.isCoolingDown(now) }
-            .sortedByDescending { CortexMath.score(it, task, now) }
-            .take(MAX_ATTEMPTS)
-            .ifEmpty {
-                val soonest = configured.minByOrNull { it.cooldownUntilMs }
-                val seconds = soonest?.let {
-                    ((it.cooldownUntilMs - now) / 1_000L).coerceAtLeast(1L)
-                } ?: 1L
-                throw CortexMeshException(
-                    "Every configured cortex node is cooling down. Retry in about $seconds seconds."
-                )
-            }
+        val eligible = orderedProfiles(configured, task, now)
+        if (eligible.isEmpty()) {
+            val soonest = configured.minByOrNull { it.cooldownUntilMs }
+            val seconds = soonest?.let {
+                ((it.cooldownUntilMs - now) / 1_000L).coerceAtLeast(1L)
+            } ?: 1L
+            throw CortexMeshException(
+                "Every configured cortex node is cooling down. Retry in about $seconds seconds."
+            )
+        }
 
         val attempts = mutableListOf<String>()
+        val failures = mutableListOf<String>()
+        val blockedProviders = mutableSetOf<CortexProvider>()
         val deadlineMs = System.currentTimeMillis() + TOTAL_REQUEST_BUDGET_MS
-        for (profile in eligible) {
+        var networkAttempts = 0
+
+        profileLoop@ for (profile in eligible) {
+            if (profile.provider in blockedProviders) continue
             if (System.currentTimeMillis() >= deadlineMs) break
-            attempts += profile.label
-            try {
-                val result = request(
-                    profile = profile,
-                    systemPrompt = registry.systemPrompt,
-                    userInput = userInput,
-                    memoryContext = memoryContext,
-                    task = task,
-                    diagnostic = false,
-                    deadlineMs = deadlineMs
-                )
-                markSuccess(profile, result)
-                return CortexMeshResult(
-                    reply = result.reply,
-                    profileId = profile.id,
-                    profileLabel = profile.label,
-                    provider = profile.provider,
-                    model = profile.model,
-                    statusCode = result.statusCode,
-                    elapsedMs = result.elapsedMs,
-                    attempts = attempts.toList(),
-                    task = task
-                )
-            } catch (error: CortexTransportException) {
-                markFailure(profile, error)
-            } catch (error: Exception) {
-                markFailure(
-                    profile,
-                    CortexTransportException(
-                        statusCode = 0,
-                        retryAfterMs = 20_000L,
-                        message = error.message ?: error.javaClass.simpleName
+            if (networkAttempts >= MAX_NETWORK_ATTEMPTS) break
+
+            val systemEnvelope = OwnerIdentityCore.systemEnvelope(
+                editablePrompt = registry.systemPrompt,
+                taskDirective = JarvisDirective.instructionFor(userInput, task),
+                memoryContext = memoryContext
+            )
+            val models = CortexModelCatalog.candidates(profile, task)
+                .take(MAX_MODELS_PER_PROFILE)
+            var finalFailure: CortexProviderFailure? = null
+            var failureRecorded = false
+
+            for (model in models) {
+                if (System.currentTimeMillis() >= deadlineMs) break@profileLoop
+                if (networkAttempts >= MAX_NETWORK_ATTEMPTS) break@profileLoop
+
+                networkAttempts++
+                attempts += "${profile.label}:$model"
+                try {
+                    val response = transport.request(
+                        profile = profile,
+                        model = model,
+                        systemEnvelope = systemEnvelope,
+                        userInput = userInput,
+                        temperature = temperatureFor(task),
+                        maxOutputTokens = tokenBudgetFor(task),
+                        deadlineMs = deadlineMs
                     )
-                )
+                    markSuccess(profile, response)
+                    return CortexMeshResult(
+                        reply = response.reply,
+                        profileId = profile.id,
+                        profileLabel = profile.label,
+                        provider = profile.provider,
+                        model = response.model,
+                        statusCode = response.statusCode,
+                        elapsedMs = response.elapsedMs,
+                        attempts = attempts.toList(),
+                        task = task
+                    )
+                } catch (error: CortexProviderFailure) {
+                    finalFailure = error
+                    failures += failureLabel(profile, error)
+                    when (error.kind) {
+                        CortexFailureKind.MODEL -> {
+                            // The key may be valid while this model is unavailable
+                            // for the project. Try the next verified model on it.
+                            continue
+                        }
+                        CortexFailureKind.RATE_LIMIT -> {
+                            if (profile.provider.quotaScope == CortexQuotaScope.ORGANIZATION) {
+                                val until = System.currentTimeMillis() +
+                                    error.retryAfterMs.coerceAtLeast(MIN_GROQ_ORG_COOLDOWN_MS)
+                                store.applyProviderCooldown(
+                                    provider = profile.provider,
+                                    triggeringProfileId = profile.id,
+                                    cooldownUntilMs = until,
+                                    statusCode = error.statusCode,
+                                    error = error.message.orEmpty()
+                                )
+                                blockedProviders += profile.provider
+                                failureRecorded = true
+                            } else {
+                                markFailure(profile, error)
+                                failureRecorded = true
+                            }
+                            break
+                        }
+                        CortexFailureKind.AUTH -> {
+                            markFailure(profile, error)
+                            failureRecorded = true
+                            break
+                        }
+                        CortexFailureKind.SERVER,
+                        CortexFailureKind.NETWORK,
+                        CortexFailureKind.OTHER -> break
+                    }
+                }
+            }
+
+            if (!failureRecorded && finalFailure != null) {
+                markFailure(profile, finalFailure)
             }
         }
 
-        val latest = store.load().profiles.associateBy { it.id }
-        val failureSummary = attempts.joinToString("; ") { idOrLabel ->
-            val profile = latest.values.firstOrNull { it.label == idOrLabel }
-            if (profile == null) idOrLabel else "${profile.label}: ${profile.lastError.take(80)}"
-        }
-        throw CortexMeshException("All eligible cortex nodes failed. $failureSummary")
+        val summary = failures
+            .distinct()
+            .takeLast(8)
+            .joinToString(" | ")
+            .take(900)
+        throw CortexMeshException(
+            if (summary.isBlank()) {
+                "No cortex node completed the request within the time budget."
+            } else {
+                "All eligible model routes failed. $summary"
+            }
+        )
     }
 
     fun testProfile(profileId: String): CortexMeshResult {
@@ -112,167 +144,130 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
             throw CortexMeshException("${profile.label} is not fully configured.")
         }
 
-        return try {
-            val result = request(
-                profile = profile,
-                systemPrompt = registry.systemPrompt,
-                userInput = "Reply with exactly: CORTEX NODE ONLINE",
-                memoryContext = "Connection diagnostic only.",
-                task = CortexTask.FAST,
-                diagnostic = true,
-                deadlineMs = System.currentTimeMillis() + DIAGNOSTIC_BUDGET_MS
-            )
-            markSuccess(profile, result)
-            CortexMeshResult(
-                reply = result.reply,
-                profileId = profile.id,
-                profileLabel = profile.label,
-                provider = profile.provider,
-                model = profile.model,
-                statusCode = result.statusCode,
-                elapsedMs = result.elapsedMs,
-                attempts = listOf(profile.label),
-                task = CortexTask.FAST
-            )
-        } catch (error: CortexTransportException) {
-            markFailure(profile, error)
-            throw CortexMeshException("${profile.label}: ${error.message}")
-        }
-    }
+        val deadlineMs = System.currentTimeMillis() + DIAGNOSTIC_BUDGET_MS
+        val attempts = mutableListOf<String>()
+        var lastFailure: CortexProviderFailure? = null
 
-    private fun request(
-        profile: CortexProfile,
-        systemPrompt: String,
-        userInput: String,
-        memoryContext: String,
-        task: CortexTask,
-        diagnostic: Boolean,
-        deadlineMs: Long
-    ): TransportResult {
-        val temperature = when {
-            diagnostic -> 0.0
-            task == CortexTask.CODING -> 0.18
-            task == CortexTask.REASONING -> 0.22
-            else -> 0.30
-        }
-        val tokenBudget = when {
-            diagnostic -> 32
-            task == CortexTask.FAST -> 500
-            task == CortexTask.GENERAL -> 1_100
-            else -> 1_600
-        }
-        val operatingDirective = if (diagnostic) {
-            "Connection diagnostic. Follow the requested exact output."
-        } else {
-            JarvisDirective.instructionFor(userInput, task)
-        }
-        val systemEnvelope = if (diagnostic) {
-            "Connection diagnostic. Follow the requested exact output."
-        } else {
-            OwnerIdentityCore.systemEnvelope(
-                editablePrompt = systemPrompt,
-                taskDirective = operatingDirective,
-                memoryContext = memoryContext
-            )
-        }
-
-        val requestBody = JSONObject().apply {
-            put("model", profile.model)
-            put("temperature", temperature)
-            put("max_tokens", tokenBudget)
-            put(
-                "messages",
-                JSONArray().apply {
-                    put(JSONObject().apply {
-                        put("role", "system")
-                        put("content", systemEnvelope)
-                    })
-                    put(JSONObject().apply {
-                        put("role", "user")
-                        put("content", userInput.take(12_000))
-                    })
+        CortexModelCatalog.candidates(profile, CortexTask.FAST)
+            .take(MAX_DIAGNOSTIC_MODELS)
+            .forEach { model ->
+                attempts += "${profile.label}:$model"
+                try {
+                    val response = transport.request(
+                        profile = profile,
+                        model = model,
+                        systemEnvelope = "Connection diagnostic. Reply with exactly: CORTEX NODE ONLINE",
+                        userInput = "Reply with exactly: CORTEX NODE ONLINE",
+                        temperature = 0.0,
+                        maxOutputTokens = 32,
+                        deadlineMs = deadlineMs
+                    )
+                    markSuccess(profile, response)
+                    return CortexMeshResult(
+                        reply = response.reply,
+                        profileId = profile.id,
+                        profileLabel = profile.label,
+                        provider = profile.provider,
+                        model = response.model,
+                        statusCode = response.statusCode,
+                        elapsedMs = response.elapsedMs,
+                        attempts = attempts.toList(),
+                        task = CortexTask.FAST
+                    )
+                } catch (error: CortexProviderFailure) {
+                    lastFailure = error
+                    if (error.kind == CortexFailureKind.MODEL) return@forEach
+                    if (
+                        error.kind == CortexFailureKind.RATE_LIMIT &&
+                        profile.provider.quotaScope == CortexQuotaScope.ORGANIZATION
+                    ) {
+                        store.applyProviderCooldown(
+                            provider = profile.provider,
+                            triggeringProfileId = profile.id,
+                            cooldownUntilMs = System.currentTimeMillis() +
+                                error.retryAfterMs.coerceAtLeast(MIN_GROQ_ORG_COOLDOWN_MS),
+                            statusCode = error.statusCode,
+                            error = error.message.orEmpty()
+                        )
+                    } else {
+                        markFailure(profile, error)
+                    }
+                    throw CortexMeshException(
+                        "${profile.label}: ${error.message ?: error.kind.name}"
+                    )
                 }
-            )
-        }
-
-        val started = System.currentTimeMillis()
-        val remainingMs = (deadlineMs - started).coerceAtLeast(3_000L)
-        val connection = (URL(profile.provider.endpoint).openConnection() as HttpsURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 10_000L.coerceAtMost(remainingMs).toInt()
-            readTimeout = (if (diagnostic) 20_000L else 45_000L)
-                .coerceAtMost(remainingMs)
-                .toInt()
-            doOutput = true
-            useCaches = false
-            setRequestProperty("Content-Type", "application/json; charset=utf-8")
-            setRequestProperty("Accept", "application/json")
-            setRequestProperty("Authorization", "Bearer ${profile.apiKey.trim()}")
-            setRequestProperty("User-Agent", "Jarvis-Android/0.9.6")
-        }
-
-        try {
-            connection.outputStream.use { stream ->
-                stream.write(requestBody.toString().toByteArray(Charsets.UTF_8))
-                stream.flush()
             }
 
-            val status = connection.responseCode
-            val raw = readResponse(connection, status)
-            val elapsed = System.currentTimeMillis() - started
-            if (status !in 200..299) {
-                val apiMessage = extractApiError(raw).ifBlank { "HTTP $status" }
-                val retryAfterMs = retryAfterMs(connection, status)
-                throw CortexTransportException(status, retryAfterMs, apiMessage)
-            }
-
-            val reply = parseReply(raw)
-            if (reply.isBlank()) {
-                throw CortexTransportException(status, 10_000L, "Empty model response")
-            }
-            return TransportResult(reply, status, elapsed)
-        } catch (error: CortexTransportException) {
-            throw error
-        } catch (error: SocketTimeoutException) {
-            throw CortexTransportException(0, 25_000L, "Network timeout")
-        } catch (error: Exception) {
-            throw CortexTransportException(
-                0,
-                20_000L,
-                error.message ?: error.javaClass.simpleName
-            )
-        } finally {
-            connection.disconnect()
-        }
+        lastFailure?.let { markFailure(profile, it) }
+        throw CortexMeshException(
+            "${profile.label}: no verified model accepted this key. " +
+                (lastFailure?.message ?: "No model response")
+        )
     }
 
-    private fun markSuccess(profile: CortexProfile, result: TransportResult) {
+    private fun orderedProfiles(
+        configured: List<CortexProfile>,
+        task: CortexTask,
+        nowMs: Long
+    ): List<CortexProfile> {
+        val providerOrder = when (task) {
+            CortexTask.FAST,
+            CortexTask.CODING -> listOf(CortexProvider.GROQ, CortexProvider.GEMINI)
+            CortexTask.GENERAL,
+            CortexTask.REASONING -> listOf(CortexProvider.GEMINI, CortexProvider.GROQ)
+        }
+
+        val queues = providerOrder.associateWith { provider ->
+            configured
+                .filter { it.provider == provider && !it.isCoolingDown(nowMs) }
+                .sortedByDescending { CortexMath.score(it, task, nowMs) }
+                .toMutableList()
+        }
+        val output = mutableListOf<CortexProfile>()
+        while (queues.values.any { it.isNotEmpty() }) {
+            providerOrder.forEach { provider ->
+                val queue = queues[provider] ?: return@forEach
+                if (queue.isNotEmpty()) output += queue.removeAt(0)
+            }
+        }
+        return output
+    }
+
+    private fun markSuccess(
+        profile: CortexProfile,
+        response: CortexProviderResponse
+    ) {
         store.updateProfile(
             profile.copy(
                 successes = profile.successes + 1,
                 failureStreak = 0,
                 requestCount = profile.requestCount + 1,
-                lastLatencyMs = result.elapsedMs,
+                lastLatencyMs = response.elapsedMs,
                 lastUsedAtMs = System.currentTimeMillis(),
                 cooldownUntilMs = 0L,
-                lastStatusCode = result.statusCode,
+                lastStatusCode = response.statusCode,
                 lastError = ""
             )
         )
     }
 
-    private fun markFailure(profile: CortexProfile, error: CortexTransportException) {
+    private fun markFailure(
+        profile: CortexProfile,
+        error: CortexProviderFailure
+    ) {
         val now = System.currentTimeMillis()
-        val authFailure = error.statusCode == 401 || error.statusCode == 403
-        val cooldown = when {
-            authFailure -> 0L
-            error.statusCode == 429 -> error.retryAfterMs.coerceAtLeast(60_000L)
-            error.statusCode in 500..599 -> error.retryAfterMs.coerceAtLeast(30_000L)
-            else -> error.retryAfterMs.coerceAtLeast(15_000L)
+        val disableKey = error.kind == CortexFailureKind.AUTH
+        val cooldown = when (error.kind) {
+            CortexFailureKind.AUTH -> 0L
+            CortexFailureKind.RATE_LIMIT -> error.retryAfterMs.coerceAtLeast(15_000L)
+            CortexFailureKind.MODEL -> 5 * 60_000L
+            CortexFailureKind.SERVER -> error.retryAfterMs.coerceAtLeast(30_000L)
+            CortexFailureKind.NETWORK -> error.retryAfterMs.coerceAtLeast(15_000L)
+            CortexFailureKind.OTHER -> error.retryAfterMs.coerceAtLeast(20_000L)
         }
         store.updateProfile(
             profile.copy(
-                enabled = if (authFailure) false else profile.enabled,
+                enabled = if (disableKey) false else profile.enabled,
                 failures = profile.failures + 1,
                 failureStreak = profile.failureStreak + 1,
                 requestCount = profile.requestCount + 1,
@@ -284,45 +279,42 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
         )
     }
 
-    private fun readResponse(connection: HttpURLConnection, status: Int): String {
-        val stream = if (status in 200..299) connection.inputStream else connection.errorStream
-        if (stream == null) return ""
-        return BufferedReader(InputStreamReader(stream, Charsets.UTF_8)).use { it.readText() }
+    private fun failureLabel(
+        profile: CortexProfile,
+        error: CortexProviderFailure
+    ): String = buildString {
+        append(profile.label)
+        append('/')
+        append(error.model)
+        append(" -> ")
+        append(error.kind.name.lowercase(Locale.US))
+        if (error.statusCode > 0) append(" HTTP ${error.statusCode}")
+        error.message?.takeIf { it.isNotBlank() }?.let {
+            append(": ")
+            append(it.take(120))
+        }
     }
 
-    private fun extractApiError(raw: String): String = runCatching {
-        val root = JSONObject(raw)
-        root.optJSONObject("error")?.optString("message")
-            ?: root.optString("message")
-    }.getOrNull().orEmpty()
-
-    private fun parseReply(raw: String): String {
-        val root = JSONObject(raw)
-        val choices = root.optJSONArray("choices")
-        if (choices != null && choices.length() > 0) {
-            val first = choices.optJSONObject(0)
-            val content = first?.optJSONObject("message")
-                ?.optString("content")
-                .orEmpty()
-                .trim()
-            if (content.isNotBlank()) return content
-            val text = first?.optString("text").orEmpty().trim()
-            if (text.isNotBlank()) return text
-        }
-        val direct = root.optString("output_text").trim()
-        if (direct.isNotBlank()) return direct
-        throw CortexTransportException(200, 10_000L, "Unsupported response format")
+    private fun temperatureFor(task: CortexTask): Double = when (task) {
+        CortexTask.CODING -> 0.18
+        CortexTask.REASONING -> 0.22
+        CortexTask.FAST -> 0.24
+        CortexTask.GENERAL -> 0.30
     }
 
-    private fun retryAfterMs(connection: HttpURLConnection, status: Int): Long {
-        val seconds = connection.getHeaderField("Retry-After")
-            ?.trim()
-            ?.toLongOrNull()
-        if (seconds != null) return seconds.coerceIn(1L, 3_600L) * 1_000L
-        return when (status) {
-            429 -> 90_000L
-            in 500..599 -> 30_000L
-            else -> 20_000L
-        }
+    private fun tokenBudgetFor(task: CortexTask): Int = when (task) {
+        CortexTask.FAST -> 500
+        CortexTask.GENERAL -> 1_100
+        CortexTask.REASONING,
+        CortexTask.CODING -> 1_600
+    }
+
+    companion object {
+        private const val MAX_NETWORK_ATTEMPTS = 8
+        private const val MAX_MODELS_PER_PROFILE = 3
+        private const val MAX_DIAGNOSTIC_MODELS = 4
+        private const val TOTAL_REQUEST_BUDGET_MS = 62_000L
+        private const val DIAGNOSTIC_BUDGET_MS = 35_000L
+        private const val MIN_GROQ_ORG_COOLDOWN_MS = 60_000L
     }
 }
