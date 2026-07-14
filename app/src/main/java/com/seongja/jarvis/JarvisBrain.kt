@@ -27,32 +27,12 @@ class JarvisBrain(context: Context) {
         val online = configured.count {
             it.lastStatusCode in 200..299 && !it.isCoolingDown()
         }
-        val researchReady = webResearch.isConfigured()
-        return "${configured.size} nodes // $online online // web ${if (researchReady) "ready" else "offline"}"
+        return "${configured.size} nodes // $online online // web ${if (webResearch.isConfigured()) "ready" else "offline"}"
     }
 
-    /**
-     * Deterministic conversational phrases must be intercepted before Android's
-     * app launcher. Otherwise greetings and owner questions can be mistaken for
-     * installed app names through fuzzy matching.
-     */
     fun interceptLocalDialogue(rawInput: String): BrainResponse? {
         val lower = normalizedDialogue(rawInput)
-
-        val wakePhrases = setOf(
-            "jarvis",
-            "hey jarvis",
-            "hello jarvis",
-            "hi jarvis",
-            "wake up jarvis",
-            "jarvis wake up",
-            "jarvis are you there",
-            "are you there jarvis",
-            "good morning jarvis",
-            "good afternoon jarvis",
-            "good evening jarvis"
-        )
-        if (lower in wakePhrases) {
+        if (lower in WAKE_PHRASES) {
             val greeting = when {
                 lower.startsWith("good morning") -> "Good morning, Sir. At your service."
                 lower.startsWith("good afternoon") -> "Good afternoon, Sir. At your service."
@@ -97,15 +77,7 @@ class JarvisBrain(context: Context) {
             )
         }
 
-        val asksCreator = lower.contains("creator") && (
-            lower.contains("who") ||
-                lower.contains("what") ||
-                lower.contains("tell") ||
-                lower.contains("speak") ||
-                lower.contains("know") ||
-                lower.contains("describe")
-            )
-        if (asksCreator) {
+        if (asksAboutCreator(lower)) {
             val operator = memory.callsign()
             return localResponse(
                 spoken = "My creator and primary operator is $operator. You designed me as a private Android intelligence system with voice, research, contextual memory, and verified device-control capabilities.",
@@ -129,7 +101,6 @@ class JarvisBrain(context: Context) {
                 intent = "dialogue/status"
             )
         }
-
         return null
     }
 
@@ -154,21 +125,23 @@ class JarvisBrain(context: Context) {
         }
 
         if (!isCloudConfigured()) return configurationRequiredResponse()
-
         if (WebResearchIntent.shouldUseWeb(input)) {
             return runCatching { webResearchResponse(input) }
-                .getOrElse { error -> webResearchFallback(input, error) }
+                .getOrElse { webResearchFallback(input, it) }
         }
+        return cortexResponse(input)
+    }
 
+    private fun cortexResponse(input: String): BrainResponse {
         val result = cortexMesh.ask(input, memory.promptContext(input))
+        val reply = OwnerIdentityCore.normalizeOperatorReference(result.reply)
         return BrainResponse(
-            spoken = OwnerIdentityCore.normalizeOperatorReference(result.reply),
-            display = OwnerIdentityCore.normalizeOperatorReference(result.reply),
+            spoken = reply,
+            display = reply,
             intent = "cortex_mesh/response",
             confidence = 0.97f,
             mode = BrainMode.ONLINE,
             trace = listOf(
-                "android_speech_recognizer",
                 "identity=${OwnerIdentityCore.VERSION}",
                 "task=${result.task.name.lowercase(Locale.US)}",
                 "mesh_route=${result.profileLabel}",
@@ -181,19 +154,16 @@ class JarvisBrain(context: Context) {
             ),
             memory = memory.summary(),
             thoughts = listOf(
-                "The owner-bound identity core was applied before the editable provider prompt.",
-                "The request was classified as ${result.task.name.lowercase(Locale.US)}.",
-                "Relevant encrypted conversation memories were retrieved locally before the request.",
-                "The cortex mesh selected ${result.profileLabel} using task fit, reliability, latency, freshness, and stability.",
-                if (result.attempts.size > 1) "Automatic failover was used." else "The primary selected node succeeded."
+                "The immutable owner identity core was applied before editable provider preferences.",
+                "Relevant encrypted memories were retrieved locally.",
+                "${result.profileLabel} was selected by task fit, reliability, latency, freshness, and stability."
             ),
             entities = listOf(
                 "identity_core=${OwnerIdentityCore.VERSION}",
                 "source=cortex_mesh",
                 "node=${result.profileLabel}",
                 "provider=${result.provider.displayName}",
-                "model=${result.model}",
-                "status=${result.statusCode}"
+                "model=${result.model}"
             ),
             decision = "owner_bound_mesh_response",
             action = BrainAction()
@@ -203,12 +173,9 @@ class JarvisBrain(context: Context) {
     private fun webResearchResponse(input: String): BrainResponse {
         val hybrid = webResearch.research(input, memory.promptContext(input))
         val result = hybrid.research
-        val spoken = OwnerIdentityCore.normalizeOperatorReference(result.spokenSummary)
-        val display = OwnerIdentityCore.normalizeOperatorReference(result.displayText())
-
         return BrainResponse(
-            spoken = spoken,
-            display = display,
+            spoken = result.spokenSummary,
+            display = result.displayText(),
             intent = if (WebResearchIntent.isWorldBrief(input)) {
                 "web_research/world_brief"
             } else {
@@ -221,7 +188,6 @@ class JarvisBrain(context: Context) {
             },
             mode = BrainMode.ONLINE,
             trace = listOf(
-                "android_speech_recognizer",
                 "identity=${OwnerIdentityCore.VERSION}",
                 "route=hybrid_live_web_research",
                 "provider=${hybrid.provider}",
@@ -231,23 +197,18 @@ class JarvisBrain(context: Context) {
                 "queries=${result.searchQueries.size}",
                 "sources=${result.sources.size}",
                 "http=${result.statusCode}",
-                "latency=${result.elapsedMs}ms",
-                "memory=contextual_recall"
+                "latency=${result.elapsedMs}ms"
             ),
             memory = memory.summary(),
             thoughts = listOf(
-                "The owner-bound identity core remained active during research synthesis.",
-                "This request required current or externally verified information.",
-                "Jarvis attempted real web-enabled providers with automatic cross-provider failover.",
+                "The owner identity core remained active during research synthesis.",
                 "Private contacts were excluded from cloud context.",
-                "The detailed answer and available sources are displayed on screen."
+                "The detailed answer and sources are displayed on screen."
             ),
             entities = buildList {
                 add("identity_core=${OwnerIdentityCore.VERSION}")
                 add("source=hybrid_web_research")
                 add("provider=${hybrid.provider}")
-                add("node=${result.profileLabel}")
-                add("model=${result.model}")
                 add("sources=${result.sources.size}")
                 result.sources.take(4).forEachIndexed { index, source ->
                     add("source_${index + 1}=${source.title.take(80)}")
@@ -265,14 +226,12 @@ class JarvisBrain(context: Context) {
             appendLine()
             appendLine("Live web routes were unavailable: $reason")
             appendLine(JarvisDirective.SUMMARIZATION)
-            appendLine("Answer from existing knowledge only. State clearly that freshness cannot be verified. Do not pretend that web research occurred.")
+            appendLine("Answer from existing knowledge only. State clearly that freshness cannot be verified. Do not pretend web research occurred.")
         }
         val result = cortexMesh.ask(fallbackPrompt, memory.promptContext(input))
-        val reply = OwnerIdentityCore.normalizeOperatorReference(result.reply)
-
         return BrainResponse(
-            spoken = "Live information could not be verified. Here is a knowledge-based summary, which may not be current. $reply",
-            display = "LIVE WEB VERIFICATION UNAVAILABLE\n${reason.take(360)}\n\nKNOWLEDGE-BASED FALLBACK\n$reply",
+            spoken = "Live information could not be verified. Here is a knowledge-based summary, which may not be current. ${result.reply}",
+            display = "LIVE WEB VERIFICATION UNAVAILABLE\n${reason.take(360)}\n\nKNOWLEDGE-BASED FALLBACK\n${result.reply}",
             intent = "web_research/fallback",
             confidence = 0.55f,
             mode = BrainMode.ALERT,
@@ -281,22 +240,18 @@ class JarvisBrain(context: Context) {
                 "route=hybrid_web_research",
                 "live_routes=failed",
                 "fallback=cortex_mesh",
-                "reason=${reason.take(160)}",
                 "node=${result.profileLabel}",
-                "model=${result.model}",
-                "memory=contextual_recall"
+                "model=${result.model}"
             ),
             memory = memory.summary(),
             thoughts = listOf(
-                "The owner-bound identity core remained active.",
-                "Every live research route failed.",
-                "A normal cortex answer was returned with an explicit freshness warning."
+                "The owner identity core remained active.",
+                "A cortex answer was returned with an explicit freshness warning."
             ),
             entities = listOf(
                 "identity_core=${OwnerIdentityCore.VERSION}",
                 "source=cortex_mesh_fallback",
-                "web_grounding=unavailable",
-                "node=${result.profileLabel}"
+                "web_grounding=unavailable"
             ),
             decision = "owner_bound_research_fallback",
             action = BrainAction()
@@ -314,7 +269,7 @@ class JarvisBrain(context: Context) {
 
         val ownerUpdate = memory.captureOwnerDetails(input)
         if (ownerUpdate.changed) {
-            val storedItems = buildList {
+            val items = buildList {
                 if (ownerUpdate.emailStored) add("email")
                 if (ownerUpdate.phoneCount > 0) {
                     add("${ownerUpdate.phoneCount} phone number${if (ownerUpdate.phoneCount == 1) "" else "s"}")
@@ -322,28 +277,14 @@ class JarvisBrain(context: Context) {
                 if (ownerUpdate.recoverySet) add("recovery contact")
             }
             return localResponse(
-                spoken = "Stored privately, Sir. I added ${storedItems.joinToString(", ")} to the encrypted owner profile.",
-                display = "OWNER PROFILE UPDATED // ${storedItems.joinToString(" // ").uppercase(Locale.US)}\nSTORAGE // ENCRYPTED LOCAL DATABASE\nCLOUD SHARING // BLOCKED",
+                spoken = "Stored privately, Sir. I added ${items.joinToString(", ")} to the encrypted owner profile.",
+                display = "OWNER PROFILE UPDATED // ${items.joinToString(" // ").uppercase(Locale.US)}\nSTORAGE // ENCRYPTED LOCAL DATABASE\nCLOUD SHARING // BLOCKED",
                 intent = "memory/owner_profile_update"
             )
         }
 
-        val correctionPrefixes = listOf(
-            "correct memory to ",
-            "replace memory with ",
-            "update memory to ",
-            "correction "
-        )
-        val correctionPrefix = correctionPrefixes.firstOrNull(lower::startsWith)
-        if (correctionPrefix != null) {
-            val rawIndex = input.lowercase(Locale.getDefault()).indexOf(correctionPrefix)
-            val value = if (rawIndex >= 0) {
-                input.substring(rawIndex + correctionPrefix.length)
-                    .trim()
-                    .trimEnd('.', '?', '!')
-            } else {
-                ""
-            }
+        CORRECTION_PREFIXES.firstOrNull(lower::startsWith)?.let { prefix ->
+            val value = payloadAfterPrefix(input, prefix)
             val stored = memory.addCorrection(value)
             return localResponse(
                 spoken = if (stored.isBlank()) {
@@ -361,13 +302,10 @@ class JarvisBrain(context: Context) {
         }
 
         if (lower.startsWith("remember that ")) {
-            val fact = input.substringAfter("remember that", "")
-                .trim()
-                .trimEnd('.', '?', '!')
-            val conflict = memory.detectStableConflict(fact)
-            if (conflict != null) {
+            val fact = payloadAfterPrefix(input, "remember that ")
+            memory.detectStableConflict(fact)?.let { conflict ->
                 return localResponse(
-                    spoken = "That conflicts with an existing stable memory, Sir. Say: correct memory to ${conflict.proposed}, to replace the older value.",
+                    spoken = "That conflicts with an existing stable memory, Sir. Say: correct memory to ${conflict.proposed}, to replace it.",
                     display = "MEMORY CONFLICT\nCURRENT // ${conflict.previous}\nPROPOSED // ${conflict.proposed}\nAWAITING EXPLICIT CORRECTION",
                     intent = "memory/conflict_confirmation"
                 )
@@ -375,31 +313,17 @@ class JarvisBrain(context: Context) {
             if (fact.isNotBlank()) memory.addFact(fact, category = "explicit")
             return localResponse(
                 spoken = if (fact.isBlank()) "Tell me what to remember, Sir." else "Stored, Sir.",
-                display = if (fact.isBlank()) {
-                    "MEMORY INPUT REQUIRED"
-                } else {
-                    "MEMORY STORED // ${fact.take(160)}"
-                },
+                display = if (fact.isBlank()) "MEMORY INPUT REQUIRED" else "MEMORY STORED // ${fact.take(160)}",
                 intent = "memory/write"
             )
         }
 
         if (lower.startsWith("call me ")) {
-            val name = input.substringAfter("call me", "")
-                .trim()
-                .trimEnd('.', '?', '!')
+            val name = payloadAfterPrefix(input, "call me ")
             if (name.isNotBlank()) memory.setIdentity(name)
             return localResponse(
-                spoken = if (name.isBlank()) {
-                    "Tell me the name to use, Sir."
-                } else {
-                    "Understood. I will call you $name."
-                },
-                display = if (name.isBlank()) {
-                    "IDENTITY INPUT REQUIRED"
-                } else {
-                    "OPERATOR // $name"
-                },
+                spoken = if (name.isBlank()) "Tell me the name to use, Sir." else "Understood. I will call you $name.",
+                display = if (name.isBlank()) "IDENTITY INPUT REQUIRED" else "OPERATOR // $name",
                 intent = "memory/identity_update"
             )
         }
@@ -424,16 +348,7 @@ class JarvisBrain(context: Context) {
             )
         }
 
-        if (
-            lower in setOf(
-                "show my private profile",
-                "show my owner profile",
-                "show my contact details",
-                "what is my email",
-                "what are my contact numbers",
-                "show private owner details"
-            )
-        ) {
+        if (lower in PRIVATE_PROFILE_COMMANDS) {
             if (keyguard.isDeviceLocked) {
                 return localResponse(
                     spoken = "Private owner information is locked. Authenticate on the device first, Sir.",
@@ -464,24 +379,12 @@ class JarvisBrain(context: Context) {
                 intent = "memory/clear"
             )
         }
-
         return null
     }
 
     private fun localMeshCommand(input: String): BrainResponse? {
         val lower = normalizedDialogue(input)
-        if (lower !in setOf(
-                "cortex status",
-                "api status",
-                "cloud status",
-                "provider status",
-                "mesh status",
-                "web status",
-                "research status",
-                "identity core status",
-                "owner core status"
-            )
-        ) return null
+        if (lower !in STATUS_COMMANDS) return null
 
         val registry = registryStore.load()
         val configured = registry.configuredProfiles()
@@ -489,21 +392,19 @@ class JarvisBrain(context: Context) {
             it.lastStatusCode in 200..299 && !it.isCoolingDown()
         }
         val cooling = configured.count { it.isCoolingDown() }
-        val researchReady = webResearch.isConfigured()
         val searchProviders = webResearch.configuredSearchProviders()
         val summary = buildString {
             appendLine(OwnerIdentityCore.statusLine(memory.summary()))
             appendLine("CORTEX MESH // CONFIGURED ${configured.size}/10 // ONLINE $online // COOLDOWN $cooling")
-            appendLine("WORLD INTELLIGENCE // ${if (researchReady) "HYBRID READY" else "NEEDS A RESEARCH ROUTE"}")
+            appendLine("WORLD INTELLIGENCE // ${if (webResearch.isConfigured()) "HYBRID READY" else "NEEDS A RESEARCH ROUTE"}")
             appendLine("SEARCH GRID // ${searchProviders.joinToString(" + ") { it.displayName }.ifBlank { "NOT CONFIGURED" }}")
             appendLine("PERSISTENT MEMORY // ${memory.summary()}")
             configured.forEach {
                 appendLine("${it.label} // ${it.provider.displayName} // ${it.healthLabel()}")
             }
         }.trim()
-
         return localResponse(
-            spoken = "The owner identity core is active. The cortex mesh has ${configured.size} configured nodes, with $online currently online. Research and contextual memory are ${if (researchReady) "ready" else "partially configured"}, Sir.",
+            spoken = "The owner identity core is active. The cortex mesh has ${configured.size} configured nodes, with $online currently online. Research and contextual memory are ${if (webResearch.isConfigured()) "ready" else "partially configured"}, Sir.",
             display = summary,
             intent = "system/owner_bound_status"
         )
@@ -522,14 +423,9 @@ class JarvisBrain(context: Context) {
         ),
         memory = memory.summary(),
         thoughts = listOf(
-            "The owner-bound local identity and memory layers remain operational.",
-            "At least one Gemini or Groq node needs a model ID and encrypted key for cloud reasoning."
+            "The owner-bound local identity and memory layers remain operational."
         ),
-        entities = listOf(
-            "identity_core=active",
-            "mesh=not_configured",
-            "local_memory=active"
-        ),
+        entities = listOf("identity_core=active", "mesh=not_configured"),
         decision = "request_cortex_configuration",
         action = BrainAction()
     )
@@ -550,19 +446,31 @@ class JarvisBrain(context: Context) {
             "encrypted_local_state"
         ),
         memory = memory.summary(),
-        thoughts = listOf(
-            "The owner-bound deterministic layer produced this response locally."
-        ),
+        thoughts = listOf("The owner-bound deterministic layer produced this response locally."),
         entities = listOf("identity_core=${OwnerIdentityCore.VERSION}"),
         decision = intent,
         action = BrainAction()
     )
+
+    private fun payloadAfterPrefix(input: String, lowerPrefix: String): String {
+        val lowerInput = input.lowercase(Locale.getDefault())
+        val index = lowerInput.indexOf(lowerPrefix)
+        if (index < 0) return ""
+        return input.substring(index + lowerPrefix.length)
+            .trim()
+            .trimEnd('.', '?', '!')
+    }
 
     private fun normalizedDialogue(value: String): String = value
         .lowercase(Locale.getDefault())
         .replace(Regex("[^a-z0-9 ]"), " ")
         .replace(Regex("\\s+"), " ")
         .trim()
+
+    private fun asksAboutCreator(lower: String): Boolean =
+        lower.contains("creator") && listOf(
+            "who", "what", "tell", "speak", "know", "describe"
+        ).any(lower::contains)
 
     private fun isOwnerInquiry(lower: String): Boolean =
         lower.contains("who owns this phone") ||
@@ -571,4 +479,35 @@ class JarvisBrain(context: Context) {
             lower.contains("who actually owns this phone") ||
             (lower.contains("lost my phone") && lower.contains("owner")) ||
             (lower.contains("found this phone") && lower.contains("owner"))
+
+    companion object {
+        private val WAKE_PHRASES = setOf(
+            "jarvis", "hey jarvis", "hello jarvis", "hi jarvis",
+            "wake up jarvis", "jarvis wake up", "jarvis are you there",
+            "are you there jarvis", "good morning jarvis",
+            "good afternoon jarvis", "good evening jarvis"
+        )
+
+        private val CORRECTION_PREFIXES = listOf(
+            "correct memory to ",
+            "replace memory with ",
+            "update memory to ",
+            "correction "
+        )
+
+        private val PRIVATE_PROFILE_COMMANDS = setOf(
+            "show my private profile",
+            "show my owner profile",
+            "show my contact details",
+            "what is my email",
+            "what are my contact numbers",
+            "show private owner details"
+        )
+
+        private val STATUS_COMMANDS = setOf(
+            "cortex status", "api status", "cloud status", "provider status",
+            "mesh status", "web status", "research status",
+            "identity core status", "owner core status"
+        )
+    }
 }
