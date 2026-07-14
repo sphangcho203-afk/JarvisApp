@@ -4,13 +4,10 @@ import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
-import android.media.AudioAttributes
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
-import android.speech.tts.TextToSpeech
-import android.speech.tts.UtteranceProgressListener
 import android.view.View
 import android.view.WindowManager
 import com.jarvis.core.device.DeviceActionResult
@@ -28,8 +25,6 @@ class MainActivity : Activity() {
     private lateinit var countdown: JarvisCountdownController
     private lateinit var soundEngine: JarvisSoundEngine
 
-    private var tts: TextToSpeech? = null
-    private var ttsReady = false
     private var resumed = false
     private var announcedOnline = false
     private var setupOpenedThisSession = false
@@ -65,15 +60,16 @@ class MainActivity : Activity() {
         )
 
         setContentView(hud)
-        hud.pushEvent("PHASE 9.2B -> SYSTEM CONTROL BRIDGE")
-        hud.pushEvent("LOCAL SERVER BRAIN -> PERMANENTLY REMOVED")
+        hud.pushEvent("PHASE 9.3 -> STREAMING VOICE FABRIC")
+        hud.pushEvent("GOOGLE SPEECH RECOGNIZER -> REMOVED")
+        hud.pushEvent("ANDROID TEXT TO SPEECH -> REMOVED")
+        hud.pushEvent("MICROPHONE -> RAW PCM16 // NO GOOGLE CHIME")
+        hud.pushEvent("VOICE OUTPUT -> OPENAI ONYX / ELEVENLABS PCM")
         hud.pushEvent("GEMINI NODES -> 6 // GROQ NODES -> 4")
-        hud.pushEvent("VOICE -> DIRECT LISTENING; NO HOLD CONTROL")
         hud.pushEvent("SAY CONFIGURE APIS -> SECURE MESH SETUP")
         hud.pushEvent("SYSTEM CONTROL -> QUICK SETTINGS EXECUTOR")
         hud.pushEvent("TAP -> RECALIBRATE VOICE ARRAY")
 
-        initTts()
         hud.postDelayed({ soundEngine.boot() }, 350L)
 
         hud.setOnClickListener {
@@ -91,64 +87,7 @@ class MainActivity : Activity() {
         }
 
         hud.isLongClickable = false
-
         if (!hasMicPermission()) requestMicPermission()
-    }
-
-    private fun initTts() {
-        tts = TextToSpeech(this) { status ->
-            if (status != TextToSpeech.SUCCESS) {
-                hud.pushEvent("VOICE -> SYNTHESIS FAILED: $status")
-                if (resumed && hasMicPermission()) voiceLoop.resume()
-                return@TextToSpeech
-            }
-
-            tts?.setAudioAttributes(
-                AudioAttributes.Builder()
-                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
-                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
-                    .build()
-            )
-            val languageResult = tts?.setLanguage(Locale.getDefault()) ?: TextToSpeech.LANG_NOT_SUPPORTED
-            ttsReady = languageResult != TextToSpeech.LANG_MISSING_DATA &&
-                languageResult != TextToSpeech.LANG_NOT_SUPPORTED
-            tts?.setSpeechRate(0.94f)
-            tts?.setPitch(0.88f)
-            tts?.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
-                override fun onStart(utteranceId: String?) {
-                    runOnUiThread { hud.pushEvent("VOICE -> SPEAKING") }
-                }
-
-                override fun onDone(utteranceId: String?) {
-                    runOnUiThread {
-                        lastTtsFinishedAt = SystemClock.elapsedRealtime()
-                        cancelTtsWatchdog()
-                        hud.pushEvent("VOICE -> COMPLETE")
-                        if (resumed && hasMicPermission() && !brainBusy.get()) {
-                            voiceLoop.resumeAfterTts(1_200L)
-                        }
-                    }
-                }
-
-                @Deprecated("Deprecated in Java")
-                override fun onError(utteranceId: String?) {
-                    runOnUiThread {
-                        lastTtsFinishedAt = SystemClock.elapsedRealtime()
-                        cancelTtsWatchdog()
-                        hud.pushEvent("VOICE -> OUTPUT ERROR")
-                        if (resumed && hasMicPermission() && !brainBusy.get()) {
-                            voiceLoop.resumeAfterTts(1_200L)
-                        }
-                    }
-                }
-            })
-            hud.pushEvent("VOICE -> SYNTHESIS READY")
-
-            if (resumed && !announcedOnline) {
-                announcedOnline = true
-                speak("Systems online. Direct listening is active, Sir.")
-            }
-        }
     }
 
     override fun onResume() {
@@ -157,12 +96,18 @@ class MainActivity : Activity() {
         enterImmersiveMode()
         if (::brain.isInitialized) {
             hud.pushEvent(
-                if (brain.isCloudConfigured()) "CORTEX MESH -> READY // ${brain.configuredModel()}"
-                else "CORTEX MESH -> CONFIGURATION REQUIRED"
+                if (brain.isCloudConfigured()) {
+                    "CORTEX MESH -> READY // ${brain.configuredModel()}"
+                } else {
+                    "CORTEX MESH -> CONFIGURATION REQUIRED"
+                }
             )
             hud.pushEvent(
-                if (SystemControlAccess.isEnabled(this)) "SYSTEM CONTROL -> ENABLED"
-                else "SYSTEM CONTROL -> SAY ENABLE SYSTEM CONTROL"
+                if (SystemControlAccess.isEnabled(this)) {
+                    "SYSTEM CONTROL -> ENABLED"
+                } else {
+                    "SYSTEM CONTROL -> SAY ENABLE SYSTEM CONTROL"
+                }
             )
         }
         if (hasMicPermission() && !brainBusy.get()) {
@@ -188,7 +133,7 @@ class MainActivity : Activity() {
             return
         }
         if (isLikelyEchoOrNoise(clean)) {
-            hud.pushEvent("ASR -> FILTERED ECHO/NOISE")
+            hud.pushEvent("VOICE -> FILTERED ECHO/NOISE")
             voiceLoop.resumeAfterTts(500L)
             return
         }
@@ -256,9 +201,15 @@ class MainActivity : Activity() {
                     intent = "cloud_error",
                     confidence = 0f,
                     mode = BrainMode.ALERT,
-                    trace = listOf("cortex_mesh_request", "exception=${error.javaClass.simpleName}", "localhost_disabled"),
+                    trace = listOf(
+                        "cortex_mesh_request",
+                        "exception=${error.javaClass.simpleName}",
+                        "streaming_voice_active"
+                    ),
                     memory = brain.memorySnapshot(),
-                    thoughts = listOf("The mesh request failed after its eligible cloud nodes were evaluated. No local server fallback was attempted."),
+                    thoughts = listOf(
+                        "The mesh request failed after its eligible cloud nodes were evaluated."
+                    ),
                     entities = emptyList(),
                     decision = "cloud_exception",
                     action = BrainAction()
@@ -276,7 +227,9 @@ class MainActivity : Activity() {
                 hud.pushEvent("CORTEX MESH -> RESPONSE ${elapsed}ms")
                 if (response.action.type != ActionType.NONE) {
                     val executed = brain.execute(response.action)
-                    hud.pushEvent("ACTION -> ${response.action.label.uppercase(Locale.US)} ${if (executed) "OK" else "BLOCKED"}")
+                    hud.pushEvent(
+                        "ACTION -> ${response.action.label.uppercase(Locale.US)} ${if (executed) "OK" else "BLOCKED"}"
+                    )
                 }
                 hud.setProcessing(false)
                 brainBusy.set(false)
@@ -302,12 +255,19 @@ class MainActivity : Activity() {
                     spoken = result.spoken,
                     display = formatDeviceResult(result),
                     intent = "device/${result.actionId}",
-                    confidence = if (result.status == DeviceActionStatus.EXECUTED_UNVERIFIED) 0.72f else 1f,
+                    confidence = if (
+                        result.status == DeviceActionStatus.EXECUTED_UNVERIFIED
+                    ) 0.72f else 1f,
                     mode = mode,
                     trace = result.trace,
                     memory = brain.memorySnapshot(),
-                    thoughts = listOf("The command was executed through the allow-listed Android SystemUI control bridge."),
-                    entities = listOf("target=${result.target}", "status=${result.status.name}"),
+                    thoughts = listOf(
+                        "The command was executed through the allow-listed Android SystemUI control bridge."
+                    ),
+                    entities = listOf(
+                        "target=${result.target}",
+                        "status=${result.status.name}"
+                    ),
                     decision = "system_control_${result.status.name.lowercase(Locale.US)}",
                     action = BrainAction()
                 )
@@ -362,7 +322,11 @@ class MainActivity : Activity() {
                     display = "MISSION TIMER ARMED // ${formatCountdown(snapshot.remainingSeconds)}",
                     intent = "countdown_start",
                     mode = BrainMode.EXECUTING,
-                    trace = listOf("voice_timer_parser", "elapsed_realtime_clock", "countdown_active")
+                    trace = listOf(
+                        "voice_timer_parser",
+                        "elapsed_realtime_clock",
+                        "countdown_active"
+                    )
                 )
             }
 
@@ -370,11 +334,22 @@ class MainActivity : Activity() {
                 val wasActive = countdown.current().active
                 countdown.cancel()
                 finishLocalCommand(
-                    spoken = if (wasActive) "Countdown cancelled, Sir." else "No countdown is currently running, Sir.",
-                    display = if (wasActive) "MISSION TIMER CANCELLED" else "MISSION TIMER // IDLE",
+                    spoken = if (wasActive) {
+                        "Countdown cancelled, Sir."
+                    } else {
+                        "No countdown is currently running, Sir."
+                    },
+                    display = if (wasActive) {
+                        "MISSION TIMER CANCELLED"
+                    } else {
+                        "MISSION TIMER // IDLE"
+                    },
                     intent = "countdown_cancel",
                     mode = BrainMode.ONLINE,
-                    trace = listOf("countdown_controller", if (wasActive) "cancelled" else "already_idle")
+                    trace = listOf(
+                        "countdown_controller",
+                        if (wasActive) "cancelled" else "already_idle"
+                    )
                 )
             }
 
@@ -387,7 +362,11 @@ class MainActivity : Activity() {
                 }
                 finishLocalCommand(
                     spoken = spoken,
-                    display = if (snapshot.active) "TIME REMAINING // ${formatCountdown(snapshot.remainingSeconds)}" else "MISSION TIMER // IDLE",
+                    display = if (snapshot.active) {
+                        "TIME REMAINING // ${formatCountdown(snapshot.remainingSeconds)}"
+                    } else {
+                        "MISSION TIMER // IDLE"
+                    },
                     intent = "countdown_status",
                     mode = BrainMode.ONLINE,
                     trace = listOf("countdown_controller", "status_read")
@@ -416,7 +395,11 @@ class MainActivity : Activity() {
                 intent = "countdown_complete",
                 confidence = 1f,
                 mode = BrainMode.ALERT,
-                trace = listOf("elapsed_realtime_clock", "zero_reached", "completion_signal"),
+                trace = listOf(
+                    "elapsed_realtime_clock",
+                    "zero_reached",
+                    "completion_signal"
+                ),
                 memory = brain.memorySnapshot(),
                 thoughts = listOf("The active countdown reached zero."),
                 entities = listOf("timer=$label"),
@@ -466,6 +449,20 @@ class MainActivity : Activity() {
         if (!brainBusy.get() || state == VoiceLoop.State.PROCESSING) {
             hud.setVoiceState(state)
         }
+        if (
+            state == VoiceLoop.State.READY &&
+            resumed &&
+            hasMicPermission() &&
+            voiceLoop.isBackendReady() &&
+            !announcedOnline
+        ) {
+            announcedOnline = true
+            mainHandler.postDelayed({
+                if (resumed && !brainBusy.get()) {
+                    speak("Systems online. Premium streaming voice is active, Sir.")
+                }
+            }, 320L)
+        }
     }
 
     private fun speak(text: String) {
@@ -477,31 +474,33 @@ class MainActivity : Activity() {
 
         voiceLoop.pauseForTts()
         cancelTtsWatchdog()
-        if (!ttsReady) {
-            hud.pushEvent("VOICE -> TTS NOT READY; SHOWING TEXT")
-            if (resumed && hasMicPermission() && !brainBusy.get()) voiceLoop.resumeAfterTts(900L)
-            return
-        }
-
-        val result = tts?.speak(
-            clean,
-            TextToSpeech.QUEUE_FLUSH,
-            null,
-            "jarvis-${System.currentTimeMillis()}"
+        hud.pushEvent(
+            if (voiceLoop.isBackendReady()) {
+                "VOICE -> STREAM REQUEST"
+            } else {
+                "VOICE -> WAITING FOR LOCAL STREAMING RUNTIME"
+            }
         )
-        if (result != TextToSpeech.SUCCESS) {
-            hud.pushEvent("VOICE -> SPEAK REQUEST FAILED")
-            if (resumed && hasMicPermission() && !brainBusy.get()) voiceLoop.resumeAfterTts(1_200L)
-            return
+
+        voiceLoop.speak(clean) {
+            runOnUiThread {
+                lastTtsFinishedAt = SystemClock.elapsedRealtime()
+                cancelTtsWatchdog()
+                hud.pushEvent("VOICE -> COMPLETE")
+                if (resumed && hasMicPermission() && !brainBusy.get()) {
+                    voiceLoop.resumeAfterTts(1_000L)
+                }
+            }
         }
 
         ttsResumeWatchdog = Runnable {
             if (resumed && hasMicPermission() && !brainBusy.get()) {
-                hud.pushEvent("VOICE -> OUTPUT WATCHDOG RELEASE")
+                hud.pushEvent("VOICE -> STREAM WATCHDOG RELEASE")
                 lastTtsFinishedAt = SystemClock.elapsedRealtime()
-                voiceLoop.resumeAfterTts(500L)
+                voiceLoop.stopSpeaking()
+                voiceLoop.resumeAfterTts(700L)
             }
-        }.also { mainHandler.postDelayed(it, 25_000L) }
+        }.also { mainHandler.postDelayed(it, 45_000L) }
     }
 
     private fun speechSafeText(text: String): String {
@@ -510,7 +509,11 @@ class MainActivity : Activity() {
             .replace(Regex("[*_#>`]"), " ")
             .replace(Regex("\\s+"), " ")
             .trim()
-        return if (plain.length <= 700) plain else plain.take(700).trimEnd() + ". Full response is on screen."
+        return if (plain.length <= 900) {
+            plain
+        } else {
+            plain.take(900).trimEnd() + ". Full response is on screen."
+        }
     }
 
     private fun isLikelyEchoOrNoise(text: String): Boolean {
@@ -519,9 +522,9 @@ class MainActivity : Activity() {
             .replace(Regex("[^a-z0-9 ]"), " ")
             .replace(Regex("\\s+"), " ")
             .trim()
-        if (normalized in setOf("sir", "jarvis", "yes sir", "okay sir", "ok sir")) return true
+        if (normalized in setOf("sir", "yes sir", "okay sir", "ok sir")) return true
         val sinceTts = SystemClock.elapsedRealtime() - lastTtsFinishedAt
-        return sinceTts in 0..1_800L && normalized.split(" ").size <= 3
+        return sinceTts in 0..1_400L && normalized.split(" ").size <= 3
     }
 
     private fun armProcessingTimeout(
@@ -551,7 +554,7 @@ class MainActivity : Activity() {
         cancelProcessingTimeout()
         cancelTtsWatchdog()
         brainBusy.set(false)
-        tts?.stop()
+        voiceLoop.stopSpeaking()
         hud.setProcessing(false)
         hud.setVoiceState(VoiceLoop.State.READY)
         hud.pushEvent(reason)
@@ -564,9 +567,15 @@ class MainActivity : Activity() {
         val minutes = (safe % 3_600L) / 60L
         val seconds = safe % 60L
         val parts = mutableListOf<String>()
-        if (hours > 0L) parts += "$hours ${if (hours == 1L) "hour" else "hours"}"
-        if (minutes > 0L) parts += "$minutes ${if (minutes == 1L) "minute" else "minutes"}"
-        if (seconds > 0L || parts.isEmpty()) parts += "$seconds ${if (seconds == 1L) "second" else "seconds"}"
+        if (hours > 0L) {
+            parts += "$hours ${if (hours == 1L) "hour" else "hours"}"
+        }
+        if (minutes > 0L) {
+            parts += "$minutes ${if (minutes == 1L) "minute" else "minutes"}"
+        }
+        if (seconds > 0L || parts.isEmpty()) {
+            parts += "$seconds ${if (seconds == 1L) "second" else "seconds"}"
+        }
         return when (parts.size) {
             1 -> parts[0]
             2 -> "${parts[0]} and ${parts[1]}"
@@ -575,7 +584,8 @@ class MainActivity : Activity() {
     }
 
     private fun hasMicPermission(): Boolean =
-        checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+        checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
+            PackageManager.PERMISSION_GRANTED
 
     private fun requestMicPermission() {
         requestPermissions(arrayOf(Manifest.permission.RECORD_AUDIO), REQ_RECORD_AUDIO)
@@ -587,7 +597,10 @@ class MainActivity : Activity() {
         grantResults: IntArray
     ) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        if (requestCode == REQ_RECORD_AUDIO && grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED) {
+        if (
+            requestCode == REQ_RECORD_AUDIO &&
+            grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
+        ) {
             hud.pushEvent("AUTH -> MICROPHONE GRANTED")
             voiceLoop.resume()
             hud.postDelayed({ openCloudSetupIfRequired() }, 450L)
@@ -609,7 +622,6 @@ class MainActivity : Activity() {
         if (::voiceLoop.isInitialized) voiceLoop.destroy()
         if (::countdown.isInitialized) countdown.destroy()
         if (::soundEngine.isInitialized) soundEngine.release()
-        tts?.shutdown()
         super.onDestroy()
     }
 
