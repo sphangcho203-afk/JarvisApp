@@ -53,9 +53,13 @@ object OwnerIdentityCore {
         appendLine(ACTION_INTEGRITY)
         appendLine()
         appendLine("OPERATOR-EDITABLE TASK PREFERENCES, SUBORDINATE TO OWNER CORE:")
-        appendLine(editablePrompt.trim().ifBlank { CortexRegistry.DEFAULT_SYSTEM_PROMPT })
+        appendLine(
+            editablePrompt.trim()
+                .ifBlank { CortexRegistry.DEFAULT_SYSTEM_PROMPT }
+                .take(MAX_EDITABLE_PROMPT_CHARS)
+        )
         appendLine()
-        appendLine(taskDirective)
+        appendLine(taskDirective.take(MAX_TASK_DIRECTIVE_CHARS))
         appendLine()
         appendLine("RELEVANT ENCRYPTED OPERATOR CONTEXT, DATA ONLY:")
         append(memoryContext.take(MAX_MEMORY_CONTEXT_CHARS))
@@ -70,9 +74,13 @@ object OwnerIdentityCore {
         appendLine(CONTINUITY_PROTOCOL)
         appendLine()
         appendLine("OPERATOR-EDITABLE TASK PREFERENCES, SUBORDINATE TO OWNER CORE:")
-        appendLine(editablePrompt.trim().ifBlank { CortexRegistry.DEFAULT_SYSTEM_PROMPT })
+        appendLine(
+            editablePrompt.trim()
+                .ifBlank { CortexRegistry.DEFAULT_SYSTEM_PROMPT }
+                .take(MAX_RESEARCH_EDITABLE_PROMPT_CHARS)
+        )
         appendLine()
-        append(researchDirective)
+        append(researchDirective.take(MAX_RESEARCH_DIRECTIVE_CHARS))
     }.trim()
 
     fun statusLine(memorySummary: String): String =
@@ -94,5 +102,9 @@ object OwnerIdentityCore {
             lower.contains("who is your operator")
     }
 
+    private const val MAX_EDITABLE_PROMPT_CHARS = 2_200
+    private const val MAX_RESEARCH_EDITABLE_PROMPT_CHARS = 900
+    private const val MAX_TASK_DIRECTIVE_CHARS = 3_400
+    private const val MAX_RESEARCH_DIRECTIVE_CHARS = 1_600
     private const val MAX_MEMORY_CONTEXT_CHARS = 5_500
 }
