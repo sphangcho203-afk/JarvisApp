@@ -11,8 +11,8 @@ android {
         applicationId = "com.seongja.jarvis"
         minSdk = 26
         targetSdk = 35
-        versionCode = 18
-        versionName = "0.9.8-expressive-core"
+        versionCode = 19
+        versionName = "0.9.9-streaming-voice"
     }
 
     buildTypes {
@@ -33,4 +33,8 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+}
+
+dependencies {
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
 }
