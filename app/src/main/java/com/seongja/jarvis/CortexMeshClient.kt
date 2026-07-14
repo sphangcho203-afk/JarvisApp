@@ -166,6 +166,15 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
         } else {
             JarvisDirective.instructionFor(userInput, task)
         }
+        val systemEnvelope = if (diagnostic) {
+            "Connection diagnostic. Follow the requested exact output."
+        } else {
+            OwnerIdentityCore.systemEnvelope(
+                editablePrompt = systemPrompt,
+                taskDirective = operatingDirective,
+                memoryContext = memoryContext
+            )
+        }
 
         val requestBody = JSONObject().apply {
             put("model", profile.model)
@@ -176,12 +185,7 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
                 JSONArray().apply {
                     put(JSONObject().apply {
                         put("role", "system")
-                        put(
-                            "content",
-                            systemPrompt + "\n\n" + operatingDirective +
-                                "\n\nRELEVANT OPERATOR MEMORY:\n" +
-                                memoryContext.take(4_500)
-                        )
+                        put("content", systemEnvelope)
                     })
                     put(JSONObject().apply {
                         put("role", "user")
@@ -195,9 +199,7 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
         val remainingMs = (deadlineMs - started).coerceAtLeast(3_000L)
         val connection = (URL(profile.provider.endpoint).openConnection() as HttpsURLConnection).apply {
             requestMethod = "POST"
-            connectTimeout = (if (diagnostic) 10_000L else 10_000L)
-                .coerceAtMost(remainingMs)
-                .toInt()
+            connectTimeout = 10_000L.coerceAtMost(remainingMs).toInt()
             readTimeout = (if (diagnostic) 20_000L else 45_000L)
                 .coerceAtMost(remainingMs)
                 .toInt()
@@ -206,7 +208,7 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
             setRequestProperty("Accept", "application/json")
             setRequestProperty("Authorization", "Bearer ${profile.apiKey.trim()}")
-            setRequestProperty("User-Agent", "Jarvis-Android/0.9.4")
+            setRequestProperty("User-Agent", "Jarvis-Android/0.9.6")
         }
 
         try {
