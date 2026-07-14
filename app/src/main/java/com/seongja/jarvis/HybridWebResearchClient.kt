@@ -1,15 +1,22 @@
 package com.seongja.jarvis
 
+import android.content.Context
+
 /**
  * Provider-resilient live research.
  *
- * Groq Compound is fast and often returns useful executed-tool metadata. Gemini
- * Google Search grounding is the independent fallback. A current-information
- * request only falls back to model memory after both real web routes fail.
+ * The dedicated Search Grid is preferred because Tavily and Exa return explicit
+ * evidence payloads that Jarvis can deduplicate and synthesize. Groq Compound
+ * and Gemini Google Search remain independent fallbacks.
  */
-class HybridWebResearchClient(store: SecureCortexRegistry) {
-    private val groq = GroqWebResearchClient(store)
-    private val gemini = GeminiWebResearchClient(store)
+class HybridWebResearchClient(
+    context: Context,
+    private val cortexStore: SecureCortexRegistry
+) {
+    private val searchStore = SecureSearchGridRegistry(context.applicationContext)
+    private val searchGrid = SearchGridResearchClient(searchStore, cortexStore)
+    private val groq = GroqWebResearchClient(cortexStore)
+    private val gemini = GeminiWebResearchClient(cortexStore)
 
     data class Result(
         val research: WebResearchResult,
@@ -17,11 +24,33 @@ class HybridWebResearchClient(store: SecureCortexRegistry) {
         val attempts: List<String>
     )
 
-    fun isConfigured(): Boolean = groq.isConfigured() || gemini.isConfigured()
+    fun isConfigured(): Boolean =
+        searchGrid.isConfigured() || groq.isConfigured() || gemini.isConfigured()
+
+    fun configuredSearchProviders(): List<SearchGridProvider> =
+        searchGrid.configuredProviders()
 
     fun research(userInput: String, memoryContext: String): Result {
         val attempts = mutableListOf<String>()
         val failures = mutableListOf<String>()
+
+        if (searchGrid.isConfigured()) {
+            attempts += "Tavily + Exa Search Grid"
+            runCatching { searchGrid.research(userInput, memoryContext) }
+                .onSuccess { result ->
+                    val providers = result.providers
+                        .joinToString(" + ") { it.displayName }
+                        .ifBlank { "Search Grid" }
+                    return Result(
+                        research = result.research,
+                        provider = "$providers evidence + Cortex synthesis",
+                        attempts = attempts.toList()
+                    )
+                }
+                .onFailure {
+                    failures += "Search Grid: ${it.message ?: it.javaClass.simpleName}"
+                }
+        }
 
         if (groq.isConfigured()) {
             attempts += "Groq Compound"
@@ -33,7 +62,9 @@ class HybridWebResearchClient(store: SecureCortexRegistry) {
                         attempts = attempts.toList()
                     )
                 }
-                .onFailure { failures += "Groq: ${it.message ?: it.javaClass.simpleName}" }
+                .onFailure {
+                    failures += "Groq: ${it.message ?: it.javaClass.simpleName}"
+                }
         }
 
         if (gemini.isConfigured()) {
@@ -46,17 +77,19 @@ class HybridWebResearchClient(store: SecureCortexRegistry) {
                         attempts = attempts.toList()
                     )
                 }
-                .onFailure { failures += "Gemini: ${it.message ?: it.javaClass.simpleName}" }
+                .onFailure {
+                    failures += "Gemini: ${it.message ?: it.javaClass.simpleName}"
+                }
         }
 
         if (attempts.isEmpty()) {
             throw WebResearchException(
-                "No configured Groq or Gemini node can perform live research."
+                "No Tavily, Exa, Groq, or Gemini live research route is configured."
             )
         }
 
         throw WebResearchException(
-            "Every live research route failed. ${failures.joinToString(" | ").take(420)}"
+            "Every live research route failed. ${failures.joinToString(" | ").take(560)}"
         )
     }
 }
