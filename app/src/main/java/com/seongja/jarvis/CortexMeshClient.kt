@@ -31,13 +31,14 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
         val attempts = mutableListOf<String>()
         val failures = mutableListOf<String>()
         val blockedProviders = mutableSetOf<CortexProvider>()
-        val deadlineMs = System.currentTimeMillis() + TOTAL_REQUEST_BUDGET_MS
+        val deadlineMs = System.currentTimeMillis() +
+            JarvisRuntimeConfig.TOTAL_REQUEST_BUDGET_MS
         var networkAttempts = 0
 
         profileLoop@ for (profile in eligible) {
             if (profile.provider in blockedProviders) continue
             if (System.currentTimeMillis() >= deadlineMs) break
-            if (networkAttempts >= MAX_NETWORK_ATTEMPTS) break
+            if (networkAttempts >= JarvisRuntimeConfig.MAX_NETWORK_ATTEMPTS) break
 
             val systemEnvelope = OwnerIdentityCore.systemEnvelope(
                 editablePrompt = registry.systemPrompt,
@@ -45,13 +46,15 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
                 memoryContext = memoryContext
             )
             val models = CortexModelCatalog.candidates(profile, task)
-                .take(MAX_MODELS_PER_PROFILE)
+                .take(JarvisRuntimeConfig.MAX_MODELS_PER_PROFILE)
             var finalFailure: CortexProviderFailure? = null
             var failureRecorded = false
 
             for (model in models) {
                 if (System.currentTimeMillis() >= deadlineMs) break@profileLoop
-                if (networkAttempts >= MAX_NETWORK_ATTEMPTS) break@profileLoop
+                if (networkAttempts >= JarvisRuntimeConfig.MAX_NETWORK_ATTEMPTS) {
+                    break@profileLoop
+                }
 
                 networkAttempts++
                 attempts += "${profile.label}:$model"
@@ -61,8 +64,8 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
                         model = model,
                         systemEnvelope = systemEnvelope,
                         userInput = userInput,
-                        temperature = temperatureFor(task),
-                        maxOutputTokens = tokenBudgetFor(task),
+                        temperature = JarvisRuntimeConfig.temperatureFor(task),
+                        maxOutputTokens = JarvisRuntimeConfig.tokenBudgetFor(task),
                         deadlineMs = deadlineMs
                     )
                     markSuccess(profile, response)
@@ -87,9 +90,14 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
                             continue
                         }
                         CortexFailureKind.RATE_LIMIT -> {
-                            if (profile.provider.quotaScope == CortexQuotaScope.ORGANIZATION) {
+                            if (
+                                profile.provider.quotaScope ==
+                                CortexQuotaScope.ORGANIZATION
+                            ) {
                                 val until = System.currentTimeMillis() +
-                                    error.retryAfterMs.coerceAtLeast(MIN_GROQ_ORG_COOLDOWN_MS)
+                                    error.retryAfterMs.coerceAtLeast(
+                                        JarvisRuntimeConfig.MIN_GROQ_ORG_COOLDOWN_MS
+                                    )
                                 store.applyProviderCooldown(
                                     provider = profile.provider,
                                     triggeringProfileId = profile.id,
@@ -144,21 +152,24 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
             throw CortexMeshException("${profile.label} is not fully configured.")
         }
 
-        val deadlineMs = System.currentTimeMillis() + DIAGNOSTIC_BUDGET_MS
+        val deadlineMs = System.currentTimeMillis() +
+            JarvisRuntimeConfig.DIAGNOSTIC_BUDGET_MS
         val attempts = mutableListOf<String>()
         var lastFailure: CortexProviderFailure? = null
 
         CortexModelCatalog.candidates(profile, CortexTask.FAST)
-            .take(MAX_DIAGNOSTIC_MODELS)
+            .take(JarvisRuntimeConfig.MAX_DIAGNOSTIC_MODELS)
             .forEach { model ->
                 attempts += "${profile.label}:$model"
                 try {
                     val response = transport.request(
                         profile = profile,
                         model = model,
-                        systemEnvelope = "Connection diagnostic. Reply with exactly: CORTEX NODE ONLINE",
-                        userInput = "Reply with exactly: CORTEX NODE ONLINE",
-                        temperature = 0.0,
+                        systemEnvelope =
+                            "Connection diagnostic. Reply with exactly: CORTEX NODE ONLINE",
+                        userInput =
+                            "Reply with exactly: CORTEX NODE ONLINE",
+                        temperature = JarvisRuntimeConfig.DIAGNOSTIC_TEMPERATURE,
                         maxOutputTokens = 32,
                         deadlineMs = deadlineMs
                     )
@@ -185,7 +196,9 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
                             provider = profile.provider,
                             triggeringProfileId = profile.id,
                             cooldownUntilMs = System.currentTimeMillis() +
-                                error.retryAfterMs.coerceAtLeast(MIN_GROQ_ORG_COOLDOWN_MS),
+                                error.retryAfterMs.coerceAtLeast(
+                                    JarvisRuntimeConfig.MIN_GROQ_ORG_COOLDOWN_MS
+                                ),
                             statusCode = error.statusCode,
                             error = error.message.orEmpty()
                         )
@@ -212,9 +225,11 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
     ): List<CortexProfile> {
         val providerOrder = when (task) {
             CortexTask.FAST,
-            CortexTask.CODING -> listOf(CortexProvider.GROQ, CortexProvider.GEMINI)
+            CortexTask.CODING ->
+                listOf(CortexProvider.GROQ, CortexProvider.GEMINI)
             CortexTask.GENERAL,
-            CortexTask.REASONING -> listOf(CortexProvider.GEMINI, CortexProvider.GROQ)
+            CortexTask.REASONING ->
+                listOf(CortexProvider.GEMINI, CortexProvider.GROQ)
         }
 
         val queues = providerOrder.associateWith { provider ->
@@ -259,11 +274,15 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
         val disableKey = error.kind == CortexFailureKind.AUTH
         val cooldown = when (error.kind) {
             CortexFailureKind.AUTH -> 0L
-            CortexFailureKind.RATE_LIMIT -> error.retryAfterMs.coerceAtLeast(15_000L)
+            CortexFailureKind.RATE_LIMIT ->
+                error.retryAfterMs.coerceAtLeast(15_000L)
             CortexFailureKind.MODEL -> 5 * 60_000L
-            CortexFailureKind.SERVER -> error.retryAfterMs.coerceAtLeast(30_000L)
-            CortexFailureKind.NETWORK -> error.retryAfterMs.coerceAtLeast(15_000L)
-            CortexFailureKind.OTHER -> error.retryAfterMs.coerceAtLeast(20_000L)
+            CortexFailureKind.SERVER ->
+                error.retryAfterMs.coerceAtLeast(30_000L)
+            CortexFailureKind.NETWORK ->
+                error.retryAfterMs.coerceAtLeast(15_000L)
+            CortexFailureKind.OTHER ->
+                error.retryAfterMs.coerceAtLeast(20_000L)
         }
         store.updateProfile(
             profile.copy(
@@ -293,28 +312,5 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
             append(": ")
             append(it.take(120))
         }
-    }
-
-    private fun temperatureFor(task: CortexTask): Double = when (task) {
-        CortexTask.CODING -> 0.18
-        CortexTask.REASONING -> 0.22
-        CortexTask.FAST -> 0.24
-        CortexTask.GENERAL -> 0.30
-    }
-
-    private fun tokenBudgetFor(task: CortexTask): Int = when (task) {
-        CortexTask.FAST -> 500
-        CortexTask.GENERAL -> 1_100
-        CortexTask.REASONING,
-        CortexTask.CODING -> 1_600
-    }
-
-    companion object {
-        private const val MAX_NETWORK_ATTEMPTS = 8
-        private const val MAX_MODELS_PER_PROFILE = 3
-        private const val MAX_DIAGNOSTIC_MODELS = 4
-        private const val TOTAL_REQUEST_BUDGET_MS = 62_000L
-        private const val DIAGNOSTIC_BUDGET_MS = 35_000L
-        private const val MIN_GROQ_ORG_COOLDOWN_MS = 60_000L
     }
 }
