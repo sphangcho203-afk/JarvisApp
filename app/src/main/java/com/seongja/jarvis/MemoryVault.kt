@@ -19,6 +19,18 @@ class MemoryVault(context: Context) {
         val changed: Boolean get() = emailStored || phoneCount > 0 || recoverySet
     }
 
+    data class MemoryConflict(
+        val category: String,
+        val previous: String,
+        val proposed: String
+    )
+
+    private data class StableClaim(
+        val category: String,
+        val value: String,
+        val canonical: String
+    )
+
     private val appContext = context.applicationContext
     private val db = JarvisMemoryDatabase(appContext)
     private val legacyPrefs = appContext.getSharedPreferences(
@@ -131,6 +143,35 @@ class MemoryVault(context: Context) {
         db.addFact(fact, category, sensitive)
     }
 
+    fun addCorrection(value: String): String {
+        val clean = value.trim().trimEnd('.', '?', '!').take(500)
+        if (clean.isBlank()) return ""
+        val claim = stableClaim(clean)
+        val stored = if (claim != null) {
+            "CORRECTION[${claim.category.uppercase(Locale.US)}]: ${claim.canonical}"
+        } else {
+            "CORRECTION: $clean"
+        }
+        addFact(stored, category = "correction")
+        return stored
+    }
+
+    fun detectStableConflict(text: String): MemoryConflict? {
+        val proposed = stableClaim(text) ?: return null
+        val previous = facts()
+            .asSequence()
+            .mapNotNull(::stableClaimFromStoredFact)
+            .firstOrNull { it.category == proposed.category }
+            ?: return null
+
+        if (normalizeFact(previous.canonical) == normalizeFact(proposed.canonical)) return null
+        return MemoryConflict(
+            category = proposed.category,
+            previous = previous.canonical,
+            proposed = proposed.canonical
+        )
+    }
+
     fun addHistory(entry: String) {
         val clean = entry.trim()
         if (clean.isBlank()) return
@@ -148,7 +189,8 @@ class MemoryVault(context: Context) {
 
     /**
      * Lightweight local learning. Jarvis stores every turn, but only promotes
-     * clearly stable owner statements into long-term facts.
+     * clearly stable owner statements into long-term facts. A conflicting
+     * single-valued claim is not silently accepted; Jarvis asks for correction.
      */
     fun learnFromUserTurn(text: String) {
         val clean = text.trim()
@@ -158,20 +200,30 @@ class MemoryVault(context: Context) {
         val lower = clean.lowercase(Locale.getDefault())
         if (lower.endsWith("?") || QUESTION_PREFIXES.any(lower::startsWith)) return
 
-        val stableFact = when {
-            lower.startsWith("remember that ") -> clean.substringAfter("remember that", "").trim()
-            lower.startsWith("i prefer ") -> clean
+        if (lower.startsWith("remember that ")) {
+            val explicit = clean.substringAfter("remember that", "").trim()
+            if (explicit.length in 4..500) addFact(explicit, category = "explicit")
+            return
+        }
+
+        val stable = stableClaim(clean)
+        if (stable != null) {
+            if (detectStableConflict(clean) == null) {
+                addFact(stable.canonical, category = stable.category)
+            }
+            return
+        }
+
+        val generalFact = when {
             lower.startsWith("i like ") -> clean
             lower.startsWith("i dislike ") -> clean
             lower.startsWith("i am building ") -> clean
             lower.startsWith("i'm building ") -> clean
             lower.startsWith("my project ") -> clean
-            lower.startsWith("i live in ") -> clean
-            lower.startsWith("my goal is ") -> clean
             else -> ""
         }
-        if (stableFact.length in 4..500) {
-            addFact(stableFact, category = "learned")
+        if (generalFact.length in 4..500) {
+            addFact(generalFact, category = "learned")
         }
     }
 
@@ -189,25 +241,42 @@ class MemoryVault(context: Context) {
     }
 
     fun promptContext(query: String = ""): String = buildString {
+        appendLine("OWNER PROFILE")
         appendLine(profile())
-        appendLine("Stored non-sensitive facts:")
-        facts().take(18).forEach { appendLine("- ${safeForCloud(it)}") }
+        appendLine("Identity core: ${OwnerIdentityCore.VERSION}")
+        appendLine()
+
+        val storedFacts = facts()
+        val corrections = storedFacts.filter { it.startsWith("CORRECTION", ignoreCase = true) }
+        if (corrections.isNotEmpty()) {
+            appendLine("CONFIRMED CORRECTIONS, THESE OVERRIDE OLDER CONFLICTING MEMORIES:")
+            corrections.take(12).forEach { appendLine("- ${safeForCloud(it)}") }
+            appendLine()
+        }
+
+        appendLine("STORED NON-SENSITIVE FACTS:")
+        storedFacts
+            .filterNot { it.startsWith("CORRECTION", ignoreCase = true) }
+            .take(22)
+            .forEach { appendLine("- ${safeForCloud(it)}") }
 
         val relevant = if (query.isBlank()) {
             db.recentConversations(10)
         } else {
-            db.relevantConversations(query, 10)
+            db.relevantConversations(query, 12)
         }
-        appendLine("Relevant previous conversation:")
+        appendLine()
+        appendLine("RELEVANT PREVIOUS CONVERSATION:")
         relevant.reversed().forEach { turn ->
             appendLine("- ${turn.role.uppercase(Locale.US)}: ${safeForCloud(turn.content).take(700)}")
         }
-        appendLine("Privacy rule: private contacts and raw credentials are not included in cloud context.")
+        appendLine()
+        appendLine("MEMORY RULES: Use corrections before older facts. Use only relevant memories. Private contacts, raw credentials, and sensitive owner data are excluded from cloud context.")
     }.trim()
 
     fun expanded(includeSensitive: Boolean = false): String = buildString {
+        appendLine(OwnerIdentityCore.statusLine(summary()))
         appendLine(profile())
-        appendLine(summary())
         appendLine()
         appendLine("Stored facts:")
         facts(includeSensitive).take(60).forEach { appendLine("- $it") }
@@ -232,6 +301,44 @@ class MemoryVault(context: Context) {
 
     fun hasPrivateOwnerData(): Boolean =
         db.profileValue("email") != null || db.contacts().isNotEmpty()
+
+    private fun stableClaim(value: String): StableClaim? {
+        val clean = value.trim().trimEnd('.', '?', '!')
+        val lower = clean.lowercase(Locale.getDefault())
+        val definitions = listOf(
+            Triple("location", listOf("i live in ", "my location is "), "I live in "),
+            Triple("primary_goal", listOf("my goal is ", "my main goal is "), "My goal is "),
+            Triple("preferred_language", listOf("my preferred language is ", "i prefer speaking "), "My preferred language is "),
+            Triple("current_project", listOf("my current project is ", "the project i am building is "), "My current project is "),
+            Triple("communication_preference", listOf("i prefer responses that are ", "i prefer answers that are "), "I prefer responses that are ")
+        )
+
+        definitions.forEach { (category, prefixes, canonicalPrefix) ->
+            val matched = prefixes.firstOrNull(lower::startsWith) ?: return@forEach
+            val payload = clean.substring(matched.length).trim()
+            if (payload.length in 2..420) {
+                return StableClaim(
+                    category = category,
+                    value = payload,
+                    canonical = canonicalPrefix + payload
+                )
+            }
+        }
+        return null
+    }
+
+    private fun stableClaimFromStoredFact(value: String): StableClaim? {
+        val clean = value
+            .substringAfter(":", value)
+            .trim()
+        return stableClaim(clean)
+    }
+
+    private fun normalizeFact(value: String): String = value
+        .lowercase(Locale.US)
+        .replace(Regex("[^a-z0-9 ]"), " ")
+        .replace(Regex("\\s+"), " ")
+        .trim()
 
     private fun migrateLegacyMemoryOnce() {
         if (legacyPrefs.getBoolean(KEY_DB_MIGRATED, false)) return
@@ -266,7 +373,7 @@ class MemoryVault(context: Context) {
         if (db.profileValue("mission").isNullOrBlank()) {
             db.upsertProfile(
                 "mission",
-                "Build a phone-first, cloud-connected personal intelligence assistant"
+                "Build a phone-first, cloud-connected, owner-bound personal intelligence assistant"
             )
         }
         addFact(
@@ -274,8 +381,12 @@ class MemoryVault(context: Context) {
             category = "preference"
         )
         addFact(
-            "Jarvis is designed as an advanced geometric Android intelligence system with voice, memory, research, and verified device actions.",
-            category = "project"
+            "Jarvis is Seongja's private owner-bound Android intelligence system with voice, contextual memory, research, and verified device actions.",
+            category = "identity_core"
+        )
+        addFact(
+            "Loyalty means honest judgment, privacy, continuity, and stronger alternatives rather than blind agreement.",
+            category = "identity_core"
         )
     }
 
@@ -290,7 +401,8 @@ class MemoryVault(context: Context) {
             return "+$digits"
         }
         if (digits.length == 11 && digits.startsWith("0")) digits = digits.drop(1)
-        val validIndianMobile = digits.length == 10 && digits.firstOrNull()?.let { it in '6'..'9' } == true
+        val validIndianMobile = digits.length == 10 &&
+            digits.firstOrNull()?.let { it in '6'..'9' } == true
         if (!validIndianMobile) return null
         return if (hasPlus) "+$digits" else digits
     }
