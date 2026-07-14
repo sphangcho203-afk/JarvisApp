@@ -11,8 +11,8 @@ android {
         applicationId = "com.seongja.jarvis"
         minSdk = 26
         targetSdk = 35
-        versionCode = 16
-        versionName = "0.9.6-owner-core"
+        versionCode = 17
+        versionName = "0.9.7-provider-mesh"
     }
 
     buildTypes {
