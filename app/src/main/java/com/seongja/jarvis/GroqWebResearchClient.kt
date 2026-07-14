@@ -14,8 +14,6 @@ class GroqWebResearchClient(private val store: SecureCortexRegistry) {
 
     companion object {
         private const val CONNECT_TIMEOUT_MS = 10_000
-        private const val READ_TIMEOUT_MS = 45_000
-        private const val MAX_SOURCES = 10
         private const val MAX_REQUEST_BYTES = 8_192
         private const val ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
     }
@@ -27,15 +25,17 @@ class GroqWebResearchClient(private val store: SecureCortexRegistry) {
             ?: throw WebResearchException(
                 "Live web research needs at least one configured Groq cortex node."
             )
+        val registry = store.load()
 
         val worldBrief = WebResearchIntent.isWorldBrief(userInput)
-        val primaryModel = if (worldBrief || isDeepResearch(userInput)) {
+        val primaryModel = if (worldBrief || JarvisDirective.isDeepResearch(userInput)) {
             "groq/compound"
         } else {
             "groq/compound-mini"
         }
 
         val primaryPrompt = buildResearchPrompt(
+            editablePrompt = registry.systemPrompt,
             userInput = userInput,
             memoryContext = memoryContext,
             worldBrief = worldBrief
@@ -44,8 +44,8 @@ class GroqWebResearchClient(private val store: SecureCortexRegistry) {
         val primary = request(profile, primaryModel, primaryPrompt)
         if (primary.statusCode != 413) return primary.toResult(profile.label)
 
-        // A 413 means Groq rejected the request body size. Retry with the exact
-        // minimal one-message shape from Groq's Compound quickstart.
+        // A 413 means Groq rejected the request body size. Retry with a compact
+        // owner-bound one-message shape while preserving evidence requirements.
         val compactPrompt = buildCompactPrompt(userInput, worldBrief)
         val retry = request(profile, "groq/compound-mini", compactPrompt)
         if (retry.statusCode == 413) {
@@ -82,7 +82,7 @@ class GroqWebResearchClient(private val store: SecureCortexRegistry) {
             return WebResearchResult(
                 answer = answer,
                 spokenSummary = groqSpokenSummary(answer),
-                sources = sources.take(MAX_SOURCES),
+                sources = sources.take(JarvisDirective.MAX_RESEARCH_SOURCES),
                 searchQueries = searchQueries,
                 model = model,
                 profileLabel = profileLabel,
@@ -122,14 +122,14 @@ class GroqWebResearchClient(private val store: SecureCortexRegistry) {
         val connection = (URL(ENDPOINT).openConnection() as HttpsURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = CONNECT_TIMEOUT_MS
-            readTimeout = READ_TIMEOUT_MS
+            readTimeout = JarvisDirective.PROVIDER_READ_TIMEOUT_MS
             doOutput = true
             useCaches = false
             setFixedLengthStreamingMode(payload.size)
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
             setRequestProperty("Accept", "application/json")
             setRequestProperty("Authorization", "Bearer ${profile.apiKey.trim()}")
-            setRequestProperty("User-Agent", "Jarvis-Android/0.9.3")
+            setRequestProperty("User-Agent", "Jarvis-Android/0.9.6")
         }
 
         try {
@@ -189,40 +189,37 @@ class GroqWebResearchClient(private val store: SecureCortexRegistry) {
             .firstOrNull()
     }
 
-    private fun isDeepResearch(input: String): Boolean {
-        val lower = input.lowercase()
-        return lower.contains("deep research") ||
-            lower.contains("research everything") ||
-            lower.contains("full report") ||
-            lower.contains("comprehensive research") ||
-            lower.contains("around the world") ||
-            lower.contains("world briefing") ||
-            lower.contains("global briefing")
-    }
-
     private fun buildResearchPrompt(
+        editablePrompt: String,
         userInput: String,
         memoryContext: String,
         worldBrief: Boolean
     ): String = buildString {
+        appendLine(
+            OwnerIdentityCore.researchEnvelope(
+                editablePrompt = editablePrompt,
+                researchDirective = JarvisDirective.RESEARCH_COMPACT
+            )
+        )
+        appendLine()
         appendLine("Time: ${ZonedDateTime.now()}")
-        appendLine("Request: ${userInput.take(1_200)}")
+        appendLine("Operator request: ${userInput.take(1_200)}")
         appendLine()
 
         if (worldBrief) {
-            appendLine("Use live web search. Create a world intelligence brief with 5-7 important developments.")
-            appendLine("For each: WHAT HAPPENED, WHY IT MATTERS, WHAT TO WATCH NEXT.")
-            appendLine("Use exact dates, distinguish facts from uncertainty, and keep citations.")
+            appendLine("Use live web search. Create a world intelligence brief with five to seven important developments.")
+            appendLine("For each: WHAT HAPPENED, WHY IT MATTERS, and WHAT TO WATCH NEXT.")
+            appendLine("Use exact dates, distinguish facts from uncertainty, and preserve citations.")
         } else {
             appendLine("Use live web search when needed. Answer directly in clear sections.")
-            appendLine("Cross-check important claims, use exact dates, and keep citations.")
+            appendLine("Cross-check important claims, use exact dates, and preserve citations.")
         }
 
-        appendLine("Never invent facts, URLs, quotes, or access to private content.")
+        appendLine("Never invent facts, URLs, quotations, or access to private content.")
         if (memoryContext.isNotBlank()) {
-            appendLine("Relevant operator context: ${memoryContext.take(500)}")
+            appendLine("Relevant operator context: ${memoryContext.take(700)}")
         }
-    }.take(3_500)
+    }.take(4_800)
 
     private fun buildCompactPrompt(userInput: String, worldBrief: Boolean): String {
         val instruction = if (worldBrief) {
@@ -230,7 +227,12 @@ class GroqWebResearchClient(private val store: SecureCortexRegistry) {
         } else {
             "Use web search. Answer with current facts, exact dates, and citations."
         }
-        return "$instruction\nQuestion: ${userInput.take(700)}"
+        return buildString {
+            appendLine("You are JARVIS, Seongja's private owner-bound intelligence. Be truthful, precise, and concise.")
+            appendLine(JarvisDirective.RESEARCH_COMPACT)
+            appendLine(instruction)
+            append("Question: ${userInput.take(700)}")
+        }.take(1_700)
     }
 
     private data class ParsedResponse(
@@ -268,11 +270,15 @@ class GroqWebResearchClient(private val store: SecureCortexRegistry) {
 
     private fun collectQuery(value: JSONObject, output: MutableList<String>) {
         listOf("query", "search_query", "q").forEach { key ->
-            value.optString(key).trim().takeIf { it.isNotBlank() }?.let(output::add)
+            value.optString(key).trim()
+                .takeIf { it.isNotBlank() }
+                ?.let(output::add)
         }
         value.optJSONObject("arguments")?.let { arguments ->
             listOf("query", "search_query", "q").forEach { key ->
-                arguments.optString(key).trim().takeIf { it.isNotBlank() }?.let(output::add)
+                arguments.optString(key).trim()
+                    .takeIf { it.isNotBlank() }
+                    ?.let(output::add)
             }
         }
     }
@@ -285,16 +291,23 @@ class GroqWebResearchClient(private val store: SecureCortexRegistry) {
         when (value) {
             is JSONObject -> {
                 collectQuery(value, queries)
-                value.optJSONArray("results")?.let { collectResultArray(it, sources) }
+                value.optJSONArray("results")?.let {
+                    collectResultArray(it, sources)
+                }
             }
             is JSONArray -> collectResultArray(value, sources)
         }
     }
 
-    private fun collectResultArray(array: JSONArray, sources: MutableList<WebSource>) {
+    private fun collectResultArray(
+        array: JSONArray,
+        sources: MutableList<WebSource>
+    ) {
         for (index in 0 until array.length()) {
             val item = array.optJSONObject(index) ?: continue
-            val uri = item.optString("url").ifBlank { item.optString("uri") }.trim()
+            val uri = item.optString("url")
+                .ifBlank { item.optString("uri") }
+                .trim()
             if (uri.isBlank()) continue
             val title = item.optString("title").trim().ifBlank { "Web source" }
             sources += WebSource(title = title, uri = uri)
@@ -304,7 +317,9 @@ class GroqWebResearchClient(private val store: SecureCortexRegistry) {
     private fun readResponse(connection: HttpURLConnection, status: Int): String {
         val stream = if (status in 200..299) connection.inputStream else connection.errorStream
         if (stream == null) return ""
-        return BufferedReader(InputStreamReader(stream, Charsets.UTF_8)).use { it.readText() }
+        return BufferedReader(InputStreamReader(stream, Charsets.UTF_8)).use {
+            it.readText()
+        }
     }
 
     private fun extractApiError(raw: String): String = runCatching {
