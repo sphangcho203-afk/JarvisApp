@@ -1,7 +1,5 @@
 package com.seongja.jarvis
 
-import android.content.Context
-
 /**
  * Provider-resilient live research.
  *
@@ -10,10 +8,9 @@ import android.content.Context
  * and Gemini Google Search remain independent fallbacks.
  */
 class HybridWebResearchClient(
-    context: Context,
     private val cortexStore: SecureCortexRegistry
 ) {
-    private val searchStore = SecureSearchGridRegistry(context.applicationContext)
+    private val searchStore = SecureSearchGridRegistry(cortexStore.appContext)
     private val searchGrid = SearchGridResearchClient(searchStore, cortexStore)
     private val groq = GroqWebResearchClient(cortexStore)
     private val gemini = GeminiWebResearchClient(cortexStore)
