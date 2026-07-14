@@ -74,10 +74,12 @@ object OwnerIdentityCore {
     fun statusLine(memorySummary: String): String =
         "$VERSION // OPERATOR SEONGJA // PRIVATE MEMORY $memorySummary"
 
-    fun normalizeOperatorReference(value: String): String = value
-        .replace(Regex("\\b(?:the user|user|customer)\\b", RegexOption.IGNORE_CASE), "Seongja")
-        .replace(Regex("\\s+"), " ")
-        .trim()
+    /**
+     * Output text is preserved byte-for-byte. Rewriting generic words such as
+     * "user" after generation can corrupt code, quotations, and source URLs.
+     * Personal address is controlled by the immutable system prompt instead.
+     */
+    fun normalizeOperatorReference(value: String): String = value.trim()
 
     fun isIdentityQuery(input: String): Boolean {
         val lower = input.lowercase(Locale.getDefault())
