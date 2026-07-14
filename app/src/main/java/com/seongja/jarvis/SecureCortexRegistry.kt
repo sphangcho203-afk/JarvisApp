@@ -84,17 +84,35 @@ class SecureCortexRegistry(context: Context) {
 
     private fun normalize(registry: CortexRegistry): CortexRegistry {
         val current = registry.profiles.associateBy { it.id }
+        val currentGeminiModels = current.values
+            .filter { it.provider == CortexProvider.GEMINI }
+            .map { CortexModelCatalog.normalize(it.model) }
+            .filter { it.isNotBlank() }
+        val uniformLiteOnlyLayout =
+            currentGeminiModels.size >= 2 &&
+                currentGeminiModels.distinct() == listOf(
+                    CortexModelCatalog.GEMINI_31_FLASH_LITE
+                )
+
         val normalized = CortexDefaults.profiles().map { default ->
             val existing = current[default.id] ?: return@map default
-            existing.copy(
-                id = default.id,
-                label = default.label,
-                provider = default.provider,
-                model = CortexModelCatalog.migrate(
+            val migratedModel = if (
+                default.provider == CortexProvider.GEMINI &&
+                uniformLiteOnlyLayout
+            ) {
+                default.model
+            } else {
+                CortexModelCatalog.migrate(
                     provider = default.provider,
                     rawModel = existing.model,
                     fallback = default.model
                 )
+            }
+            existing.copy(
+                id = default.id,
+                label = default.label,
+                provider = default.provider,
+                model = migratedModel
             )
         }
         return registry.copy(
