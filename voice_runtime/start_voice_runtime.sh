@@ -15,6 +15,10 @@ fi
 "$VENV_DIR/bin/python" -m pip install --upgrade pip
 "$VENV_DIR/bin/python" -m pip install -r "$ROOT_DIR/voice_runtime/requirements.txt"
 
+if [[ ! -f "$ASSETS_DIR/activation.wav" || ! -f "$ASSETS_DIR/deactivation.wav" ]]; then
+  "$VENV_DIR/bin/python" -m voice_runtime.generate_sfx "$ASSETS_DIR"
+fi
+
 export JARVIS_ASSETS_DIR="$ASSETS_DIR"
 export JARVIS_VOICE_HOST="127.0.0.1"
 export JARVIS_VOICE_PORT="8766"
