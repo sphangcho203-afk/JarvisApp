@@ -98,8 +98,6 @@ class GeminiWebResearchClient(private val store: SecureCortexRegistry) {
 
     companion object {
         private const val CONNECT_TIMEOUT_MS = 10_000
-        private const val READ_TIMEOUT_MS = 35_000
-        private const val MAX_SOURCES = 8
         private const val RESEARCH_SYSTEM_PROMPT =
             "You are Jarvis's live web intelligence engine. Ground time-sensitive claims in Google Search. " +
                 "Prefer authoritative primary sources and reputable reporting. Never pretend that model memory is live web evidence. " +
@@ -123,6 +121,10 @@ class GeminiWebResearchClient(private val store: SecureCortexRegistry) {
             memoryContext = memoryContext,
             worldBrief = WebResearchIntent.isWorldBrief(userInput)
         )
+        val systemEnvelope = OwnerIdentityCore.researchEnvelope(
+            editablePrompt = registry.systemPrompt,
+            researchDirective = RESEARCH_SYSTEM_PROMPT + "\n\n" + JarvisDirective.RESEARCH
+        )
 
         val requestBody = JSONObject().apply {
             put(
@@ -130,10 +132,7 @@ class GeminiWebResearchClient(private val store: SecureCortexRegistry) {
                 JSONObject().put(
                     "parts",
                     JSONArray().put(
-                        JSONObject().put(
-                            "text",
-                            registry.systemPrompt + "\n\n" + RESEARCH_SYSTEM_PROMPT
-                        )
+                        JSONObject().put("text", systemEnvelope)
                     )
                 )
             )
@@ -159,23 +158,24 @@ class GeminiWebResearchClient(private val store: SecureCortexRegistry) {
                 "generationConfig",
                 JSONObject().apply {
                     put("temperature", 0.20)
-                    put("maxOutputTokens", 1_600)
+                    put("maxOutputTokens", 2_400)
                 }
             )
         }
 
-        val endpoint = "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent"
+        val endpoint =
+            "https://generativelanguage.googleapis.com/v1beta/models/$model:generateContent"
         val started = System.currentTimeMillis()
         val connection = (URL(endpoint).openConnection() as HttpsURLConnection).apply {
             requestMethod = "POST"
             connectTimeout = CONNECT_TIMEOUT_MS
-            readTimeout = READ_TIMEOUT_MS
+            readTimeout = JarvisDirective.PROVIDER_READ_TIMEOUT_MS
             doOutput = true
             useCaches = false
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
             setRequestProperty("Accept", "application/json")
             setRequestProperty("x-goog-api-key", profile.apiKey)
-            setRequestProperty("User-Agent", "Jarvis-Android/0.9.3")
+            setRequestProperty("User-Agent", "Jarvis-Android/0.9.6")
         }
 
         try {
@@ -201,7 +201,7 @@ class GeminiWebResearchClient(private val store: SecureCortexRegistry) {
             return WebResearchResult(
                 answer = parsed.answer,
                 spokenSummary = createSpokenSummary(parsed.answer),
-                sources = parsed.sources.take(MAX_SOURCES),
+                sources = parsed.sources.take(JarvisDirective.MAX_RESEARCH_SOURCES),
                 searchQueries = parsed.searchQueries,
                 model = model,
                 profileLabel = profile.label,
@@ -307,7 +307,9 @@ class GeminiWebResearchClient(private val store: SecureCortexRegistry) {
         val queryArray = metadata?.optJSONArray("webSearchQueries")
         if (queryArray != null) {
             for (index in 0 until queryArray.length()) {
-                queryArray.optString(index).trim().takeIf { it.isNotBlank() }?.let(queries::add)
+                queryArray.optString(index).trim()
+                    .takeIf { it.isNotBlank() }
+                    ?.let(queries::add)
             }
         }
 
@@ -334,9 +336,11 @@ class GeminiWebResearchClient(private val store: SecureCortexRegistry) {
             window.lastIndexOf("? ")
         )
         return if (sentenceEnd >= 420) {
-            window.take(sentenceEnd + 1) + " I have placed the full intelligence report and sources on screen."
+            window.take(sentenceEnd + 1) +
+                " I have placed the full intelligence report and sources on screen."
         } else {
-            window.trimEnd() + "... I have placed the full intelligence report and sources on screen."
+            window.trimEnd() +
+                "... I have placed the full intelligence report and sources on screen."
         }
     }
 
