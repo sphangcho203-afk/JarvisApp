@@ -15,13 +15,15 @@ import javax.crypto.spec.GCMParameterSpec
 
 class SecureCortexRegistry(context: Context) {
     internal val appContext: Context = context.applicationContext
-    private val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val prefs = appContext.getSharedPreferences(
+        PREFS_NAME,
+        Context.MODE_PRIVATE
+    )
 
     @Synchronized
     fun load(): CortexRegistry {
         val raw = decrypt(prefs.getString(KEY_REGISTRY, "").orEmpty())
         if (raw.isBlank()) return CortexRegistry()
-
         return runCatching { decode(raw) }.getOrElse { CortexRegistry() }
     }
 
@@ -34,7 +36,44 @@ class SecureCortexRegistry(context: Context) {
     @Synchronized
     fun updateProfile(updated: CortexProfile) {
         val current = load()
-        val profiles = current.profiles.map { if (it.id == updated.id) updated else it }
+        val profiles = current.profiles.map {
+            if (it.id == updated.id) updated else it
+        }
+        save(current.copy(profiles = profiles))
+    }
+
+    /**
+     * Groq free-tier limits are organization scoped. A 429 from one Groq key
+     * therefore cools every Groq slot instead of wasting requests on sibling
+     * keys from the same organization. Gemini remains project-key scoped.
+     */
+    @Synchronized
+    fun applyProviderCooldown(
+        provider: CortexProvider,
+        triggeringProfileId: String,
+        cooldownUntilMs: Long,
+        statusCode: Int,
+        error: String
+    ) {
+        val current = load()
+        val now = System.currentTimeMillis()
+        val cleanError = error.take(240)
+        val profiles = current.profiles.map { profile ->
+            if (profile.provider != provider) return@map profile
+            val isTrigger = profile.id == triggeringProfileId
+            profile.copy(
+                failures = profile.failures + if (isTrigger) 1 else 0,
+                failureStreak = profile.failureStreak + if (isTrigger) 1 else 0,
+                requestCount = profile.requestCount + if (isTrigger) 1 else 0,
+                lastUsedAtMs = if (isTrigger) now else profile.lastUsedAtMs,
+                cooldownUntilMs = maxOf(
+                    profile.cooldownUntilMs,
+                    cooldownUntilMs
+                ),
+                lastStatusCode = statusCode,
+                lastError = cleanError
+            )
+        }
         save(current.copy(profiles = profiles))
     }
 
@@ -46,15 +85,23 @@ class SecureCortexRegistry(context: Context) {
     private fun normalize(registry: CortexRegistry): CortexRegistry {
         val current = registry.profiles.associateBy { it.id }
         val normalized = CortexDefaults.profiles().map { default ->
-            current[default.id]?.copy(
+            val existing = current[default.id] ?: return@map default
+            existing.copy(
                 id = default.id,
                 label = default.label,
-                provider = default.provider
-            ) ?: default
+                provider = default.provider,
+                model = CortexModelCatalog.migrate(
+                    provider = default.provider,
+                    rawModel = existing.model,
+                    fallback = default.model
+                )
+            )
         }
         return registry.copy(
             profiles = normalized,
-            systemPrompt = registry.systemPrompt.trim().ifBlank { CortexRegistry.DEFAULT_SYSTEM_PROMPT }
+            systemPrompt = registry.systemPrompt
+                .trim()
+                .ifBlank { CortexRegistry.DEFAULT_SYSTEM_PROMPT }
         )
     }
 
@@ -119,7 +166,8 @@ class SecureCortexRegistry(context: Context) {
         return normalize(
             CortexRegistry(
                 profiles = profiles,
-                systemPrompt = root.optString("systemPrompt").ifBlank { CortexRegistry.DEFAULT_SYSTEM_PROMPT }
+                systemPrompt = root.optString("systemPrompt")
+                    .ifBlank { CortexRegistry.DEFAULT_SYSTEM_PROMPT }
             )
         )
     }
@@ -143,7 +191,11 @@ class SecureCortexRegistry(context: Context) {
             val iv = payload.copyOfRange(0, IV_SIZE)
             val ciphertext = payload.copyOfRange(IV_SIZE, payload.size)
             val cipher = Cipher.getInstance(TRANSFORMATION)
-            cipher.init(Cipher.DECRYPT_MODE, getOrCreateKey(), GCMParameterSpec(128, iv))
+            cipher.init(
+                Cipher.DECRYPT_MODE,
+                getOrCreateKey(),
+                GCMParameterSpec(128, iv)
+            )
             String(cipher.doFinal(ciphertext), StandardCharsets.UTF_8)
         }.getOrDefault("")
     }
@@ -152,7 +204,10 @@ class SecureCortexRegistry(context: Context) {
         val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
         (keyStore.getKey(KEY_ALIAS, null) as? SecretKey)?.let { return it }
 
-        val generator = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, ANDROID_KEYSTORE)
+        val generator = KeyGenerator.getInstance(
+            KeyProperties.KEY_ALGORITHM_AES,
+            ANDROID_KEYSTORE
+        )
         generator.init(
             KeyGenParameterSpec.Builder(
                 KEY_ALIAS,
