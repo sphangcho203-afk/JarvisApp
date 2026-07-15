@@ -158,7 +158,7 @@ jobs:
 
           grep -q "package: name='com.seongja.jarvis'" apk-badging.log
           grep -q "versionName='0.9.13-helix-hardening'" apk-badging.log
-          grep -q "sdkVersion:'26'" apk-badging.log
+          grep -q "sdkVersion:'28'" apk-badging.log
           grep -q "targetSdkVersion:'35'" apk-badging.log
           grep -q "android.permission.RECORD_AUDIO" apk-permissions.log
           grep -q "android.permission.FOREGROUND_SERVICE_MICROPHONE" apk-permissions.log
