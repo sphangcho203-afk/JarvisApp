@@ -3,9 +3,9 @@ package com.seongja.jarvis
 /**
  * Central runtime policy for dialogue generation and provider failover.
  *
- * Conversation is intentionally more expressive than coding and verification
- * work. Provider safety behavior remains at the official API defaults; this
- * client does not attempt to disable built-in protections.
+ * FRIDAY uses a more expressive Groq dialogue profile while diagnostics remain
+ * deterministic. Gemini receives an explicit provider-supported safety policy;
+ * this client does not disable provider safeguards or built-in protections.
  */
 object JarvisRuntimeConfig {
     const val CONVERSATION_TEMPERATURE = 0.85
@@ -13,6 +13,7 @@ object JarvisRuntimeConfig {
     const val REASONING_TEMPERATURE = 0.35
     const val CODING_TEMPERATURE = 0.20
     const val DIAGNOSTIC_TEMPERATURE = 0.0
+    const val GROQ_FRIDAY_TEMPERATURE = 0.85
 
     const val MAX_NETWORK_ATTEMPTS = 8
     const val MAX_MODELS_PER_PROFILE = 3
@@ -21,7 +22,8 @@ object JarvisRuntimeConfig {
     const val DIAGNOSTIC_BUDGET_MS = 35_000L
     const val MIN_GROQ_ORG_COOLDOWN_MS = 60_000L
 
-    const val GEMINI_SAFETY_MODE = "PROVIDER_DEFAULTS"
+    const val GEMINI_SAFETY_MODE = "EXPLICIT_MEDIUM_AND_ABOVE"
+    const val GEMINI_SAFETY_THRESHOLD = "BLOCK_MEDIUM_AND_ABOVE"
 
     fun temperatureFor(task: CortexTask): Double = when (task) {
         CortexTask.FAST -> FAST_TEMPERATURE
