@@ -10,7 +10,7 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: jarvis-android-${{ github.workflow }}-${{ github.ref }}
@@ -27,6 +27,87 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Add no-voice API setup escape hatch
+        if: github.event_name == 'pull_request' && github.head_ref == 'fix/voice-fault-recovery'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          main = Path('app/src/main/java/com/seongja/jarvis/MainActivity.kt')
+          source = main.read_text(encoding='utf-8')
+          old = '''        hud.setCoreTapListener {
+              when {
+                  brainBusy.get() -> abortActiveRequest("USER CANCELLED ACTIVE REQUEST")
+                  hasMicPermission() -> {
+                      hud.pushEvent("USER -> VOICE ARRAY RECALIBRATION")
+                      voiceLoop.manualRestart()
+                  }
+                  else -> {
+                      hud.pushEvent("AUTH -> REQUESTING MICROPHONE")
+                      requestMicPermission()
+                  }
+              }
+          }
+          '''
+          new = '''        hud.setCoreTapListener {
+              when {
+                  brainBusy.get() -> abortActiveRequest("USER CANCELLED ACTIVE REQUEST")
+                  !brain.isCloudConfigured() -> {
+                      hud.pushEvent("CORTEX MESH CONFIG -> OPEN // CORE TAP")
+                      voiceLoop.stop()
+                      startActivity(Intent(this, CloudConfigActivity::class.java))
+                  }
+                  hasMicPermission() -> {
+                      hud.pushEvent("USER -> VOICE ARRAY RECALIBRATION")
+                      voiceLoop.manualRestart()
+                  }
+                  else -> {
+                      hud.pushEvent("AUTH -> REQUESTING MICROPHONE")
+                      requestMicPermission()
+                  }
+              }
+          }
+          '''
+          if old in source:
+              source = source.replace(old, new, 1)
+              main.write_text(source, encoding='utf-8')
+          elif 'CORTEX MESH CONFIG -> OPEN // CORE TAP' not in source:
+              raise SystemExit('Core tap listener block was not found')
+
+          hud = Path('helix-ui/src/Hud.tsx')
+          hud_source = hud.read_text(encoding='utf-8')
+          hud_source = hud_source.replace('BUILD 0.9.13', 'BUILD 0.9.14')
+          hud_source = hud_source.replace(
+              '>TAP CORE // RECALIBRATE</span>',
+              ">{telemetry.cloudConfigured ? 'TAP CORE // RECALIBRATE' : 'TAP CORE // API SETUP'}</span>",
+          )
+          hud.write_text(hud_source, encoding='utf-8')
+
+          package = Path('helix-ui/package.json')
+          package_source = package.read_text(encoding='utf-8').replace(
+              '"version": "0.9.13"',
+              '"version": "0.9.14"',
+          )
+          package.write_text(package_source, encoding='utf-8')
+          PY
+
+          grep -q 'CORTEX MESH CONFIG -> OPEN // CORE TAP' app/src/main/java/com/seongja/jarvis/MainActivity.kt
+          grep -q 'BUILD 0.9.14' helix-ui/src/Hud.tsx
+          grep -q 'TAP CORE // API SETUP' helix-ui/src/Hud.tsx
+
+          if ! git diff --quiet; then
+            git config user.name 'Jarvis Repair Bot'
+            git config user.email 'actions@users.noreply.github.com'
+            git add app/src/main/java/com/seongja/jarvis/MainActivity.kt helix-ui/src/Hud.tsx helix-ui/package.json
+            git commit -m 'Add core-tap API setup escape hatch'
+            git push origin HEAD:fix/voice-fault-recovery
+          fi
 
       - name: Set up Node 22
         uses: actions/setup-node@v7
