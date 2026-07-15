@@ -1,0 +1,35 @@
+name: Apply Helix MainActivity integration
+
+on:
+  push:
+    branches:
+      - feat/helix-webgl-apk
+    paths:
+      - tools/patch_helix_main_activity.py
+      - .github/workflows/apply-helix-main.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Helix feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/helix-webgl-apk
+          fetch-depth: 0
+
+      - name: Patch MainActivity
+        run: python tools/patch_helix_main_activity.py
+
+      - name: Commit integration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || git commit -m "Wire Helix WebGL HUD into MainActivity"
+          git push origin HEAD:feat/helix-webgl-apk
