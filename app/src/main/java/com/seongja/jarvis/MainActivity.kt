@@ -309,17 +309,45 @@ class MainActivity : Activity() {
     }
 
     private fun isCloudSetupCommand(input: String): Boolean {
-        val normalized = input.lowercase(Locale.getDefault()).trim()
-        return normalized == "configure api" ||
-            normalized == "configure apis" ||
-            normalized == "configure cortex" ||
-            normalized == "cortex setup" ||
-            normalized == "mesh setup" ||
-            normalized == "api setup" ||
-            normalized == "cloud setup" ||
-            normalized == "configure cloud" ||
-            normalized == "open api settings"
-    }
+    val normalized = input
+        .lowercase(Locale.getDefault())
+        .replace(Regex("[^a-z0-9 ]"), " ")
+        .replace(Regex("\s+"), " ")
+        .trim()
+
+    val exactCommands = setOf(
+        "configure api",
+        "configure apis",
+        "configure api key",
+        "configure api keys",
+        "configure cortex",
+        "cortex setup",
+        "mesh setup",
+        "api setup",
+        "api settings",
+        "api setting",
+        "cloud setup",
+        "configure cloud",
+        "open api setting",
+        "open api settings",
+        "open api setup",
+        "connect api",
+        "connect apis",
+        "connect api key",
+        "connect api keys"
+    )
+    if (normalized in exactCommands) return true
+
+    val mentionsApi = normalized.split(" ").any { it == "api" || it == "apis" }
+    val setupIntent = listOf(
+        "configure",
+        "connect",
+        "setup",
+        "setting",
+        "settings"
+    ).any(normalized::contains)
+    return mentionsApi && setupIntent
+}
 
     private fun openCloudSetupIfRequired() {
         if (!brain.isCloudConfigured()) {
