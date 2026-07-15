@@ -4,8 +4,8 @@ import android.os.SystemClock
 
 /**
  * Short-lived in-memory handoff for the screen that was visible immediately
- * before Jarvis was summoned. No snapshot is written to disk or conversation
- * memory.
+ * before Jarvis was summoned. The snapshot is never written to disk,
+ * conversation memory, analytics, or source control.
  */
 object ScreenContextBridge {
     private data class Entry(
