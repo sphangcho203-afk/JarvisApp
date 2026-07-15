@@ -79,7 +79,7 @@ class HelixErrorBoundary extends Component<BoundaryProps, BoundaryState> {
               </button>
               <button
                 type="button"
-                onClick={() => window.JarvisAndroid?.onTextCommand?.('configure APIs')}
+                onClick={() => window.JarvisCommandBridge?.openApiSetup()}
                 style={{ background: 'transparent', border: '1px solid rgba(74,222,255,.38)', color: '#4adeff', font: 'inherit', fontSize: '10px', letterSpacing: '.16em', padding: '10px 14px' }}
               >
                 API SETUP
