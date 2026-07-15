@@ -23,6 +23,7 @@ enum class IntentType {
     MODE_CHANGE,
     DIAGNOSTICS,
     SELF_EXPLAIN,
+    DEVICE_UNLOCK_REQUEST,
     KNOWLEDGE_QUERY,
     CONVERSATION,
     UNKNOWN
@@ -33,13 +34,16 @@ enum class ActionType {
     OPEN_APP,
     OPEN_URL,
     WEB_SEARCH,
-    OPEN_SETTINGS
+    OPEN_SETTINGS,
+    REQUEST_DEVICE_UNLOCK
 }
 
 data class BrainAction(
     val type: ActionType = ActionType.NONE,
     val payload: String = "",
-    val label: String = "none"
+    val label: String = "none",
+    val requestId: String = "",
+    val requiresConfirmation: Boolean = false
 )
 
 data class IntentSignal(
