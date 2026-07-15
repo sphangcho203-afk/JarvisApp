@@ -11,8 +11,8 @@ android {
         applicationId = "com.seongja.jarvis"
         minSdk = 28
         targetSdk = 35
-        versionCode = 25
-        versionName = "0.9.15-voice-proofing"
+        versionCode = 26
+        versionName = "0.9.16-tavily-diagnostics"
     }
 
     buildTypes {
