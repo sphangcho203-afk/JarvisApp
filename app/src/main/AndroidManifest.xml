@@ -1,13 +1,19 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
 
-    <!-- Special user-approved access opened through ACTION_MANAGE_WRITE_SETTINGS. -->
+    <!-- Special user-approved access opened through Android Settings panels. -->
     <uses-permission
         android:name="android.permission.WRITE_SETTINGS"
+        tools:ignore="ProtectedPermissions" />
+    <uses-permission
+        android:name="android.permission.PACKAGE_USAGE_STATS"
         tools:ignore="ProtectedPermissions" />
 
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
@@ -52,6 +58,19 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <activity
+            android:name=".CloudConfigActivity"
+            android:exported="false"
+            android:label="Jarvis Cortex Mesh"
+            android:theme="@style/Theme.Jarvis" />
+
+        <activity
+            android:name=".PermissionCenterActivity"
+            android:exported="false"
+            android:label="Jarvis Permission Center"
+            android:theme="@style/Theme.Jarvis" />
+
         <service
             android:name="com.jarvis.core.device.JarvisSystemControlService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
@@ -64,6 +83,7 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/jarvis_system_control_service" />
         </service>
+
         <service
             android:name="com.jarvis.core.device.JarvisAppAutomationService"
             android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
@@ -76,15 +96,21 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/jarvis_app_automation_service" />
         </service>
+
+        <service
+            android:name=".JarvisNotificationListenerService"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE"
+            android:exported="true"
+            android:label="@string/notification_listener_service_label">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
+
         <service
             android:name=".JarvisWakeService"
             android:exported="false"
             android:foregroundServiceType="microphone"
             android:stopWithTask="false" />
-        <activity
-            android:name=".CloudConfigActivity"
-            android:exported="false"
-            android:label="Jarvis Cortex Mesh"
-            android:theme="@style/Theme.Jarvis" />
     </application>
 </manifest>
