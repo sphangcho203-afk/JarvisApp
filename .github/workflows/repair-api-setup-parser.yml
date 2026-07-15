@@ -1,0 +1,113 @@
+name: Repair API setup parser
+
+on:
+  push:
+    branches:
+      - fix/api-setup-voice-routing
+    paths:
+      - .github/workflows/repair-api-setup-parser.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repair branch
+        uses: actions/checkout@v7
+        with:
+          ref: fix/api-setup-voice-routing
+          fetch-depth: 0
+
+      - name: Make API setup voice routing tolerant
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          path = Path('app/src/main/java/com/seongja/jarvis/MainActivity.kt')
+          source = path.read_text(encoding='utf-8')
+          old = '''    private fun isCloudSetupCommand(input: String): Boolean {
+              val normalized = input.lowercase(Locale.getDefault()).trim()
+              return normalized == "configure api" ||
+                  normalized == "configure apis" ||
+                  normalized == "configure cortex" ||
+                  normalized == "cortex setup" ||
+                  normalized == "mesh setup" ||
+                  normalized == "api setup" ||
+                  normalized == "cloud setup" ||
+                  normalized == "configure cloud" ||
+                  normalized == "open api settings"
+          }
+          '''
+          new = '''    private fun isCloudSetupCommand(input: String): Boolean {
+              val normalized = input
+                  .lowercase(Locale.getDefault())
+                  .replace(Regex("[^a-z0-9 ]"), " ")
+                  .replace(Regex("\\\\s+"), " ")
+                  .trim()
+
+              val exactCommands = setOf(
+                  "configure api",
+                  "configure apis",
+                  "configure api key",
+                  "configure api keys",
+                  "configure cortex",
+                  "cortex setup",
+                  "mesh setup",
+                  "api setup",
+                  "api settings",
+                  "api setting",
+                  "cloud setup",
+                  "configure cloud",
+                  "open api setting",
+                  "open api settings",
+                  "open api setup",
+                  "connect api",
+                  "connect apis",
+                  "connect api key",
+                  "connect api keys"
+              )
+              if (normalized in exactCommands) return true
+
+              val mentionsApi = normalized.split(" ").any { it == "api" || it == "apis" }
+              val setupIntent = listOf(
+                  "configure",
+                  "connect",
+                  "setup",
+                  "setting",
+                  "settings"
+              ).any(normalized::contains)
+              return mentionsApi && setupIntent
+          }
+          '''
+
+          if old not in source:
+              if 'val exactCommands = setOf(' in source:
+                  print('Parser is already repaired.')
+                  raise SystemExit(0)
+              raise SystemExit('Expected isCloudSetupCommand block was not found')
+
+          path.write_text(source.replace(old, new, 1), encoding='utf-8')
+          PY
+
+          grep -q 'val exactCommands = setOf' app/src/main/java/com/seongja/jarvis/MainActivity.kt
+          grep -q 'open api setting' app/src/main/java/com/seongja/jarvis/MainActivity.kt
+          grep -q 'connect api keys' app/src/main/java/com/seongja/jarvis/MainActivity.kt
+
+      - name: Commit repaired parser
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet; then
+            echo 'No repair commit required.'
+            exit 0
+          fi
+          git config user.name 'Jarvis Repair Bot'
+          git config user.email 'actions@users.noreply.github.com'
+          git add app/src/main/java/com/seongja/jarvis/MainActivity.kt
+          git commit -m 'Fix API setup voice command routing'
+          git push origin HEAD:fix/api-setup-voice-routing
