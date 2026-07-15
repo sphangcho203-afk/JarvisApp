@@ -157,7 +157,7 @@ jobs:
           unzip -l "$APK" | tee apk-contents.log
 
           grep -q "package: name='com.seongja.jarvis'" apk-badging.log
-          grep -q "versionName='0.9.13-helix-hardening'" apk-badging.log
+          grep -q "versionName='0.9.14-voice-recovery'" apk-badging.log
           grep -q "sdkVersion:'28'" apk-badging.log
           grep -q "targetSdkVersion:'35'" apk-badging.log
           grep -q "android.permission.RECORD_AUDIO" apk-permissions.log
@@ -214,7 +214,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v7
         with:
-          name: Jarvis-Helix-verified-debug-apk
+          name: Jarvis-Helix-voice-recovery-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
