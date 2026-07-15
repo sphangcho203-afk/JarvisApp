@@ -60,7 +60,10 @@ class MainActivity : Activity() {
         )
 
         setContentView(hud)
-        hud.pushEvent("PHASE 9.3 -> STREAMING VOICE FABRIC")
+        if (intent?.getBooleanExtra(JarvisWakeService.EXTRA_WAKE_DETECTED, false) == true) {
+            hud.pushEvent("WAKE PHRASE -> DETECTED // LOCAL SUMMON")
+        }
+        hud.pushEvent("PHASE 10 -> LOCAL DEVICE AGENT")
         hud.pushEvent("GOOGLE SPEECH RECOGNIZER -> REMOVED")
         hud.pushEvent("ANDROID TEXT TO SPEECH -> REMOVED")
         hud.pushEvent("MICROPHONE -> RAW PCM16 // NO GOOGLE CHIME")
@@ -90,16 +93,26 @@ class MainActivity : Activity() {
         if (!hasMicPermission()) requestMicPermission()
     }
 
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        if (intent?.getBooleanExtra(JarvisWakeService.EXTRA_WAKE_DETECTED, false) == true) {
+            announcedOnline = false
+            if (::hud.isInitialized) hud.pushEvent("WAKE PHRASE -> DETECTED // LOCAL SUMMON")
+        }
+    }
+
     override fun onResume() {
         super.onResume()
         resumed = true
+        JarvisWakeService.pause(this)
         enterImmersiveMode()
         if (::brain.isInitialized) {
             hud.pushEvent(
                 if (brain.isCloudConfigured()) {
                     "CORTEX MESH -> READY // ${brain.configuredModel()}"
                 } else {
-                    "CORTEX MESH -> CONFIGURATION REQUIRED"
+                    "LOCAL AGENT -> READY // CLOUD CORTEX OPTIONAL"
                 }
             )
             hud.pushEvent(
@@ -119,6 +132,7 @@ class MainActivity : Activity() {
     override fun onPause() {
         resumed = false
         if (::voiceLoop.isInitialized) voiceLoop.stop()
+        if (JarvisWakeService.isEnabled(this)) JarvisWakeService.resume(this)
         super.onPause()
     }
 
@@ -457,7 +471,12 @@ class MainActivity : Activity() {
             announcedOnline = true
             mainHandler.postDelayed({
                 if (resumed && !brainBusy.get()) {
-                    speak("Systems online. Premium streaming voice is active, Sir.")
+                    if (voiceLoop.isPremiumBackendReady()) {
+                        speak("Systems online. Premium streaming voice is active, Sir.")
+                    } else {
+                        hud.pushEvent("VOICE -> ON-DEVICE COMMAND MODE // API KEY FREE")
+                        hud.setTranscript("Local command mode online")
+                    }
                 }
             }, 320L)
         }
@@ -473,10 +492,10 @@ class MainActivity : Activity() {
         voiceLoop.pauseForTts()
         cancelTtsWatchdog()
         hud.pushEvent(
-            if (voiceLoop.isBackendReady()) {
+            if (voiceLoop.isPremiumBackendReady()) {
                 "VOICE -> STREAM REQUEST"
             } else {
-                "VOICE -> WAITING FOR LOCAL STREAMING RUNTIME"
+                "VOICE -> TEXT RESPONSE // LOCAL INPUT MODE"
             }
         )
 
@@ -491,14 +510,16 @@ class MainActivity : Activity() {
             }
         }
 
-        ttsResumeWatchdog = Runnable {
-            if (resumed && hasMicPermission() && !brainBusy.get()) {
-                hud.pushEvent("VOICE -> STREAM WATCHDOG RELEASE")
-                lastTtsFinishedAt = SystemClock.elapsedRealtime()
-                voiceLoop.stopSpeaking()
-                voiceLoop.resumeAfterTts(700L)
-            }
-        }.also { mainHandler.postDelayed(it, 45_000L) }
+        if (voiceLoop.isPremiumBackendReady()) {
+            ttsResumeWatchdog = Runnable {
+                if (resumed && hasMicPermission() && !brainBusy.get()) {
+                    hud.pushEvent("VOICE -> STREAM WATCHDOG RELEASE")
+                    lastTtsFinishedAt = SystemClock.elapsedRealtime()
+                    voiceLoop.stopSpeaking()
+                    voiceLoop.resumeAfterTts(700L)
+                }
+            }.also { mainHandler.postDelayed(it, 45_000L) }
+        }
     }
 
     private fun speechSafeText(text: String): String {
