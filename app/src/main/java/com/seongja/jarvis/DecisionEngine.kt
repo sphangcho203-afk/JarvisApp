@@ -195,6 +195,19 @@ class DecisionEngine(private val context: Context) {
                 )
             }
 
+            IntentType.DEVICE_UNLOCK_REQUEST -> {
+                thoughts += "Secure unlock request routed to Android Keyguard."
+                val action = JarvisActionRequest.secureUnlockRequest().toBrainAction()
+                response(
+                    spoken = "Opening Android's secure authentication prompt, Sir.",
+                    display = "SECURE ACTION REQUEST\nTYPE // REQUEST_DEVICE_UNLOCK\nEXECUTOR // ANDROID KEYGUARD\nCREDENTIAL ACCESS // NONE\nRESULT // AWAITING SYSTEM AUTHENTICATION",
+                    mode = BrainMode.SECURITY,
+                    decision = "request_android_keyguard_authentication",
+                    action = action,
+                    confidence = 0.99f
+                )
+            }
+
             IntentType.KNOWLEDGE_QUERY -> {
                 thoughts += "Offline knowledge kernel generated a limited answer."
                 val answer = knowledge.answerOffline(input, memory)
