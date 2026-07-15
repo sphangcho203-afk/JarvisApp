@@ -8,6 +8,14 @@
     <uses-permission android:name="android.permission.VIBRATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
 
+    <!-- Camera and flash are optional; Jarvis must still run on devices without them. -->
+    <uses-feature
+        android:name="android.hardware.camera"
+        android:required="false" />
+    <uses-feature
+        android:name="android.hardware.camera.flash"
+        android:required="false" />
+
     <!-- Special user-approved access opened through Android Settings panels. -->
     <uses-permission
         android:name="android.permission.WRITE_SETTINGS"
