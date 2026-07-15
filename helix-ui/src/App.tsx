@@ -53,7 +53,7 @@ class HelixErrorBoundary extends Component<BoundaryProps, BoundaryState> {
             <p style={{ color: '#4adeff', fontSize: '11px', letterSpacing: '.28em', margin: 0 }}>JARVIS // HELIX</p>
             <h1 style={{ fontSize: '18px', letterSpacing: '.15em', margin: '18px 0 10px' }}>RENDER FALLBACK ONLINE</h1>
             <p style={{ color: 'rgba(255,255,255,.56)', fontSize: '12px', lineHeight: 1.8, margin: 0 }}>
-              The visual layer stopped, but your private Android command core remains available.
+              The visual layer stopped, but your Android command core remains available.
             </p>
             <pre
               style={{
@@ -79,10 +79,10 @@ class HelixErrorBoundary extends Component<BoundaryProps, BoundaryState> {
               </button>
               <button
                 type="button"
-                onClick={() => window.JarvisCommandBridge?.openApiSetup()}
+                onClick={() => window.JarvisCommandBridge?.openPermissionCenter()}
                 style={{ background: 'transparent', border: '1px solid rgba(74,222,255,.38)', color: '#4adeff', font: 'inherit', fontSize: '10px', letterSpacing: '.16em', padding: '10px 14px' }}
               >
-                API SETUP
+                ANDROID PERMISSIONS
               </button>
               <button
                 type="button"
@@ -116,7 +116,8 @@ export default function App() {
         bridgeReady={bridge.bridgeReady}
         logs={bridge.logs}
         onCoreTap={bridge.tapCore}
-        onApiSetup={bridge.openApiSetup}
+        onSetup={bridge.openSetup}
+        setupLabel={bridge.setupLabel}
         onClearLogs={bridge.clearLogs}
       />
     </HelixErrorBoundary>
