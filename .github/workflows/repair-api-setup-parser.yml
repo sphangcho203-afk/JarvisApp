@@ -6,6 +6,9 @@ on:
       - fix/api-setup-voice-routing
     paths:
       - .github/workflows/repair-api-setup-parser.yml
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
