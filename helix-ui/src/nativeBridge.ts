@@ -10,7 +10,6 @@ declare global {
     }
     JarvisCommandBridge?: {
       openApiSetup: () => void
-      onTextCommand: (text: string) => void
     }
     jarvisHelix?: { receive: (payload: NativePayload) => void }
   }
@@ -27,15 +26,15 @@ export function useNativeBridge() {
   const bootAt = useRef(performance.now())
   const [mode, setMode] = useState<HelixState>('IDLE')
   const [metrics, setMetrics] = useState<AudioMetrics>({ ...EMPTY_AUDIO })
-  const [transcript, setTranscript] = useState('Awaiting operator command.')
-  const [response, setResponse] = useState('Neural command channel standing by.')
+  const [transcript, setTranscript] = useState('Listening for you, Sir.')
+  const [response, setResponse] = useState('Jarvis is standing by, Sir.')
   const [telemetry, setTelemetry] = useState(INITIAL_TELEMETRY)
   const [countdown, setCountdown] = useState(INITIAL_COUNTDOWN)
   const [bridgeReady, setBridgeReady] = useState(false)
   const [logs, setLogs] = useState<TerminalLog[]>([
-    { id: 1, time: '00:00:01', channel: 'CORE', text: 'HELIX WebGL lattice initialized.' },
-    { id: 2, time: '00:00:02', channel: 'SYS', text: 'Native Android action fabric awaiting bridge.' },
-    { id: 3, time: '00:00:03', channel: 'VOICE', text: 'Voice capture proofing armed.' },
+    { id: 1, time: '00:00:01', channel: 'CORE', text: 'HELIX lattice initialized.' },
+    { id: 2, time: '00:00:02', channel: 'SYS', text: 'Private Android command fabric awaiting bridge.' },
+    { id: 3, time: '00:00:03', channel: 'VOICE', text: 'Jarvis voice array armed.' },
   ])
 
   const pushLog = (channel: TerminalLog['channel'], text: string) => {
@@ -58,7 +57,7 @@ export function useNativeBridge() {
             setMetrics(next)
             break
           }
-          case 'transcript': setTranscript(payload.text?.trim() || 'Awaiting operator command.'); break
+          case 'transcript': setTranscript(payload.text?.trim() || 'Listening for you, Sir.'); break
           case 'response':
             setResponse(payload.display?.trim() || payload.spoken?.trim() || 'Response received.')
             if (payload.intent) pushLog('CORE', `${payload.intent.toUpperCase()} // ${Math.round((payload.confidence ?? 0) * 100)}%`)
@@ -73,17 +72,6 @@ export function useNativeBridge() {
     return () => { delete window.jarvisHelix }
   }, [])
 
-  const submitTextCommand = (text: string) => {
-    const clean = text.trim()
-    if (!clean) return
-    pushLog('CORE', `TEXT INPUT // ${clean.slice(0, 80)}`)
-    if (isApiSetupCommand(clean)) {
-      window.JarvisCommandBridge?.openApiSetup()
-      return
-    }
-    window.JarvisCommandBridge?.onTextCommand(clean)
-  }
-
   return {
     mode,
     metricsRef,
@@ -95,6 +83,7 @@ export function useNativeBridge() {
     bridgeReady,
     logs,
     clearLogs: () => setLogs([]),
+    openApiSetup: () => window.JarvisCommandBridge?.openApiSetup(),
     tapCore: () => {
       if (!telemetry.cloudConfigured && window.JarvisCommandBridge) {
         window.JarvisCommandBridge.openApiSetup()
@@ -102,15 +91,7 @@ export function useNativeBridge() {
         window.JarvisAndroid?.onCoreTap()
       }
     },
-    submitTextCommand,
   }
-}
-
-function isApiSetupCommand(text: string) {
-  const normalized = text.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim()
-  const mentionsApi = normalized.split(' ').some(token => token === 'api' || token === 'apis')
-  const setupIntent = ['configure', 'connect', 'setup', 'setting', 'settings'].some(token => normalized.includes(token))
-  return mentionsApi && setupIntent
 }
 
 function channelFor(text: string): TerminalLog['channel'] {
