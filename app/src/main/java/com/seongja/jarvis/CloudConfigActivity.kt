@@ -30,19 +30,29 @@ class CloudConfigActivity : Activity() {
         val health: TextView
     )
 
+    private data class VoiceFields(
+        val apiKey: EditText,
+        val enabled: CheckBox,
+        val health: TextView
+    )
+
     private lateinit var store: SecureCortexRegistry
     private lateinit var searchStore: SecureSearchGridRegistry
+    private lateinit var voiceStore: SecureVoiceRegistry
     private lateinit var systemPromptInput: EditText
     private lateinit var globalStatus: TextView
     private val profileFields = linkedMapOf<String, ProfileFields>()
     private val searchFields = linkedMapOf<SearchGridProvider, SearchFields>()
+    private lateinit var voiceFields: VoiceFields
+    private var voiceTestClient: CartesiaSonicClient? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         store = SecureCortexRegistry(this)
         searchStore = SecureSearchGridRegistry(this)
+        voiceStore = SecureVoiceRegistry(this)
         setContentView(buildUi())
-        populate(store.load(), searchStore.load())
+        populate(store.load(), searchStore.load(), voiceStore.load())
     }
 
     private fun buildUi(): ScrollView {
@@ -95,6 +105,9 @@ class CloudConfigActivity : Activity() {
             root.addView(buildProfilePanel(profile), matchWidth(bottom = 14))
         }
 
+        root.addView(sectionTitle("VOICE CORE // CARTESIA SONIC-3"))
+        root.addView(buildCartesiaPanel(), matchWidth(bottom = 16))
+
         root.addView(sectionTitle("SEARCH GRID // TAVILY + EXA"))
         root.addView(TextView(this).apply {
             text = "Tavily is optimized for current web discovery and news. Exa provides semantic retrieval and deep-page evidence. Either provider can operate alone; when both are configured, Jarvis merges and deduplicates their results."
@@ -115,7 +128,7 @@ class CloudConfigActivity : Activity() {
         root.addView(globalStatus)
 
         root.addView(Button(this).apply {
-            text = "SAVE CORTEX + SEARCH GRID"
+            text = "SAVE CORTEX + SEARCH + VOICE"
             setOnClickListener { saveAll(showToast = true) }
         }, matchWidth(bottom = 8))
 
@@ -137,7 +150,7 @@ class CloudConfigActivity : Activity() {
             text = "RESET CORTEX MESH"
             setOnClickListener {
                 store.clear()
-                populate(store.load(), searchStore.load())
+                populate(store.load(), searchStore.load(), voiceStore.load())
                 globalStatus.text = "CORTEX MESH // RESET"
                 Toast.makeText(
                     this@CloudConfigActivity,
@@ -151,13 +164,25 @@ class CloudConfigActivity : Activity() {
             text = "RESET SEARCH GRID"
             setOnClickListener {
                 searchStore.clear()
-                populate(store.load(), searchStore.load())
+                populate(store.load(), searchStore.load(), voiceStore.load())
                 globalStatus.text = "SEARCH GRID // RESET"
                 Toast.makeText(
                     this@CloudConfigActivity,
                     "Search Grid reset.",
                     Toast.LENGTH_SHORT
                 ).show()
+            }
+        }, matchWidth(bottom = 8))
+
+        root.addView(Button(this).apply {
+            text = "RESET VOICE CORE"
+            setOnClickListener {
+                voiceTestClient?.destroy()
+                voiceTestClient = null
+                voiceStore.clear()
+                populate(store.load(), searchStore.load(), voiceStore.load())
+                globalStatus.text = "VOICE CORE // RESET"
+                Toast.makeText(this@CloudConfigActivity, "Cartesia voice reset.", Toast.LENGTH_SHORT).show()
             }
         }, matchWidth(bottom = 8))
 
@@ -251,6 +276,49 @@ class CloudConfigActivity : Activity() {
         return panel
     }
 
+    private fun buildCartesiaPanel(): LinearLayout {
+        val accent = Color.rgb(75, 196, 255)
+        val panel = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = panelBackground(Color.rgb(11, 25, 38), accent)
+        }
+        panel.addView(TextView(this).apply {
+            text = "CARTESIA // SONIC-3 // GEMMA EN-GB"
+            textSize = 17f
+            setTextColor(accent)
+        })
+        panel.addView(TextView(this).apply {
+            text = "${CartesiaVoiceSettings.WEBSOCKET_ENDPOINT} // PCM16 44100HZ // SPEED ${CartesiaVoiceSettings.SPEED}"
+            textSize = 10f
+            setTextColor(Color.GRAY)
+            setPadding(0, dp(3), 0, dp(8))
+        })
+        val apiKey = passwordInput("Encrypted Cartesia API key")
+        panel.addView(apiKey, matchWidth(bottom = 6))
+        val enabled = CheckBox(this).apply {
+            text = "Cartesia voice enabled"
+            setTextColor(Color.LTGRAY)
+            isChecked = true
+        }
+        panel.addView(enabled)
+        val health = TextView(this).apply {
+            text = "STATUS // NOT CONFIGURED"
+            textSize = 12f
+            setTextColor(Color.rgb(147, 210, 255))
+            setPadding(0, dp(5), 0, dp(5))
+        }
+        panel.addView(health)
+        panel.addView(Button(this).apply {
+            text = "SAVE + TEST CARTESIA VOICE"
+            setOnClickListener {
+                if (saveAll(showToast = false)) testCartesiaVoice()
+            }
+        }, matchWidth())
+        voiceFields = VoiceFields(apiKey, enabled, health)
+        return panel
+    }
+
     private fun buildSearchPanel(provider: SearchGridProvider): LinearLayout {
         val accent = when (provider) {
             SearchGridProvider.TAVILY -> Color.rgb(56, 220, 180)
@@ -318,7 +386,8 @@ class CloudConfigActivity : Activity() {
 
     private fun populate(
         cortexRegistry: CortexRegistry,
-        searchRegistry: SearchGridRegistry
+        searchRegistry: SearchGridRegistry,
+        voiceSettings: CartesiaVoiceSettings
     ) {
         systemPromptInput.setText(cortexRegistry.systemPrompt)
         val byId = cortexRegistry.profiles.associateBy { it.id }
@@ -342,18 +411,24 @@ class CloudConfigActivity : Activity() {
                 "STATUS // ${credential.healthLabel()} // SUCCESS ${credential.successes} // FAIL ${credential.failures}"
         }
 
-        globalStatus.text = systemSummary(cortexRegistry, searchRegistry)
+        voiceFields.apiKey.setText(voiceSettings.apiKey)
+        voiceFields.enabled.isChecked = voiceSettings.enabled
+        voiceFields.health.text =
+            "STATUS // ${voiceSettings.healthLabel()} // SUCCESS ${voiceSettings.successes} // FAIL ${voiceSettings.failures}"
+
+        globalStatus.text = systemSummary(cortexRegistry, searchRegistry, voiceSettings)
     }
 
     private fun saveAll(showToast: Boolean): Boolean {
         val cortexSaved = saveRegistry(showToast = false)
         val searchSaved = saveSearchGrid(showToast = false)
-        val success = cortexSaved && searchSaved
+        val voiceSaved = saveVoice(showToast = false)
+        val success = cortexSaved && searchSaved && voiceSaved
         if (showToast) {
             Toast.makeText(
                 this,
                 if (success) {
-                    "Cortex and Search Grid saved securely."
+                    "Cortex, Search Grid, and Cartesia voice saved securely."
                 } else {
                     "Secure configuration could not be fully saved."
                 },
@@ -391,7 +466,7 @@ class CloudConfigActivity : Activity() {
 
         return runCatching {
             store.save(registry)
-            globalStatus.text = systemSummary(store.load(), searchStore.load())
+            globalStatus.text = systemSummary(store.load(), searchStore.load(), voiceStore.load())
             if (showToast) {
                 Toast.makeText(this, "Cortex mesh saved securely.", Toast.LENGTH_SHORT).show()
             }
@@ -418,7 +493,7 @@ class CloudConfigActivity : Activity() {
 
         return runCatching {
             searchStore.save(SearchGridRegistry(updated))
-            globalStatus.text = systemSummary(store.load(), searchStore.load())
+            globalStatus.text = systemSummary(store.load(), searchStore.load(), voiceStore.load())
             if (showToast) {
                 Toast.makeText(this, "Search Grid saved securely.", Toast.LENGTH_SHORT).show()
             }
@@ -426,6 +501,69 @@ class CloudConfigActivity : Activity() {
         }.getOrElse {
             globalStatus.text = "SEARCH GRID // SECURE STORAGE ERROR"
             false
+        }
+    }
+
+    private fun saveVoice(showToast: Boolean): Boolean {
+        val previous = voiceStore.load()
+        val key = voiceFields.apiKey.text.toString().trim()
+        val updated = previous.copy(
+            apiKey = key,
+            enabled = voiceFields.enabled.isChecked,
+            lastError = if (previous.apiKey != key) "" else previous.lastError,
+            lastStatusCode = if (previous.apiKey != key) 0 else previous.lastStatusCode
+        )
+        return runCatching {
+            voiceStore.save(updated)
+            if (showToast) Toast.makeText(this, "Cartesia voice saved securely.", Toast.LENGTH_SHORT).show()
+            true
+        }.getOrElse {
+            globalStatus.text = "VOICE CORE // SECURE STORAGE ERROR"
+            false
+        }
+    }
+
+    private fun testCartesiaVoice() {
+        voiceTestClient?.destroy()
+        voiceFields.health.text = "STATUS // CONNECTING CARTESIA..."
+        lateinit var testClient: CartesiaSonicClient
+        testClient = CartesiaSonicClient(this, object : CartesiaSonicClient.Listener {
+            private var sent = false
+            override fun onReady(label: String) {
+                runOnUiThread {
+                    voiceFields.health.text = "STATUS // ONLINE // $label"
+                    if (!sent) {
+                        sent = true
+                        testClient.push("Cartesia Sonic voice core online, Boss.")
+                        testClient.finish()
+                    }
+                }
+            }
+            override fun onAudioStarted(label: String) {
+                runOnUiThread { voiceFields.health.text = "STATUS // SPEAKING // $label" }
+            }
+            override fun onCompleted() {
+                runOnUiThread {
+                    voiceFields.health.text = "STATUS // ONLINE // TEST COMPLETE"
+                    voiceTestClient?.destroy()
+                    voiceTestClient = null
+                    populate(store.load(), searchStore.load(), voiceStore.load())
+                }
+            }
+            override fun onDiagnostic(message: String) = Unit
+            override fun onError(message: String) {
+                runOnUiThread {
+                    voiceFields.health.text = "STATUS // FAILED // ${message.take(180)}"
+                    voiceTestClient?.destroy()
+                    voiceTestClient = null
+                    populate(store.load(), searchStore.load(), voiceStore.load())
+                }
+            }
+        })
+        voiceTestClient = testClient
+        if (!testClient.begin()) {
+            voiceFields.health.text = "STATUS // ENTER A CARTESIA API KEY"
+            voiceTestClient = null
         }
     }
 
@@ -442,7 +580,7 @@ class CloudConfigActivity : Activity() {
                     fields.health.text =
                         "STATUS // FAILED // ${it.message ?: it.javaClass.simpleName}"
                 }
-                globalStatus.text = systemSummary(store.load(), searchStore.load())
+                globalStatus.text = systemSummary(store.load(), searchStore.load(), voiceStore.load())
             }
         }.start()
     }
@@ -462,7 +600,7 @@ class CloudConfigActivity : Activity() {
                     fields.health.text =
                         "STATUS // FAILED // ${it.message ?: it.javaClass.simpleName}"
                 }
-                populate(store.load(), searchStore.load())
+                populate(store.load(), searchStore.load(), voiceStore.load())
             }
         }.start()
     }
@@ -498,7 +636,7 @@ class CloudConfigActivity : Activity() {
                 }
             }
             runOnUiThread {
-                populate(store.load(), searchStore.load())
+                populate(store.load(), searchStore.load(), voiceStore.load())
                 globalStatus.text =
                     "CORTEX MESH // TEST COMPLETE // ONLINE $online/${configured.size}"
             }
@@ -537,7 +675,7 @@ class CloudConfigActivity : Activity() {
                 }
             }
             runOnUiThread {
-                populate(store.load(), searchStore.load())
+                populate(store.load(), searchStore.load(), voiceStore.load())
                 globalStatus.text =
                     "SEARCH GRID // TEST COMPLETE // ONLINE $online/${configured.size}"
             }
@@ -546,7 +684,8 @@ class CloudConfigActivity : Activity() {
 
     private fun systemSummary(
         cortexRegistry: CortexRegistry,
-        searchRegistry: SearchGridRegistry
+        searchRegistry: SearchGridRegistry,
+        voiceSettings: CartesiaVoiceSettings
     ): String {
         val cortexConfigured = cortexRegistry.configuredProfiles()
         val cortexOnline = cortexConfigured.count {
