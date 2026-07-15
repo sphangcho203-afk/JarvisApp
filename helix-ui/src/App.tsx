@@ -53,7 +53,7 @@ class HelixErrorBoundary extends Component<BoundaryProps, BoundaryState> {
             <p style={{ color: '#4adeff', fontSize: '11px', letterSpacing: '.28em', margin: 0 }}>JARVIS // HELIX</p>
             <h1 style={{ fontSize: '18px', letterSpacing: '.15em', margin: '18px 0 10px' }}>RENDER FALLBACK ONLINE</h1>
             <p style={{ color: 'rgba(255,255,255,.56)', fontSize: '12px', lineHeight: 1.8, margin: 0 }}>
-              The WebGL presentation layer stopped, but the native Android command core remains available.
+              The visual layer stopped, but your private Android command core remains available.
             </p>
             <pre
               style={{
@@ -116,7 +116,7 @@ export default function App() {
         bridgeReady={bridge.bridgeReady}
         logs={bridge.logs}
         onCoreTap={bridge.tapCore}
-        onTextCommand={bridge.submitTextCommand}
+        onApiSetup={bridge.openApiSetup}
         onClearLogs={bridge.clearLogs}
       />
     </HelixErrorBoundary>
