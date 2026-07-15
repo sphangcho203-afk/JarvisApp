@@ -39,11 +39,13 @@ object JarvisResponseSanitizer {
             .trim()
 
         return value.ifBlank {
-            "The provider returned private reasoning without a usable final answer. Retry the request, Sir."
+            "The provider returned private reasoning without a usable final answer. Retry the request, Boss."
         }
     }
 
     fun spoken(raw: String): String = clean(raw)
+        .replace(Regex("(?i)\\bSir\\b"), "Boss")
+        .replace(Regex("(?i)\\bJarvis\\b"), "FRIDAY")
         .replace(Regex("```[\\s\\S]*?```"), " Code is displayed on screen. ")
         .replace(Regex("https?://\\S+"), "")
         .replace(Regex("\\[(\\d+)]"), "")
