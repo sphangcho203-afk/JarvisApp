@@ -1,9 +1,10 @@
 <resources>
     <string name="app_name">Jarvis</string>
     <string name="system_control_service_label">Jarvis System Control</string>
-    <string name="system_control_service_description">Allows Jarvis to open Android Quick Settings and press only allow-listed system tiles such as Wi-Fi, mobile data, hotspot, flight mode, Eye Comfort, and Do Not Disturb. It does not read messages or type inside apps.</string>
+    <string name="system_control_service_description">Allows Jarvis to open Android Quick Settings and press only allow-listed system tiles such as torch, Wi-Fi, mobile data, hotspot, flight mode, Eye Comfort, and Do Not Disturb. Android state is verified when the system exposes it.</string>
     <string name="app_automation_service_label">Jarvis App Automation</string>
-    <string name="app_automation_service_description">Allows Jarvis to read the current accessibility screen only when you explicitly ask, and to complete confirmed Gmail or WhatsApp actions. Screen content is not stored, and messages are never sent without a separate confirmation command.</string>
+    <string name="app_automation_service_description">Allows Jarvis to inspect the current screen only when you explicitly ask, take screenshots on supported Android versions, perform gestures, and complete confirmed app actions. Screen content is not continuously recorded or stored.</string>
+    <string name="notification_listener_service_label">Jarvis Notification Context</string>
     <string name="wake_service_channel_name">Jarvis Wake Listener</string>
     <string name="wake_service_notification_title">Jarvis wake listener active</string>
     <string name="wake_service_notification_text">Listening locally for “Wake up Jarvis”. Tap to return to Jarvis.</string>

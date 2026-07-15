@@ -15,7 +15,8 @@ interface Props {
   bridgeReady: boolean
   logs: TerminalLog[]
   onCoreTap: () => void
-  onApiSetup: () => void
+  onSetup: () => void
+  setupLabel: string
   onClearLogs: () => void
 }
 
@@ -43,10 +44,10 @@ function Status({ mode, theme, telemetry, bridgeReady }: { mode: HelixState; the
   return <header className="relative z-20 flex h-[58px] items-center justify-between border-b border-white/8 bg-black/25 px-3 backdrop-blur-xl md:px-6">
     <div className="flex min-w-0 items-center gap-3">
       <div className="grid size-8 place-items-center border font-mono text-[9px]" style={{ borderColor: `rgba(${theme.rgb}/.55)`, color: theme.hex, boxShadow: `inset 0 0 15px rgba(${theme.rgb}/.15)` }}>JH</div>
-      <div className="min-w-0"><p className="truncate font-mono text-[11px] tracking-[.2em] text-white/90 md:text-sm">JARVIS // HELIX</p><p className="truncate font-mono text-[7px] tracking-[.22em] text-white/32 md:text-[9px]">SEONGJA PRIVATE INTELLIGENCE // BUILD 0.9.18</p></div>
+      <div className="min-w-0"><p className="truncate font-mono text-[11px] tracking-[.2em] text-white/90 md:text-sm">JARVIS // HELIX</p><p className="truncate font-mono text-[7px] tracking-[.22em] text-white/32 md:text-[9px]">ANDROID COGNITIVE INTERFACE // BUILD 0.9.19</p></div>
     </div>
     <div className="flex items-center gap-3 font-mono text-[7px] tracking-[.16em] text-white/45 md:text-[9px]">
-      <span className="hidden md:inline">{telemetry.time} // {telemetry.voiceSource.toUpperCase()} // {bridgeReady ? 'PRIVATE LINK' : 'SYNC'}</span>
+      <span className="hidden md:inline">{telemetry.time} // {telemetry.voiceSource.toUpperCase()} // {bridgeReady ? 'ANDROID LINK' : 'SYNC'}</span>
       <div className="flex items-center gap-2"><motion.span animate={{ opacity: mode === 'ERROR' ? [1,.2,1] : [.45,1,.45], scale: [.9,1.2,.9] }} transition={{ duration: mode === 'PROCESSING' ? .75 : 1.5, repeat: Infinity }} className="size-2 rounded-full" style={{ backgroundColor: theme.hex, boxShadow: `0 0 14px ${theme.glow}` }} /><span style={{ color: theme.hex }}>{theme.label}</span></div>
     </div>
   </header>
@@ -72,7 +73,7 @@ function CoreStage(props: Props & { theme: ThemeSpec }) {
           <p className="truncate">HEARD // {props.transcript}</p>
           <p className="mt-1 truncate" style={{ color: theme.hex }}>VOICE LINK // {telemetry.voiceSource.toUpperCase()}</p>
         </div>
-        <button type="button" onClick={props.onApiSetup} className="border px-3 py-2 font-mono text-[7px] tracking-[.14em]" style={{ borderColor:`rgba(${theme.rgb}/.45)`,color:theme.hex }}>API SETUP</button>
+        <button type="button" onClick={props.onSetup} className="border px-3 py-2 font-mono text-[7px] tracking-[.14em]" style={{ borderColor:`rgba(${theme.rgb}/.45)`,color:theme.hex }}>{props.setupLabel}</button>
       </div>
       {countdown.active ? <div className="mt-2 h-px bg-white/8"><div className="h-px" style={{ width:`${countdown.progress*100}%`,background:theme.hex }} /></div> : null}
     </div>
@@ -85,7 +86,7 @@ function Panel({ title, eyebrow, theme, children }: { title:string; eyebrow:stri
 
 function Telemetry({ theme, metrics, data }: { theme:ThemeSpec; metrics:AudioMetrics; data:NativeTelemetry }) {
   const values = [['DEVICE',data.device],['BATTERY',`${data.battery}%`],['NETWORK',data.network],['HEAP',`${data.heapMb} MB`],['CLOCK',data.time],['CORTEX',data.cloudConfigured?'MESH ONLINE':'LOCAL MODE']]
-  return <Panel title="TELEMETRY" eyebrow="ANDROID LIVE SIGNAL" theme={theme}><div className="grid grid-cols-2 gap-2">{values.map(([label,value])=><div key={label} className="border border-white/6 bg-white/[.025] p-3"><p className="font-mono text-[8px] tracking-[.18em] text-white/32">{label}</p><p className="mt-2 truncate font-mono text-[11px] text-white/82">{value}</p></div>)}</div><div className="mt-5 space-y-4"><Meter label="RMS / VOICE" value={metrics.rms} theme={theme}/><Meter label="PEAK ENVELOPE" value={metrics.peak} theme={theme}/><Meter label="CORE ENERGY" value={Math.min(1,metrics.rms*.75+theme.energy*.25)} theme={theme}/></div><p className="mt-5 border-l-2 pl-3 font-mono text-[8px] leading-5 tracking-[.11em] text-white/42" style={{ borderColor:theme.hex }}>PRIVATE VOICE-FIRST INTERFACE. NO CHAT INPUT LAYER.</p></Panel>
+  return <Panel title="TELEMETRY" eyebrow="ANDROID LIVE SIGNAL" theme={theme}><div className="grid grid-cols-2 gap-2">{values.map(([label,value])=><div key={label} className="border border-white/6 bg-white/[.025] p-3"><p className="font-mono text-[8px] tracking-[.18em] text-white/32">{label}</p><p className="mt-2 truncate font-mono text-[11px] text-white/82">{value}</p></div>)}</div><div className="mt-5 space-y-4"><Meter label="RMS / VOICE" value={metrics.rms} theme={theme}/><Meter label="PEAK ENVELOPE" value={metrics.peak} theme={theme}/><Meter label="CORE ENERGY" value={Math.min(1,metrics.rms*.75+theme.energy*.25)} theme={theme}/></div><p className="mt-5 border-l-2 pl-3 font-mono text-[8px] leading-5 tracking-[.11em] text-white/42" style={{ borderColor:theme.hex }}>VOICE-FIRST INTERFACE. ANDROID PERMISSIONS ARE VERIFIED, NOT ASSUMED.</p></Panel>
 }
 
 function Meter({ label, value, theme }: { label:string; value:number; theme:ThemeSpec }) { return <div><div className="mb-2 flex justify-between font-mono text-[8px] tracking-[.14em] text-white/38"><span>{label}</span><span>{Math.round(value*100)}%</span></div><div className="h-[2px] bg-white/8"><div className="h-full transition-[width] duration-100" style={{ width:`${value*100}%`,background:theme.hex,boxShadow:`0 0 10px ${theme.glow}` }} /></div></div> }
@@ -97,7 +98,7 @@ function Diagnostics({ mode, theme, metrics, data }: { mode:HelixState; theme:Th
 
 function Terminal({ theme, logs, response, onClear }: { theme:ThemeSpec; logs:TerminalLog[]; response:string; onClear:()=>void }) {
   const scrambled = useScramble(response || 'Standing by, Sir.')
-  return <Panel title="RESPONSE TERMINAL" eyebrow="JARVIS PRIVATE COGNITIVE OUTPUT" theme={theme}><button type="button" onClick={onClear} className="absolute right-3 top-3 z-10 border border-white/8 px-2 py-1 font-mono text-[7px] text-white/35">PURGE</button><div className="grid h-full min-h-0 gap-3 md:grid-cols-[1.1fr_1fr]"><div className="hidden min-h-0 overflow-auto pr-2 font-mono text-[9px] leading-5 md:block">{logs.slice(-8).map(log=><div key={log.id} className="grid grid-cols-[54px_44px_1fr] gap-2 border-b border-white/4 py-1"><span className="text-white/22">{log.time}</span><span style={{ color:log.channel==='WARN'?'#fca5a5':log.channel==='SYS'?'#a7f3d0':log.channel==='VOICE'?'#93c5fd':'#c4f5ff' }}>{log.channel}</span><span className="text-white/55">{log.text}</span></div>)}</div><div className="min-h-0 overflow-auto border p-3" style={{ borderColor:`rgba(${theme.rgb}/.22)`,background:`radial-gradient(circle at 20% 20%,rgba(${theme.rgb}/.1),transparent 55%)` }}><p className="font-mono text-[7px] tracking-[.24em] text-white/30">JARVIS // TO SEONGJA</p><p className="mt-2 whitespace-pre-wrap font-mono text-[10px] leading-5 md:text-xs" style={{ color:theme.hex,textShadow:`0 0 14px ${theme.glow}` }}>{scrambled}<span className="ml-1 animate-pulse">▌</span></p></div></div></Panel>
+  return <Panel title="RESPONSE TERMINAL" eyebrow="JARVIS COGNITIVE OUTPUT" theme={theme}><button type="button" onClick={onClear} className="absolute right-3 top-3 z-10 border border-white/8 px-2 py-1 font-mono text-[7px] text-white/35">PURGE</button><div className="grid h-full min-h-0 gap-3 md:grid-cols-[1.1fr_1fr]"><div className="hidden min-h-0 overflow-auto pr-2 font-mono text-[9px] leading-5 md:block">{logs.slice(-8).map(log=><div key={log.id} className="grid grid-cols-[54px_44px_1fr] gap-2 border-b border-white/4 py-1"><span className="text-white/22">{log.time}</span><span style={{ color:log.channel==='WARN'?'#fca5a5':log.channel==='SYS'?'#a7f3d0':log.channel==='VOICE'?'#93c5fd':'#c4f5ff' }}>{log.channel}</span><span className="text-white/55">{log.text}</span></div>)}</div><div className="min-h-0 overflow-auto border p-3" style={{ borderColor:`rgba(${theme.rgb}/.22)`,background:`radial-gradient(circle at 20% 20%,rgba(${theme.rgb}/.1),transparent 55%)` }}><p className="font-mono text-[7px] tracking-[.24em] text-white/30">LATEST VERIFIED RESPONSE</p><p className="mt-2 whitespace-pre-wrap font-mono text-[10px] leading-5 md:text-xs" style={{ color:theme.hex,textShadow:`0 0 14px ${theme.glow}` }}>{scrambled}<span className="ml-1 animate-pulse">▌</span></p></div></div></Panel>
 }
 
 function useScramble(text:string) {
