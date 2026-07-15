@@ -20,13 +20,15 @@ class VoiceLoop(
     private var destroyed = false
     private var paused = true
     private var listening = false
+    private var usingOnDeviceInput = false
     private var outputCompletion: (() -> Unit)? = null
     private lateinit var gateway: JarvisVoiceGateway
+    private lateinit var onDeviceInput: OnDeviceSpeechInput
 
     private val gatewayListener = object : JarvisVoiceGateway.Listener {
         override fun onBackendReady() {
             handler.post {
-                onDiagnostic("VOICE BACKEND -> READY // PCM STREAMING")
+                onDiagnostic("VOICE BACKEND -> READY // PREMIUM PCM STREAMING")
                 onState(State.READY)
                 if (!paused && !listening) startDelayed(250L)
             }
@@ -39,8 +41,9 @@ class VoiceLoop(
                     return@post
                 }
                 listening = true
+                usingOnDeviceInput = false
                 onPartial("Listening...")
-                onDiagnostic("MIC -> RAW AUDIO ACTIVE // GOOGLE CHIME REMOVED")
+                onDiagnostic("MIC -> RAW PCM STREAM ACTIVE")
                 onState(State.LISTENING)
             }
         }
@@ -55,27 +58,12 @@ class VoiceLoop(
         }
 
         override fun onTranscript(text: String) {
-            handler.post {
-                listening = false
-                onRms(0f)
-                val normalized = SpeechCommandNormalizer.normalize(text)
-                if (normalized.commandText.isBlank()) {
-                    onDiagnostic("VOICE TRANSCRIPT -> EMPTY")
-                    onState(State.READY)
-                    if (!paused) startDelayed(700L)
-                    return@post
-                }
-                paused = true
-                onDiagnostic("VOICE TRANSCRIPT -> ${normalized.displayText.take(72)}")
-                onState(State.PROCESSING)
-                JarvisConversationBus.recordUser(normalized.displayText)
-                onSpeech(normalized.displayText)
-            }
+            handler.post { deliverTranscript(text, "streaming_backend") }
         }
 
         override fun onRms(value: Float) {
             handler.post {
-                if (!destroyed && listening) onRms(value)
+                if (!destroyed && listening && !usingOnDeviceInput) onRms(value)
             }
         }
 
@@ -103,15 +91,67 @@ class VoiceLoop(
             handler.post {
                 listening = false
                 onRms(0f)
-                onDiagnostic("VOICE ERROR -> $message")
-                onState(State.ERROR)
-                if (!destroyed && !paused) startDelayed(1_800L)
+                onDiagnostic("PREMIUM VOICE UNAVAILABLE -> $message")
+                if (!destroyed && !paused && onDeviceInput.isAvailable()) {
+                    onDiagnostic("VOICE INPUT -> SWITCHING TO ON-DEVICE MODE")
+                    startDelayed(350L)
+                } else {
+                    onState(State.ERROR)
+                }
+            }
+        }
+    }
+
+    private val onDeviceListener = object : OnDeviceSpeechInput.Listener {
+        override fun onReady() {
+            handler.post {
+                if (destroyed || paused) {
+                    onDeviceInput.stop()
+                    return@post
+                }
+                listening = true
+                usingOnDeviceInput = true
+                onPartial("Listening locally...")
+                onDiagnostic("MIC -> ANDROID ON-DEVICE SPEECH // API KEY FREE")
+                onState(State.LISTENING)
+            }
+        }
+
+        override fun onPartial(text: String) {
+            handler.post {
+                if (!destroyed && listening && usingOnDeviceInput) onPartial(text)
+            }
+        }
+
+        override fun onRms(value: Float) {
+            handler.post {
+                if (!destroyed && listening && usingOnDeviceInput) onRms(value)
+            }
+        }
+
+        override fun onFinal(text: String) {
+            handler.post { deliverTranscript(text, "android_on_device") }
+        }
+
+        override fun onError(code: Int, recoverable: Boolean) {
+            handler.post {
+                listening = false
+                usingOnDeviceInput = false
+                onRms(0f)
+                onDiagnostic("ON-DEVICE SPEECH -> ERROR $code")
+                if (!destroyed && !paused && recoverable) {
+                    onState(State.READY)
+                    startDelayed(650L)
+                } else {
+                    onState(State.ERROR)
+                }
             }
         }
     }
 
     init {
         JarvisConversationBus.initialize(activity.applicationContext)
+        onDeviceInput = OnDeviceSpeechInput(activity, onDeviceListener)
         gateway = JarvisVoiceGateway(
             context = activity.applicationContext,
             listener = gatewayListener
@@ -119,7 +159,11 @@ class VoiceLoop(
         gateway.connect()
     }
 
-    fun isBackendReady(): Boolean = gateway.isReady()
+    fun isBackendReady(): Boolean = gateway.isReady() || onDeviceInput.isAvailable()
+
+    fun isPremiumBackendReady(): Boolean = gateway.isReady()
+
+    fun isOnDeviceInputAvailable(): Boolean = onDeviceInput.isAvailable()
 
     fun startDelayed(delayMs: Long) {
         if (destroyed || paused) return
@@ -133,35 +177,37 @@ class VoiceLoop(
 
     fun manualRestart() {
         if (destroyed) return
-        onDiagnostic("VOICE -> MANUAL STREAM RESET")
+        onDiagnostic("VOICE -> MANUAL INPUT RESET")
         paused = false
         listening = false
+        usingOnDeviceInput = false
+        onDeviceInput.stop()
         gateway.stopSpeech()
-        handler.postDelayed({ gateway.startListening() }, 900L)
+        handler.postDelayed({ startNow() }, 700L)
     }
 
     fun pauseForProcessing() {
         paused = true
-        listening = false
-        handler.removeCallbacksAndMessages(START_TOKEN)
-        gateway.stopInput(sendForTranscription = false)
-        onRms(0f)
+        stopAllInput()
         onState(State.PROCESSING)
     }
 
     fun pauseForTts() {
         paused = true
-        listening = false
-        handler.removeCallbacksAndMessages(START_TOKEN)
-        gateway.stopInput(sendForTranscription = false)
-        onRms(0f)
-        onDiagnostic("VOICE INPUT -> PAUSED FOR STREAMING OUTPUT")
+        stopAllInput()
+        onDiagnostic("VOICE INPUT -> PAUSED FOR OUTPUT")
         onState(State.READY)
     }
 
     fun speak(text: String, onComplete: () -> Unit) {
         if (destroyed) return
         pauseForTts()
+        if (!gateway.isReady()) {
+            onDiagnostic("VOICE OUTPUT -> PREMIUM BACKEND OFFLINE // TEXT RESPONSE ONLY")
+            outputCompletion = null
+            handler.post(onComplete)
+            return
+        }
         outputCompletion = onComplete
         gateway.speak(text)
     }
@@ -180,10 +226,7 @@ class VoiceLoop(
 
     fun stop() {
         paused = true
-        listening = false
-        handler.removeCallbacksAndMessages(START_TOKEN)
-        gateway.stopInput(sendForTranscription = false)
-        onRms(0f)
+        stopAllInput()
         onState(State.READY)
     }
 
@@ -198,22 +241,65 @@ class VoiceLoop(
         destroyed = true
         paused = true
         listening = false
+        usingOnDeviceInput = false
         outputCompletion = null
         handler.removeCallbacksAndMessages(null)
+        onDeviceInput.destroy()
         gateway.destroy()
     }
 
     private fun startNow() {
         if (destroyed || paused || listening) return
-        if (!gateway.isReady()) {
-            onDiagnostic("VOICE BACKEND -> WAITING FOR LOCAL RUNTIME")
-            onState(State.UNAVAILABLE)
-            gateway.connect()
-            startDelayed(1_500L)
+        onState(State.READY)
+        if (gateway.isReady()) {
+            usingOnDeviceInput = false
+            gateway.startListening()
             return
         }
-        onState(State.READY)
-        gateway.startListening()
+
+        gateway.connect()
+        if (onDeviceInput.isAvailable()) {
+            usingOnDeviceInput = true
+            val started = onDeviceInput.start()
+            if (!started) {
+                usingOnDeviceInput = false
+                onDiagnostic("ON-DEVICE SPEECH -> START FAILED")
+                onState(State.ERROR)
+                startDelayed(1_200L)
+            }
+            return
+        }
+
+        onDiagnostic("VOICE INPUT -> NO LOCAL RECOGNIZER AVAILABLE")
+        onState(State.UNAVAILABLE)
+        startDelayed(1_800L)
+    }
+
+    private fun stopAllInput() {
+        listening = false
+        usingOnDeviceInput = false
+        handler.removeCallbacksAndMessages(START_TOKEN)
+        onDeviceInput.stop()
+        gateway.stopInput(sendForTranscription = false)
+        onRms(0f)
+    }
+
+    private fun deliverTranscript(text: String, source: String) {
+        listening = false
+        usingOnDeviceInput = false
+        onRms(0f)
+        val normalized = SpeechCommandNormalizer.normalize(text)
+        if (normalized.commandText.isBlank()) {
+            onDiagnostic("VOICE TRANSCRIPT -> EMPTY // $source")
+            onState(State.READY)
+            if (!paused) startDelayed(700L)
+            return
+        }
+        paused = true
+        onDiagnostic("VOICE TRANSCRIPT -> ${normalized.displayText.take(72)} // $source")
+        onState(State.PROCESSING)
+        JarvisConversationBus.recordUser(normalized.displayText)
+        onSpeech(normalized.displayText)
     }
 
     companion object {
