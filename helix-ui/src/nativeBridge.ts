@@ -6,6 +6,7 @@ declare global {
     JarvisAndroid?: {
       onHelixReady: () => void
       onCoreTap: () => void
+      onTextCommand?: (text: string) => void
       onHelixError?: (message: string) => void
     }
     jarvisHelix?: { receive: (payload: NativePayload) => void }
@@ -31,7 +32,7 @@ export function useNativeBridge() {
   const [logs, setLogs] = useState<TerminalLog[]>([
     { id: 1, time: '00:00:01', channel: 'CORE', text: 'HELIX WebGL lattice initialized.' },
     { id: 2, time: '00:00:02', channel: 'SYS', text: 'Native Android action fabric awaiting bridge.' },
-    { id: 3, time: '00:00:03', channel: 'VOICE', text: 'Voice-energy uniforms armed.' },
+    { id: 3, time: '00:00:03', channel: 'VOICE', text: 'Voice capture proofing armed.' },
   ])
 
   const pushLog = (channel: TerminalLog['channel'], text: string) => {
@@ -69,7 +70,27 @@ export function useNativeBridge() {
     return () => { delete window.jarvisHelix }
   }, [])
 
-  return { mode, metricsRef, metrics, transcript, response, telemetry, countdown, bridgeReady, logs, clearLogs: () => setLogs([]), tapCore: () => window.JarvisAndroid?.onCoreTap() }
+  const submitTextCommand = (text: string) => {
+    const clean = text.trim()
+    if (!clean) return
+    pushLog('CORE', `TEXT INPUT // ${clean.slice(0, 80)}`)
+    window.JarvisAndroid?.onTextCommand?.(clean)
+  }
+
+  return {
+    mode,
+    metricsRef,
+    metrics,
+    transcript,
+    response,
+    telemetry,
+    countdown,
+    bridgeReady,
+    logs,
+    clearLogs: () => setLogs([]),
+    tapCore: () => window.JarvisAndroid?.onCoreTap(),
+    submitTextCommand,
+  }
 }
 
 function channelFor(text: string): TerminalLog['channel'] {
