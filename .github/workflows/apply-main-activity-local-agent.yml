@@ -1,0 +1,35 @@
+name: Apply MainActivity local agent handoff
+
+on:
+  push:
+    branches:
+      - feat/local-device-agent
+    paths:
+      - tools/patch_main_activity_local_agent.py
+      - .github/workflows/apply-main-activity-local-agent.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/local-device-agent
+          fetch-depth: 0
+
+      - name: Apply activity handoff
+        run: python tools/patch_main_activity_local_agent.py
+
+      - name: Commit integration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || git commit -m "Coordinate wake listener and local command mode"
+          git push origin HEAD:feat/local-device-agent
