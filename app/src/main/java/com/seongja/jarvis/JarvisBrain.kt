@@ -104,7 +104,10 @@ class JarvisBrain(context: Context) {
         return null
     }
 
-    fun respond(rawInput: String): BrainResponse {
+    fun respond(
+        rawInput: String,
+        onCortexToken: ((String) -> Unit)? = null
+    ): BrainResponse {
         val input = rawInput.trim()
         interceptLocalDialogue(input)?.let { return it }
         localMemoryCommand(input)?.let { return it }
@@ -126,14 +129,21 @@ class JarvisBrain(context: Context) {
 
         if (!isCloudConfigured()) return configurationRequiredResponse()
         if (WebResearchIntent.shouldUseWeb(input)) {
-            return runCatching { webResearchResponse(input) }
-                .getOrElse { webResearchFallback(input, it) }
+            return runCatching { webResearchResponse(input, onCortexToken) }
+                .getOrElse { webResearchFallback(input, it, onCortexToken) }
         }
-        return cortexResponse(input)
+        return cortexResponse(input, onCortexToken)
     }
 
-    private fun cortexResponse(input: String): BrainResponse {
-        val result = cortexMesh.ask(input, memory.promptContext(input))
+    private fun cortexResponse(
+        input: String,
+        onCortexToken: ((String) -> Unit)?
+    ): BrainResponse {
+        val result = cortexMesh.ask(
+            input,
+            memory.promptContext(input),
+            onCortexToken
+        )
         val reply = OwnerIdentityCore.normalizeOperatorReference(result.reply)
         return BrainResponse(
             spoken = reply,
@@ -170,8 +180,15 @@ class JarvisBrain(context: Context) {
         )
     }
 
-    private fun webResearchResponse(input: String): BrainResponse {
-        val hybrid = webResearch.research(input, memory.promptContext(input))
+    private fun webResearchResponse(
+        input: String,
+        onCortexToken: ((String) -> Unit)?
+    ): BrainResponse {
+        val hybrid = webResearch.research(
+            input,
+            memory.promptContext(input),
+            onCortexToken
+        )
         val result = hybrid.research
         return BrainResponse(
             spoken = result.spokenSummary,
@@ -219,7 +236,11 @@ class JarvisBrain(context: Context) {
         )
     }
 
-    private fun webResearchFallback(input: String, error: Throwable): BrainResponse {
+    private fun webResearchFallback(
+        input: String,
+        error: Throwable,
+        onCortexToken: ((String) -> Unit)?
+    ): BrainResponse {
         val reason = error.message ?: error.javaClass.simpleName
         val fallbackPrompt = buildString {
             appendLine(input)
@@ -228,7 +249,7 @@ class JarvisBrain(context: Context) {
             appendLine(JarvisDirective.SUMMARIZATION)
             appendLine("Answer from existing knowledge only. State clearly that freshness cannot be verified. Do not pretend web research occurred.")
         }
-        val result = cortexMesh.ask(fallbackPrompt, memory.promptContext(input))
+        val result = cortexMesh.ask(fallbackPrompt, memory.promptContext(input), onCortexToken)
         val cleanReply = OwnerIdentityCore.normalizeOperatorReference(result.reply)
         return BrainResponse(
             spoken = "Live information could not be verified. Here is a knowledge-based summary, which may not be current. $cleanReply",

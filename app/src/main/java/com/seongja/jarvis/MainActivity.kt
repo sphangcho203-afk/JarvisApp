@@ -209,9 +209,18 @@ class MainActivity : Activity() {
         }
 
         hud.pushEvent("CORTEX MESH -> ROUTING REQUEST")
+        val cartesiaStreaming = voiceLoop.beginStreamingSpeech()
+        if (cartesiaStreaming) {
+            hud.pushEvent("VOICE -> CARTESIA SONIC CONTEXT OPEN")
+        }
         Thread {
             val started = System.currentTimeMillis()
-            val response = runCatching { brain.respond(clean) }.getOrElse { error ->
+            val response = runCatching {
+                brain.respond(clean) { token ->
+                    if (cartesiaStreaming) voiceLoop.pushStreamingSpeech(token)
+                }
+            }.getOrElse { error ->
+                if (cartesiaStreaming) voiceLoop.cancelStreamingSpeech()
                 BrainResponse(
                     spoken = "The cortex mesh request failed: ${error.message ?: error.javaClass.simpleName}.",
                     display = "CORTEX MESH ERROR // ${error.message ?: error.javaClass.simpleName}",
@@ -251,7 +260,17 @@ class MainActivity : Activity() {
                 hud.setProcessing(false)
                 brainBusy.set(false)
                 if (response.mode != BrainMode.ALERT) soundEngine.success()
-                speak(response.spoken)
+                val streamed = cartesiaStreaming && voiceLoop.finishStreamingSpeech {
+                    runOnUiThread {
+                        lastTtsFinishedAt = SystemClock.elapsedRealtime()
+                        cancelTtsWatchdog()
+                        hud.pushEvent("VOICE -> CARTESIA COMPLETE")
+                        if (resumed && hasMicPermission() && !brainBusy.get()) {
+                            voiceLoop.resumeAfterTts(900L)
+                        }
+                    }
+                }
+                if (!streamed) speak(response.spoken) else armTtsWatchdog()
             }
         }.start()
     }
@@ -502,11 +521,17 @@ class MainActivity : Activity() {
             announcedOnline = true
             mainHandler.postDelayed({
                 if (resumed && !brainBusy.get()) {
-                    if (voiceLoop.isPremiumBackendReady()) {
-                        speak("Systems online. Premium streaming voice is active, Sir.")
-                    } else {
-                        hud.pushEvent("VOICE -> LOCAL JARVIS OUTPUT // ANDROID TTS")
-                        speak("Systems online. Your local Jarvis voice is active, Sir.")
+                    when {
+                        voiceLoop.isCartesiaConfigured() -> {
+                            hud.pushEvent("VOICE -> CARTESIA SONIC-3 // GEMMA EN-GB")
+                            speak("Systems online. Cartesia Sonic voice is active, Boss.")
+                        }
+                        voiceLoop.isPremiumBackendReady() ->
+                            speak("Systems online. Premium streaming voice is active, Boss.")
+                        else -> {
+                            hud.pushEvent("VOICE -> LOCAL JARVIS OUTPUT // ANDROID TTS")
+                            speak("Systems online. Your local voice is active, Boss.")
+                        }
                     }
                 }
             }, 320L)
@@ -523,10 +548,10 @@ class MainActivity : Activity() {
         voiceLoop.pauseForTts()
         cancelTtsWatchdog()
         hud.pushEvent(
-            if (voiceLoop.isPremiumBackendReady()) {
-                "VOICE -> STREAM REQUEST"
-            } else {
-                "VOICE -> LOCAL JARVIS SYNTHESIS"
+            when {
+                voiceLoop.isCartesiaConfigured() -> "VOICE -> CARTESIA SONIC STREAM"
+                voiceLoop.isPremiumBackendReady() -> "VOICE -> STREAM REQUEST"
+                else -> "VOICE -> LOCAL JARVIS SYNTHESIS"
             }
         )
 
@@ -541,16 +566,21 @@ class MainActivity : Activity() {
             }
         }
 
-        if (voiceLoop.isPremiumBackendReady()) {
-            ttsResumeWatchdog = Runnable {
-                if (resumed && hasMicPermission() && !brainBusy.get()) {
-                    hud.pushEvent("VOICE -> STREAM WATCHDOG RELEASE")
-                    lastTtsFinishedAt = SystemClock.elapsedRealtime()
-                    voiceLoop.stopSpeaking()
-                    voiceLoop.resumeAfterTts(700L)
-                }
-            }.also { mainHandler.postDelayed(it, 45_000L) }
+        if (voiceLoop.isCartesiaConfigured() || voiceLoop.isPremiumBackendReady()) {
+            armTtsWatchdog()
         }
+    }
+
+    private fun armTtsWatchdog() {
+        cancelTtsWatchdog()
+        ttsResumeWatchdog = Runnable {
+            if (resumed && hasMicPermission() && !brainBusy.get()) {
+                hud.pushEvent("VOICE -> STREAM WATCHDOG RELEASE")
+                lastTtsFinishedAt = SystemClock.elapsedRealtime()
+                voiceLoop.stopSpeaking()
+                voiceLoop.resumeAfterTts(700L)
+            }
+        }.also { mainHandler.postDelayed(it, 60_000L) }
     }
 
     private fun speechSafeText(text: String): String {

@@ -27,13 +27,17 @@ class HybridWebResearchClient(
     fun configuredSearchProviders(): List<SearchGridProvider> =
         searchGrid.configuredProviders()
 
-    fun research(userInput: String, memoryContext: String): Result {
+    fun research(
+        userInput: String,
+        memoryContext: String,
+        onToken: ((String) -> Unit)? = null
+    ): Result {
         val attempts = mutableListOf<String>()
         val failures = mutableListOf<String>()
 
         if (searchGrid.isConfigured()) {
             attempts += "Tavily + Exa Search Grid"
-            runCatching { searchGrid.research(userInput, memoryContext) }
+            runCatching { searchGrid.research(userInput, memoryContext, onToken) }
                 .onSuccess { result ->
                     val providers = result.providers
                         .joinToString(" + ") { it.displayName }

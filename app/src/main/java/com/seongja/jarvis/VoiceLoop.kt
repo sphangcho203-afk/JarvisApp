@@ -28,6 +28,12 @@ class VoiceLoop(
     private lateinit var gateway: JarvisVoiceGateway
     private lateinit var onDeviceInput: OnDeviceSpeechInput
     private lateinit var localVoice: LocalJarvisVoice
+    private lateinit var cartesiaVoice: CartesiaSonicClient
+    private val streamingFilter = StreamingResponseFilter()
+    private val streamingFallbackText = StringBuilder()
+    private var cartesiaStreaming = false
+    private var cartesiaAudioStarted = false
+    private var cartesiaTextReceived = false
 
     private val gatewayListener = object : JarvisVoiceGateway.Listener {
         override fun onBackendReady() {
@@ -223,6 +229,51 @@ class VoiceLoop(
         }
     }
 
+    private val cartesiaListener = object : CartesiaSonicClient.Listener {
+        override fun onReady(label: String) {
+            handler.post { onDiagnostic("VOICE OUTPUT -> $label READY") }
+        }
+
+        override fun onAudioStarted(label: String) {
+            handler.post {
+                cartesiaAudioStarted = true
+                onDiagnostic("VOICE OUTPUT -> $label SPEAKING")
+                onState(State.READY)
+            }
+        }
+
+        override fun onCompleted() {
+            handler.post {
+                cartesiaStreaming = false
+                onDiagnostic("VOICE OUTPUT -> CARTESIA COMPLETE")
+                val completion = outputCompletion
+                outputCompletion = null
+                completion?.invoke()
+            }
+        }
+
+        override fun onDiagnostic(message: String) {
+            handler.post { onDiagnostic(message) }
+        }
+
+        override fun onError(message: String) {
+            handler.post {
+                val fallback = JarvisResponseSanitizer.spoken(streamingFallbackText.toString())
+                val shouldFallback = !cartesiaAudioStarted && fallback.isNotBlank()
+                cartesiaStreaming = false
+                onDiagnostic("VOICE OUTPUT -> CARTESIA ERROR // $message")
+                if (shouldFallback) {
+                    onDiagnostic("VOICE OUTPUT -> ANDROID LOCAL FALLBACK")
+                    localVoice.speak(fallback)
+                } else {
+                    val completion = outputCompletion
+                    outputCompletion = null
+                    completion?.invoke()
+                }
+            }
+        }
+    }
+
     private val localVoiceListener = object : LocalJarvisVoice.Listener {
         override fun onReady(label: String) {
             handler.post { onDiagnostic("VOICE OUTPUT -> $label READY") }
@@ -258,6 +309,7 @@ class VoiceLoop(
         JarvisConversationBus.initialize(activity.applicationContext)
         onDeviceInput = OnDeviceSpeechInput(activity, onDeviceListener)
         localVoice = LocalJarvisVoice(activity.applicationContext, localVoiceListener)
+        cartesiaVoice = CartesiaSonicClient(activity.applicationContext, cartesiaListener)
         gateway = JarvisVoiceGateway(
             context = activity.applicationContext,
             listener = gatewayListener
@@ -269,7 +321,10 @@ class VoiceLoop(
 
     fun isPremiumBackendReady(): Boolean = gateway.isReady()
 
-    fun isVoiceOutputReady(): Boolean = gateway.isReady() || localVoice.isReady()
+    fun isVoiceOutputReady(): Boolean =
+        cartesiaVoice.isConfigured() || gateway.isReady() || localVoice.isReady()
+
+    fun isCartesiaConfigured(): Boolean = cartesiaVoice.isConfigured()
 
     fun isOnDeviceInputAvailable(): Boolean = onDeviceInput.isAvailable()
 
@@ -312,11 +367,64 @@ class VoiceLoop(
         onState(State.READY)
     }
 
+    fun beginStreamingSpeech(): Boolean {
+        if (destroyed || !cartesiaVoice.isConfigured()) return false
+        pauseForTts()
+        localVoice.stop()
+        gateway.stopSpeech()
+        cartesiaVoice.cancel()
+        streamingFilter.reset()
+        streamingFallbackText.setLength(0)
+        cartesiaAudioStarted = false
+        cartesiaTextReceived = false
+        outputCompletion = null
+        cartesiaStreaming = cartesiaVoice.begin()
+        if (cartesiaStreaming) {
+            onDiagnostic("VOICE OUTPUT -> CARTESIA CONTEXT OPEN // SONIC-3")
+        }
+        return cartesiaStreaming
+    }
+
+    fun pushStreamingSpeech(token: String) {
+        if (!cartesiaStreaming || destroyed || token.isEmpty()) return
+        cartesiaTextReceived = true
+        streamingFallbackText.append(token)
+        val audible = streamingFilter.push(token)
+        if (audible.isNotEmpty()) cartesiaVoice.push(audible)
+    }
+
+    fun finishStreamingSpeech(onComplete: () -> Unit): Boolean {
+        if (!cartesiaStreaming || destroyed || !cartesiaTextReceived) {
+            if (cartesiaStreaming) cartesiaVoice.cancel()
+            cartesiaStreaming = false
+            return false
+        }
+        outputCompletion = onComplete
+        val tail = streamingFilter.finish()
+        if (tail.isNotEmpty()) cartesiaVoice.push(tail)
+        cartesiaVoice.finish()
+        return true
+    }
+
+    fun cancelStreamingSpeech() {
+        cartesiaStreaming = false
+        cartesiaTextReceived = false
+        streamingFilter.reset()
+        streamingFallbackText.setLength(0)
+        cartesiaVoice.cancel()
+    }
+
     fun speak(text: String, onComplete: () -> Unit) {
         if (destroyed) return
         val clean = JarvisResponseSanitizer.spoken(text)
         if (clean.isBlank()) {
             handler.post(onComplete)
+            return
+        }
+
+        if (cartesiaVoice.isConfigured() && beginStreamingSpeech()) {
+            pushStreamingSpeech(clean)
+            finishStreamingSpeech(onComplete)
             return
         }
 
@@ -338,6 +446,7 @@ class VoiceLoop(
 
     fun stopSpeaking() {
         outputCompletion = null
+        cancelStreamingSpeech()
         localVoice.stop()
         gateway.stopSpeech()
     }
@@ -373,6 +482,7 @@ class VoiceLoop(
         outputCompletion = null
         handler.removeCallbacksAndMessages(null)
         onDeviceInput.destroy()
+        cartesiaVoice.destroy()
         localVoice.destroy()
         gateway.destroy()
     }

@@ -70,7 +70,11 @@ class SearchGridResearchClient(
         )
     }
 
-    fun research(userInput: String, memoryContext: String): SearchGridResult {
+    fun research(
+        userInput: String,
+        memoryContext: String,
+        onToken: ((String) -> Unit)? = null
+    ): SearchGridResult {
         val started = System.currentTimeMillis()
         val plan = createPlan(userInput)
         val now = System.currentTimeMillis()
@@ -112,7 +116,7 @@ class SearchGridResearchClient(
         }
 
         val synthesisPrompt = buildSynthesisPrompt(plan, evidence)
-        val mesh = cortexMesh.ask(synthesisPrompt, memoryContext)
+        val mesh = cortexMesh.ask(synthesisPrompt, memoryContext, onToken)
         val cleanAnswer = JarvisResponseSanitizer.clean(mesh.reply, groundedResearch = true)
         val elapsed = System.currentTimeMillis() - started
         val sources = evidence.map {
