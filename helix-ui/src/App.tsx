@@ -53,7 +53,7 @@ class HelixErrorBoundary extends Component<BoundaryProps, BoundaryState> {
             <p style={{ color: '#4adeff', fontSize: '11px', letterSpacing: '.28em', margin: 0 }}>JARVIS // HELIX</p>
             <h1 style={{ fontSize: '18px', letterSpacing: '.15em', margin: '18px 0 10px' }}>RENDER FALLBACK ONLINE</h1>
             <p style={{ color: 'rgba(255,255,255,.56)', fontSize: '12px', lineHeight: 1.8, margin: 0 }}>
-              The WebGL presentation layer stopped, but the native Android voice and command core remains available.
+              The WebGL presentation layer stopped, but the native Android command core remains available.
             </p>
             <pre
               style={{
@@ -79,10 +79,17 @@ class HelixErrorBoundary extends Component<BoundaryProps, BoundaryState> {
               </button>
               <button
                 type="button"
+                onClick={() => window.JarvisAndroid?.onTextCommand?.('configure APIs')}
+                style={{ background: 'transparent', border: '1px solid rgba(74,222,255,.38)', color: '#4adeff', font: 'inherit', fontSize: '10px', letterSpacing: '.16em', padding: '10px 14px' }}
+              >
+                API SETUP
+              </button>
+              <button
+                type="button"
                 onClick={() => window.JarvisAndroid?.onCoreTap()}
                 style={{ background: 'transparent', border: '1px solid rgba(74,222,255,.38)', color: '#4adeff', font: 'inherit', fontSize: '10px', letterSpacing: '.16em', padding: '10px 14px' }}
               >
-                RECALIBRATE VOICE
+                RESET VOICE
               </button>
             </div>
           </section>
@@ -109,6 +116,7 @@ export default function App() {
         bridgeReady={bridge.bridgeReady}
         logs={bridge.logs}
         onCoreTap={bridge.tapCore}
+        onTextCommand={bridge.submitTextCommand}
         onClearLogs={bridge.clearLogs}
       />
     </HelixErrorBoundary>
