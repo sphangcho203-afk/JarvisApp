@@ -105,7 +105,7 @@ class JarvisWakeService : Service(), RecognitionListener {
 
     private fun startListeningSoon(delayMs: Long) {
         if (destroyed || pausedForConversation || !isEnabled(this)) return
-        handler.removeCallbacks(START_TOKEN)
+        handler.removeCallbacksAndMessages(START_TOKEN)
         handler.postAtTime(
             { startListening() },
             START_TOKEN,
@@ -138,7 +138,7 @@ class JarvisWakeService : Service(), RecognitionListener {
     private fun pauseRecognition() {
         pausedForConversation = true
         listening = false
-        handler.removeCallbacks(START_TOKEN)
+        handler.removeCallbacksAndMessages(START_TOKEN)
         runCatching { recognizer?.cancel() }
     }
 
