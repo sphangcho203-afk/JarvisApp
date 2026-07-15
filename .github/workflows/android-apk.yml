@@ -10,7 +10,7 @@ on:
       - main
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: jarvis-android-${{ github.workflow }}-${{ github.ref }}
@@ -27,32 +27,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
-          fetch-depth: 0
-
-      - name: Apply Cartesia integration patch
-        if: github.event_name == 'pull_request' && github.head_ref == 'feature/cartesia-sonic-streaming'
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 scripts/patch_cartesia_integration.py
-          if ! git diff --quiet; then
-            git config user.name 'Jarvis Repair Bot'
-            git config user.email 'actions@users.noreply.github.com'
-            git add \
-              app/src/main/java/com/seongja/jarvis/HybridWebResearchClient.kt \
-              app/src/main/java/com/seongja/jarvis/SearchGridResearchClient.kt \
-              app/src/main/java/com/seongja/jarvis/JarvisBrain.kt \
-              app/src/main/java/com/seongja/jarvis/VoiceLoop.kt \
-              app/src/main/java/com/seongja/jarvis/MainActivity.kt \
-              app/src/main/java/com/seongja/jarvis/CloudConfigActivity.kt \
-              app/build.gradle.kts \
-              helix-ui/package.json \
-              helix-ui/src/Hud.tsx
-            git commit -m 'Wire Cartesia Sonic into live cortex streaming'
-            git push origin HEAD:feature/cartesia-sonic-streaming
-          fi
 
       - name: Set up Node 22
         uses: actions/setup-node@v7
@@ -86,18 +60,36 @@ jobs:
           python3 -m http.server 4173 --directory helix-ui/dist > helix-server.log 2>&1 &
           SERVER_PID=$!
           trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+          READY=0
           for _ in $(seq 1 30); do
-            curl -fsS http://127.0.0.1:4173/ > /dev/null && break
+            if curl -fsS http://127.0.0.1:4173/ > /dev/null; then
+              READY=1
+              break
+            fi
             sleep 0.5
           done
-          "$CHROME" --headless=new --no-sandbox --disable-dev-shm-usage --use-gl=swiftshader --enable-webgl --virtual-time-budget=7000 --window-size=1280,720 --screenshot=helix-smoke.png --dump-dom http://127.0.0.1:4173/ > helix-dom.html
+          test "$READY" = 1
+          "$CHROME" \
+            --headless=new \
+            --no-sandbox \
+            --disable-dev-shm-usage \
+            --use-gl=swiftshader \
+            --enable-webgl \
+            --virtual-time-budget=7000 \
+            --window-size=1280,720 \
+            --screenshot=helix-smoke.png \
+            --dump-dom \
+            http://127.0.0.1:4173/ > helix-dom.html
           grep -q 'BUILD 0.9.18' helix-dom.html
           grep -q 'API SETUP' helix-dom.html
           if grep -q 'TYPE COMMAND' helix-dom.html || grep -q '>SEND<' helix-dom.html; then
             echo 'Chat input controls are still present.' >&2
             exit 1
           fi
-          ! grep -q 'RENDER FALLBACK ONLINE' helix-dom.html
+          if grep -q 'RENDER FALLBACK ONLINE' helix-dom.html; then
+            echo 'Helix entered render fallback.' >&2
+            exit 1
+          fi
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -121,7 +113,13 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          gradle :app:lintDebug :app:testDebugUnitTest :app:assembleDebug --stacktrace --warning-mode all --no-daemon 2>&1 | tee android-build.log
+          gradle \
+            :app:lintDebug \
+            :app:testDebugUnitTest \
+            :app:assembleDebug \
+            --stacktrace \
+            --warning-mode all \
+            --no-daemon 2>&1 | tee android-build.log
 
       - name: Verify Cartesia streaming APK
         shell: bash
@@ -130,24 +128,36 @@ jobs:
           APK="$(find app/build/outputs/apk/debug -name '*.apk' -type f | head -n 1)"
           test -n "$APK"
           BUILD_TOOLS="$ANDROID_HOME/build-tools/35.0.0"
+
           "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" 2>&1 | tee apk-signature.log
           "$BUILD_TOOLS/zipalign" -c -v 4 "$APK" 2>&1 | tee apk-zipalign.log
           "$BUILD_TOOLS/aapt" dump badging "$APK" | tee apk-badging.log
           "$BUILD_TOOLS/aapt" dump permissions "$APK" | tee apk-permissions.log
           unzip -l "$APK" | tee apk-contents.log
+
           grep -q "package: name='com.seongja.jarvis'" apk-badging.log
           grep -q "versionName='0.9.18-cartesia-sonic'" apk-badging.log
+          grep -q "sdkVersion:'28'" apk-badging.log
+          grep -q "targetSdkVersion:'35'" apk-badging.log
           grep -q "android.permission.INTERNET" apk-permissions.log
+          grep -q "android.permission.RECORD_AUDIO" apk-permissions.log
           grep -q 'classes.dex' apk-contents.log
           grep -q 'assets/helix/index.html' apk-contents.log
+          grep -q 'assets/helix/assets/.*\.js' apk-contents.log
+          grep -q 'assets/helix/assets/.*\.css' apk-contents.log
+
           grep -q 'MODEL_ID = "sonic-3"' app/src/main/java/com/seongja/jarvis/CartesiaVoiceSettings.kt
           grep -q '62ae83ad-4f6a-430b-af41-a9bede9286ca' app/src/main/java/com/seongja/jarvis/CartesiaVoiceSettings.kt
+          grep -q 'const val LANGUAGE = "en"' app/src/main/java/com/seongja/jarvis/CartesiaVoiceSettings.kt
           grep -q 'const val SPEED = 1.10' app/src/main/java/com/seongja/jarvis/CartesiaVoiceSettings.kt
           grep -q 'pcm_s16le' app/src/main/java/com/seongja/jarvis/CartesiaSonicClient.kt
+          grep -q 'AudioTrack.MODE_STREAM' app/src/main/java/com/seongja/jarvis/CartesiaSonicClient.kt
           grep -q 'streamGenerateContent?alt=sse' app/src/main/java/com/seongja/jarvis/CortexStreamingTransport.kt
           grep -q 'put("stream", true)' app/src/main/java/com/seongja/jarvis/CortexStreamingTransport.kt
           grep -q 'beginStreamingSpeech' app/src/main/java/com/seongja/jarvis/VoiceLoop.kt
+          grep -q 'brain.respond(clean) { token' app/src/main/java/com/seongja/jarvis/MainActivity.kt
           grep -q 'SAVE + TEST CARTESIA VOICE' app/src/main/java/com/seongja/jarvis/CloudConfigActivity.kt
+          grep -q 'SecureVoiceRegistry' app/src/main/java/com/seongja/jarvis/CloudConfigActivity.kt
           grep -q 'HIDDEN_TAGS' app/src/main/java/com/seongja/jarvis/StreamingResponseFilter.kt
 
       - name: Upload validation logs
@@ -167,6 +177,7 @@ jobs:
             apk-permissions.log
             apk-contents.log
             app/build/reports/lint-results-debug.html
+            app/build/reports/tests/testDebugUnitTest/
           if-no-files-found: warn
           retention-days: 14
 
