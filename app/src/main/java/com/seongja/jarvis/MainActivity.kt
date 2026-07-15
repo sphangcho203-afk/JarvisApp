@@ -505,8 +505,8 @@ class MainActivity : Activity() {
                     if (voiceLoop.isPremiumBackendReady()) {
                         speak("Systems online. Premium streaming voice is active, Sir.")
                     } else {
-                        hud.pushEvent("VOICE -> ON-DEVICE COMMAND MODE // API KEY FREE")
-                        hud.setTranscript("Local command mode online")
+                        hud.pushEvent("VOICE -> LOCAL JARVIS OUTPUT // ANDROID TTS")
+                        speak("Systems online. Your local Jarvis voice is active, Sir.")
                     }
                 }
             }, 320L)
@@ -526,7 +526,7 @@ class MainActivity : Activity() {
             if (voiceLoop.isPremiumBackendReady()) {
                 "VOICE -> STREAM REQUEST"
             } else {
-                "VOICE -> TEXT RESPONSE // LOCAL INPUT MODE"
+                "VOICE -> LOCAL JARVIS SYNTHESIS"
             }
         )
 
@@ -554,7 +554,7 @@ class MainActivity : Activity() {
     }
 
     private fun speechSafeText(text: String): String {
-        val plain = text
+        val plain = JarvisResponseSanitizer.spoken(text)
             .replace(Regex("```[\\s\\S]*?```"), " Code is displayed on screen. ")
             .replace(Regex("[*_#>`]"), " ")
             .replace(Regex("\\s+"), " ")

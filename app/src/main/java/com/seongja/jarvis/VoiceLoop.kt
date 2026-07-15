@@ -27,6 +27,7 @@ class VoiceLoop(
     private var outputCompletion: (() -> Unit)? = null
     private lateinit var gateway: JarvisVoiceGateway
     private lateinit var onDeviceInput: OnDeviceSpeechInput
+    private lateinit var localVoice: LocalJarvisVoice
 
     private val gatewayListener = object : JarvisVoiceGateway.Listener {
         override fun onBackendReady() {
@@ -222,9 +223,41 @@ class VoiceLoop(
         }
     }
 
+    private val localVoiceListener = object : LocalJarvisVoice.Listener {
+        override fun onReady(label: String) {
+            handler.post { onDiagnostic("VOICE OUTPUT -> $label READY") }
+        }
+
+        override fun onStarted(label: String) {
+            handler.post {
+                onDiagnostic("VOICE OUTPUT -> $label SPEAKING")
+                onState(State.READY)
+            }
+        }
+
+        override fun onCompleted() {
+            handler.post {
+                onDiagnostic("VOICE OUTPUT -> LOCAL COMPLETE")
+                val completion = outputCompletion
+                outputCompletion = null
+                completion?.invoke()
+            }
+        }
+
+        override fun onError(message: String) {
+            handler.post {
+                onDiagnostic("VOICE OUTPUT -> LOCAL ERROR // $message")
+                val completion = outputCompletion
+                outputCompletion = null
+                completion?.invoke()
+            }
+        }
+    }
+
     init {
         JarvisConversationBus.initialize(activity.applicationContext)
         onDeviceInput = OnDeviceSpeechInput(activity, onDeviceListener)
+        localVoice = LocalJarvisVoice(activity.applicationContext, localVoiceListener)
         gateway = JarvisVoiceGateway(
             context = activity.applicationContext,
             listener = gatewayListener
@@ -235,6 +268,8 @@ class VoiceLoop(
     fun isBackendReady(): Boolean = gateway.isReady() || onDeviceInput.isAvailable()
 
     fun isPremiumBackendReady(): Boolean = gateway.isReady()
+
+    fun isVoiceOutputReady(): Boolean = gateway.isReady() || localVoice.isReady()
 
     fun isOnDeviceInputAvailable(): Boolean = onDeviceInput.isAvailable()
 
@@ -279,19 +314,31 @@ class VoiceLoop(
 
     fun speak(text: String, onComplete: () -> Unit) {
         if (destroyed) return
-        pauseForTts()
-        if (!gateway.isReady()) {
-            onDiagnostic("VOICE OUTPUT -> PREMIUM BACKEND OFFLINE // TEXT RESPONSE ONLY")
-            outputCompletion = null
+        val clean = JarvisResponseSanitizer.spoken(text)
+        if (clean.isBlank()) {
             handler.post(onComplete)
             return
         }
+
+        pauseForTts()
         outputCompletion = onComplete
-        gateway.speak(text)
+        if (gateway.isReady()) {
+            onDiagnostic("VOICE OUTPUT -> PREMIUM PCM")
+            gateway.speak(clean)
+            return
+        }
+
+        onDiagnostic("VOICE OUTPUT -> LOCAL JARVIS SYNTHESIS")
+        if (!localVoice.speak(clean)) {
+            val completion = outputCompletion
+            outputCompletion = null
+            handler.post { completion?.invoke() }
+        }
     }
 
     fun stopSpeaking() {
         outputCompletion = null
+        localVoice.stop()
         gateway.stopSpeech()
     }
 
@@ -326,6 +373,7 @@ class VoiceLoop(
         outputCompletion = null
         handler.removeCallbacksAndMessages(null)
         onDeviceInput.destroy()
+        localVoice.destroy()
         gateway.destroy()
     }
 

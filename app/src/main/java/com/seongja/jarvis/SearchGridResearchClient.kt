@@ -113,6 +113,7 @@ class SearchGridResearchClient(
 
         val synthesisPrompt = buildSynthesisPrompt(plan, evidence)
         val mesh = cortexMesh.ask(synthesisPrompt, memoryContext)
+        val cleanAnswer = JarvisResponseSanitizer.clean(mesh.reply, groundedResearch = true)
         val elapsed = System.currentTimeMillis() - started
         val sources = evidence.map {
             WebSource(
@@ -123,8 +124,8 @@ class SearchGridResearchClient(
 
         return SearchGridResult(
             research = WebResearchResult(
-                answer = mesh.reply,
-                spokenSummary = createSpokenSummary(mesh.reply),
+                answer = cleanAnswer,
+                spokenSummary = createSpokenSummary(cleanAnswer),
                 sources = sources,
                 searchQueries = plan.queries,
                 model = mesh.model,
@@ -360,7 +361,7 @@ class SearchGridResearchClient(
     ): String = buildString {
         appendLine("LIVE SEARCH GRID SYNTHESIS")
         appendLine("Current device time: ${ZonedDateTime.now()}")
-        appendLine("Operator request: ${plan.originalRequest}")
+        appendLine("Seongja asked: ${plan.originalRequest}")
         appendLine()
         appendLine(JarvisDirective.RESEARCH)
         appendLine(JarvisDirective.SUMMARIZATION)
@@ -370,6 +371,9 @@ class SearchGridResearchClient(
         appendLine("Do not invent a citation number, URL, quotation, date, or retrieved fact.")
         appendLine("When evidence conflicts, describe the conflict and reduce confidence.")
         appendLine("Do not print raw URLs because the Android client attaches them below the answer.")
+        appendLine("Speak directly to Seongja as you or Sir. Never call him the user or operator.")
+        appendLine("Return only the final intelligence brief. Never output <think>, <analysis>, scratchpad, or preparation text.")
+        appendLine("Start with the actual answer. Do not say that you can provide a summary or mention a knowledge cutoff.")
         appendLine()
         appendLine("EVIDENCE PACKET")
         evidence.forEachIndexed { index, source ->
