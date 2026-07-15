@@ -193,7 +193,7 @@ object CortexMath {
         } else {
             (nowMs - profile.lastUsedAtMs).coerceAtLeast(0L)
         }
-        val freshness = 1.0 - exp(-idleMs / 45_000L)
+        val freshness = 1.0 - exp(-idleMs / 45_000.0)
         val priorityUtility = profile.priority.coerceIn(1, 10) / 10.0
         val stability = exp(-profile.failureStreak.coerceAtMost(8) / 2.5)
 
