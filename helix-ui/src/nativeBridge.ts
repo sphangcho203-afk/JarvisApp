@@ -6,8 +6,11 @@ declare global {
     JarvisAndroid?: {
       onHelixReady: () => void
       onCoreTap: () => void
-      onTextCommand?: (text: string) => void
       onHelixError?: (message: string) => void
+    }
+    JarvisCommandBridge?: {
+      openApiSetup: () => void
+      onTextCommand: (text: string) => void
     }
     jarvisHelix?: { receive: (payload: NativePayload) => void }
   }
@@ -74,7 +77,11 @@ export function useNativeBridge() {
     const clean = text.trim()
     if (!clean) return
     pushLog('CORE', `TEXT INPUT // ${clean.slice(0, 80)}`)
-    window.JarvisAndroid?.onTextCommand?.(clean)
+    if (isApiSetupCommand(clean)) {
+      window.JarvisCommandBridge?.openApiSetup()
+      return
+    }
+    window.JarvisCommandBridge?.onTextCommand(clean)
   }
 
   return {
@@ -88,9 +95,22 @@ export function useNativeBridge() {
     bridgeReady,
     logs,
     clearLogs: () => setLogs([]),
-    tapCore: () => window.JarvisAndroid?.onCoreTap(),
+    tapCore: () => {
+      if (!telemetry.cloudConfigured && window.JarvisCommandBridge) {
+        window.JarvisCommandBridge.openApiSetup()
+      } else {
+        window.JarvisAndroid?.onCoreTap()
+      }
+    },
     submitTextCommand,
   }
+}
+
+function isApiSetupCommand(text: string) {
+  const normalized = text.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim()
+  const mentionsApi = normalized.split(' ').some(token => token === 'api' || token === 'apis')
+  const setupIntent = ['configure', 'connect', 'setup', 'setting', 'settings'].some(token => normalized.includes(token))
+  return mentionsApi && setupIntent
 }
 
 function channelFor(text: string): TerminalLog['channel'] {
