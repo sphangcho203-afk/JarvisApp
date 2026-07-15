@@ -34,15 +34,35 @@ data class SearchGridCredential(
     fun isCoolingDown(nowMs: Long = System.currentTimeMillis()): Boolean =
         cooldownUntilMs > nowMs
 
-    fun healthLabel(nowMs: Long = System.currentTimeMillis()): String = when {
-        !enabled -> "DISABLED"
-        apiKey.isBlank() -> "NOT CONFIGURED"
-        isCoolingDown(nowMs) ->
-            "COOLDOWN ${((cooldownUntilMs - nowMs) / 1_000L).coerceAtLeast(1L)}s"
-        lastStatusCode in 200..299 -> "ONLINE ${lastLatencyMs}ms"
-        lastError.isNotBlank() ->
-            "ERROR ${lastStatusCode.takeIf { it > 0 } ?: "NET"}"
-        else -> "READY"
+    fun healthLabel(nowMs: Long = System.currentTimeMillis()): String {
+        val status = lastStatusCode.takeIf { it > 0 }?.toString() ?: "NET"
+        val safeError = lastError
+            .replace(Regex("tvly-[A-Za-z0-9_-]+"), "[redacted]")
+            .replace(Regex("(?i)(authorization|x-api-key)\\s*[:=]\\s*[^\\s,;]+"), "$1=[redacted]")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .take(150)
+
+        return when {
+            !enabled -> "DISABLED"
+            apiKey.isBlank() -> "NOT CONFIGURED"
+            isCoolingDown(nowMs) -> buildString {
+                append("COOLDOWN ")
+                append(((cooldownUntilMs - nowMs) / 1_000L).coerceAtLeast(1L))
+                append("s")
+                if (lastStatusCode > 0 || safeError.isNotBlank()) {
+                    append(" // HTTP ")
+                    append(status)
+                }
+                if (safeError.isNotBlank()) {
+                    append(" // ")
+                    append(safeError)
+                }
+            }
+            lastStatusCode in 200..299 -> "ONLINE ${lastLatencyMs}ms"
+            safeError.isNotBlank() -> "ERROR $status // $safeError"
+            else -> "READY"
+        }
     }
 }
 
