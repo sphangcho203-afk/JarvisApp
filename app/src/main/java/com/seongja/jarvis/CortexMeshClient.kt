@@ -6,8 +6,13 @@ class CortexMeshException(message: String) : Exception(message)
 
 class CortexMeshClient(private val store: SecureCortexRegistry) {
     private val transport = CortexProviderTransport()
+    private val streamingTransport = CortexStreamingTransport()
 
-    fun ask(userInput: String, memoryContext: String): CortexMeshResult {
+    fun ask(
+        userInput: String,
+        memoryContext: String,
+        onToken: ((String) -> Unit)? = null
+    ): CortexMeshResult {
         val registry = store.load()
         val task = CortexTaskClassifier.classify(userInput)
         val now = System.currentTimeMillis()
@@ -58,16 +63,32 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
 
                 networkAttempts++
                 attempts += "${profile.label}:$model"
+                var emittedText = false
                 try {
-                    val response = transport.request(
-                        profile = profile,
-                        model = model,
-                        systemEnvelope = systemEnvelope,
-                        userInput = userInput,
-                        temperature = JarvisRuntimeConfig.temperatureFor(task),
-                        maxOutputTokens = JarvisRuntimeConfig.tokenBudgetFor(task),
-                        deadlineMs = deadlineMs
-                    )
+                    val response = if (onToken == null) {
+                        transport.request(
+                            profile = profile,
+                            model = model,
+                            systemEnvelope = systemEnvelope,
+                            userInput = userInput,
+                            temperature = JarvisRuntimeConfig.temperatureFor(task),
+                            maxOutputTokens = JarvisRuntimeConfig.tokenBudgetFor(task),
+                            deadlineMs = deadlineMs
+                        )
+                    } else {
+                        streamingTransport.request(
+                            profile = profile,
+                            model = model,
+                            systemEnvelope = systemEnvelope,
+                            userInput = userInput,
+                            temperature = JarvisRuntimeConfig.temperatureFor(task),
+                            maxOutputTokens = JarvisRuntimeConfig.tokenBudgetFor(task),
+                            deadlineMs = deadlineMs
+                        ) { token ->
+                            emittedText = true
+                            onToken(token)
+                        }
+                    }
                     markSuccess(profile, response)
                     return CortexMeshResult(
                         reply = response.reply,
@@ -83,12 +104,19 @@ class CortexMeshClient(private val store: SecureCortexRegistry) {
                 } catch (error: CortexProviderFailure) {
                     finalFailure = error
                     failures += failureLabel(profile, error)
+
+                    // Once audible tokens have been emitted, switching providers would
+                    // splice two different answers into the same spoken sentence.
+                    if (emittedText) {
+                        markFailure(profile, error)
+                        throw CortexMeshException(
+                            "The ${profile.provider.displayName} stream was interrupted after speech began: " +
+                                (error.message ?: error.kind.name)
+                        )
+                    }
+
                     when (error.kind) {
-                        CortexFailureKind.MODEL -> {
-                            // The key may be valid while this model is unavailable
-                            // for the project. Try the next verified model on it.
-                            continue
-                        }
+                        CortexFailureKind.MODEL -> continue
                         CortexFailureKind.RATE_LIMIT -> {
                             if (
                                 profile.provider.quotaScope ==
