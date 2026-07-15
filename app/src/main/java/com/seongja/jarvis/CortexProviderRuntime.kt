@@ -233,6 +233,7 @@ internal class CortexProviderTransport {
                     JSONArray().put(JSONObject().put("text", systemEnvelope))
                 )
             )
+            put("safetySettings", geminiSafetySettings())
             put(
                 "contents",
                 JSONArray().put(
@@ -277,9 +278,16 @@ internal class CortexProviderTransport {
         maxOutputTokens: Int,
         deadlineMs: Long
     ): CortexProviderResponse {
+        val effectiveTemperature = if (
+            systemEnvelope.startsWith("Connection diagnostic", ignoreCase = true)
+        ) {
+            temperature
+        } else {
+            JarvisRuntimeConfig.GROQ_FRIDAY_TEMPERATURE
+        }
         val body = JSONObject().apply {
             put("model", model)
-            put("temperature", temperature)
+            put("temperature", effectiveTemperature)
             put("max_tokens", maxOutputTokens)
             put(
                 "messages",
@@ -304,6 +312,16 @@ internal class CortexProviderTransport {
             deadlineMs = deadlineMs,
             parser = ::parseGroqReply
         )
+    }
+
+    private fun geminiSafetySettings(): JSONArray = JSONArray().apply {
+        GEMINI_HARM_CATEGORIES.forEach { category ->
+            put(
+                JSONObject()
+                    .put("category", category)
+                    .put("threshold", JarvisRuntimeConfig.GEMINI_SAFETY_THRESHOLD)
+            )
+        }
     }
 
     private fun executeJson(
@@ -509,6 +527,12 @@ internal class CortexProviderTransport {
         private const val MAX_USER_INPUT_CHARS = 12_000
         private const val MAX_RESPONSE_CHARS = 500_000
         private const val MAX_ERROR_CHARS = 320
+        private val GEMINI_HARM_CATEGORIES = listOf(
+            "HARM_CATEGORY_HARASSMENT",
+            "HARM_CATEGORY_HATE_SPEECH",
+            "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+            "HARM_CATEGORY_DANGEROUS_CONTENT"
+        )
         private val MODEL_ERROR_TERMS = listOf(
             "model", "not found", "unsupported", "decommission", "permission",
             "not available", "region", "location", "does not exist"
