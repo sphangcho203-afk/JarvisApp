@@ -11,8 +11,8 @@ android {
         applicationId = "com.seongja.jarvis"
         minSdk = 28
         targetSdk = 35
-        versionCode = 24
-        versionName = "0.9.14-voice-recovery"
+        versionCode = 25
+        versionName = "0.9.15-voice-proofing"
     }
 
     buildTypes {

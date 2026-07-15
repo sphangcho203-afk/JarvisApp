@@ -15,6 +15,7 @@ interface Props {
   bridgeReady: boolean
   logs: TerminalLog[]
   onCoreTap: () => void
+  onTextCommand: (text: string) => void
   onClearLogs: () => void
 }
 
@@ -42,7 +43,7 @@ function Status({ mode, theme, telemetry, bridgeReady }: { mode: HelixState; the
   return <header className="relative z-20 flex h-[58px] items-center justify-between border-b border-white/8 bg-black/25 px-3 backdrop-blur-xl md:px-6">
     <div className="flex min-w-0 items-center gap-3">
       <div className="grid size-8 place-items-center border font-mono text-[9px]" style={{ borderColor: `rgba(${theme.rgb}/.55)`, color: theme.hex, boxShadow: `inset 0 0 15px rgba(${theme.rgb}/.15)` }}>JH</div>
-      <div className="min-w-0"><p className="truncate font-mono text-[11px] tracking-[.2em] text-white/90 md:text-sm">JARVIS // HELIX</p><p className="truncate font-mono text-[7px] tracking-[.22em] text-white/32 md:text-[9px]">ANDROID COGNITIVE INTERFACE // BUILD 0.9.13</p></div>
+      <div className="min-w-0"><p className="truncate font-mono text-[11px] tracking-[.2em] text-white/90 md:text-sm">JARVIS // HELIX</p><p className="truncate font-mono text-[7px] tracking-[.22em] text-white/32 md:text-[9px]">ANDROID COGNITIVE INTERFACE // BUILD 0.9.15</p></div>
     </div>
     <div className="flex items-center gap-3 font-mono text-[7px] tracking-[.16em] text-white/45 md:text-[9px]">
       <span className="hidden md:inline">{telemetry.time} // {telemetry.voiceSource.toUpperCase()} // {bridgeReady ? 'NATIVE LOCK' : 'SYNC'}</span>
@@ -53,18 +54,50 @@ function Status({ mode, theme, telemetry, bridgeReady }: { mode: HelixState; the
 
 function CoreStage(props: Props & { theme: ThemeSpec }) {
   const { mode, theme, metrics, telemetry, countdown } = props
+  const [command, setCommand] = React.useState('')
+
+  const submit = (event?: React.FormEvent) => {
+    event?.preventDefault()
+    const clean = command.trim()
+    if (!clean) return
+    props.onTextCommand(clean)
+    setCommand('')
+  }
+
   return <section className="core-stage relative min-h-0 overflow-hidden border xl:col-span-6" style={{ borderColor: `rgba(${theme.rgb}/.3)`, boxShadow: `inset 0 0 80px rgba(${theme.rgb}/.055),0 0 40px rgba(${theme.rgb}/.08)` }}>
-    <button type="button" aria-label="Recalibrate Jarvis voice array" onClick={props.onCoreTap} className="absolute inset-0 z-20 cursor-crosshair bg-transparent" />
+    <button type="button" aria-label={telemetry.cloudConfigured ? 'Reset Jarvis voice input' : 'Open Jarvis API setup'} onClick={props.onCoreTap} className="absolute inset-x-0 top-0 bottom-24 z-20 cursor-crosshair bg-transparent" />
     <div className="absolute inset-0"><HelixCanvas mode={mode} theme={theme} audio={props.audioRef} /></div>
     <div className="pointer-events-none absolute inset-0 z-10">
-      <div className="reticle absolute left-1/2 top-[45%] size-[min(76vw,460px)] -translate-x-1/2 -translate-y-1/2 rounded-full" />
+      <div className="reticle absolute left-1/2 top-[43%] size-[min(76vw,460px)] -translate-x-1/2 -translate-y-1/2 rounded-full" />
       <div className="absolute left-3 top-3 font-mono text-[7px] tracking-[.2em] text-white/35">WEBGL CORE // ORION HELIX</div>
       <div className="absolute right-3 top-3 text-right font-mono text-[7px] tracking-[.16em] text-white/30"><p>RENDER // GPU</p><p className="mt-1">BRIDGE // {props.bridgeReady ? 'LOCKED' : 'SYNCING'}</p></div>
       <div className="absolute left-3 top-12 w-[42%] space-y-1 border-l pl-2 font-mono text-[7px] tracking-[.13em] text-white/45 xl:hidden" style={{ borderColor: theme.hex }}><p>BATTERY // {telemetry.battery}%</p><p>NETWORK // {telemetry.network}</p><p>HEAP // {telemetry.heapMb} MB</p></div>
       <div className="absolute right-3 top-12 w-[42%] space-y-1 border-r pr-2 text-right font-mono text-[7px] tracking-[.13em] text-white/45 xl:hidden" style={{ borderColor: theme.hex }}><p>STATE // {mode}</p><p>VOICE // {Math.round(metrics.rms*100)}%</p><p>PEAK // {Math.round(metrics.peak*100)}%</p></div>
-      <AnimatePresence mode="wait"><motion.div key={mode} initial={{ opacity:0,y:8,filter:'blur(8px)' }} animate={{ opacity:1,y:0,filter:'blur(0)' }} exit={{ opacity:0,y:-8,filter:'blur(8px)' }} transition={{ duration:.28 }} className="absolute inset-x-0 bottom-16 text-center"><p className="font-mono text-[10px] tracking-[.36em]" style={{ color: theme.hex, textShadow:`0 0 18px ${theme.glow}` }}>{theme.label}</p><p className="mt-2 px-8 font-mono text-[7px] tracking-[.15em] text-white/35">{theme.note.toUpperCase()}</p></motion.div></AnimatePresence>
-      <div className="absolute inset-x-3 bottom-3 border border-white/8 bg-black/40 px-3 py-2 backdrop-blur-md"><div className="flex items-center justify-between gap-3 font-mono text-[7px] tracking-[.14em] text-white/35"><span className="truncate">INPUT // {props.transcript}</span><span className="shrink-0" style={{ color:theme.hex }}>TAP CORE // RECALIBRATE</span></div>{countdown.active ? <div className="mt-2 h-px bg-white/8"><div className="h-px" style={{ width:`${countdown.progress*100}%`,background:theme.hex }} /></div> : null}</div>
+      <AnimatePresence mode="wait"><motion.div key={mode} initial={{ opacity:0,y:8,filter:'blur(8px)' }} animate={{ opacity:1,y:0,filter:'blur(0)' }} exit={{ opacity:0,y:-8,filter:'blur(8px)' }} transition={{ duration:.28 }} className="absolute inset-x-0 bottom-28 text-center"><p className="font-mono text-[10px] tracking-[.36em]" style={{ color: theme.hex, textShadow:`0 0 18px ${theme.glow}` }}>{theme.label}</p><p className="mt-2 px-8 font-mono text-[7px] tracking-[.15em] text-white/35">{theme.note.toUpperCase()}</p></motion.div></AnimatePresence>
     </div>
+
+    <form onSubmit={submit} className="absolute inset-x-3 bottom-3 z-30 border border-white/10 bg-black/65 p-2 backdrop-blur-md">
+      <div className="mb-2 flex items-center justify-between gap-3 font-mono text-[7px] tracking-[.12em] text-white/35">
+        <span className="truncate">HEARD // {props.transcript}</span>
+        <span className="shrink-0" style={{ color:theme.hex }}>{telemetry.cloudConfigured ? 'CORE // RESET VOICE' : 'CORE // API SETUP'}</span>
+      </div>
+      <div className="grid grid-cols-[minmax(0,1fr)_auto_auto] gap-1.5">
+        <input
+          aria-label="Type a Jarvis command"
+          autoCapitalize="sentences"
+          autoComplete="off"
+          enterKeyHint="send"
+          placeholder="TYPE COMMAND // e.g. configure APIs"
+          value={command}
+          onChange={event => setCommand(event.target.value)}
+          className="min-w-0 border border-white/10 bg-white/[.035] px-2 py-2 font-mono text-[8px] tracking-[.08em] text-white/85 outline-none placeholder:text-white/25"
+          style={{ caretColor: theme.hex }}
+        />
+        <button type="submit" className="border px-2.5 font-mono text-[7px] tracking-[.12em]" style={{ borderColor:`rgba(${theme.rgb}/.45)`,color:theme.hex }}>SEND</button>
+        <button type="button" onClick={() => props.onTextCommand('configure APIs')} className="border px-2.5 font-mono text-[7px] tracking-[.12em]" style={{ borderColor:`rgba(${theme.rgb}/.45)`,color:theme.hex }}>API SETUP</button>
+      </div>
+      {countdown.active ? <div className="mt-2 h-px bg-white/8"><div className="h-px" style={{ width:`${countdown.progress*100}%`,background:theme.hex }} /></div> : null}
+    </form>
   </section>
 }
 
@@ -74,7 +107,7 @@ function Panel({ title, eyebrow, theme, children }: { title:string; eyebrow:stri
 
 function Telemetry({ theme, metrics, data }: { theme:ThemeSpec; metrics:AudioMetrics; data:NativeTelemetry }) {
   const values = [['DEVICE',data.device],['BATTERY',`${data.battery}%`],['NETWORK',data.network],['HEAP',`${data.heapMb} MB`],['CLOCK',data.time],['CORTEX',data.cloudConfigured?'MESH ONLINE':'LOCAL MODE']]
-  return <Panel title="TELEMETRY" eyebrow="ANDROID LIVE SIGNAL" theme={theme}><div className="grid grid-cols-2 gap-2">{values.map(([label,value])=><div key={label} className="border border-white/6 bg-white/[.025] p-3"><p className="font-mono text-[8px] tracking-[.18em] text-white/32">{label}</p><p className="mt-2 truncate font-mono text-[11px] text-white/82">{value}</p></div>)}</div><div className="mt-5 space-y-4"><Meter label="RMS / VOICE" value={metrics.rms} theme={theme}/><Meter label="PEAK ENVELOPE" value={metrics.peak} theme={theme}/><Meter label="CORE ENERGY" value={Math.min(1,metrics.rms*.75+theme.energy*.25)} theme={theme}/></div><p className="mt-5 border-l-2 pl-3 font-mono text-[8px] leading-5 tracking-[.11em] text-white/42" style={{ borderColor:theme.hex }}>NATIVE ANDROID TELEMETRY. NO WEB MICROPHONE OR REMOTE DASHBOARD REQUIRED.</p></Panel>
+  return <Panel title="TELEMETRY" eyebrow="ANDROID LIVE SIGNAL" theme={theme}><div className="grid grid-cols-2 gap-2">{values.map(([label,value])=><div key={label} className="border border-white/6 bg-white/[.025] p-3"><p className="font-mono text-[8px] tracking-[.18em] text-white/32">{label}</p><p className="mt-2 truncate font-mono text-[11px] text-white/82">{value}</p></div>)}</div><div className="mt-5 space-y-4"><Meter label="RMS / VOICE" value={metrics.rms} theme={theme}/><Meter label="PEAK ENVELOPE" value={metrics.peak} theme={theme}/><Meter label="CORE ENERGY" value={Math.min(1,metrics.rms*.75+theme.energy*.25)} theme={theme}/></div><p className="mt-5 border-l-2 pl-3 font-mono text-[8px] leading-5 tracking-[.11em] text-white/42" style={{ borderColor:theme.hex }}>VOICE STATE CHANGES TO LISTENING ONLY AFTER ANDROID REPORTS REAL SPEECH ACTIVITY.</p></Panel>
 }
 
 function Meter({ label, value, theme }: { label:string; value:number; theme:ThemeSpec }) { return <div><div className="mb-2 flex justify-between font-mono text-[8px] tracking-[.14em] text-white/38"><span>{label}</span><span>{Math.round(value*100)}%</span></div><div className="h-[2px] bg-white/8"><div className="h-full transition-[width] duration-100" style={{ width:`${value*100}%`,background:theme.hex,boxShadow:`0 0 10px ${theme.glow}` }} /></div></div> }

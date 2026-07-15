@@ -4,6 +4,7 @@ import android.app.Activity
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.speech.SpeechRecognizer
 
 class VoiceLoop(
     private val activity: Activity,
@@ -21,6 +22,7 @@ class VoiceLoop(
     private var paused = true
     private var listening = false
     private var usingOnDeviceInput = false
+    private var speechConfirmed = false
     private var consecutiveInputFailures = 0
     private var outputCompletion: (() -> Unit)? = null
     private lateinit var gateway: JarvisVoiceGateway
@@ -45,9 +47,10 @@ class VoiceLoop(
                 consecutiveInputFailures = 0
                 listening = true
                 usingOnDeviceInput = false
-                onPartial("Listening...")
-                onDiagnostic("MIC -> RAW PCM STREAM ACTIVE")
-                onState(State.LISTENING)
+                speechConfirmed = false
+                onPartial("Premium microphone armed. Speak now.")
+                onDiagnostic("MIC -> RAW PCM CAPTURE ARMED")
+                onState(State.READY)
             }
         }
 
@@ -66,7 +69,14 @@ class VoiceLoop(
 
         override fun onRms(value: Float) {
             handler.post {
-                if (!destroyed && listening && !usingOnDeviceInput) onRms(value)
+                if (!destroyed && listening && !usingOnDeviceInput) {
+                    if (value >= SPEECH_CONFIRM_THRESHOLD && !speechConfirmed) {
+                        speechConfirmed = true
+                        onDiagnostic("MIC -> PREMIUM SPEECH ACTIVITY CONFIRMED")
+                        onState(State.LISTENING)
+                    }
+                    onRms(value)
+                }
             }
         }
 
@@ -93,6 +103,7 @@ class VoiceLoop(
         override fun onError(message: String) {
             handler.post {
                 listening = false
+                speechConfirmed = false
                 onRms(0f)
                 onDiagnostic("PREMIUM VOICE UNAVAILABLE -> $message")
                 if (destroyed) return@post
@@ -108,7 +119,7 @@ class VoiceLoop(
                     onState(State.READY)
                     startDelayed(recoveryDelayMs())
                 } else {
-                    onDiagnostic("VOICE INPUT -> RETRYING LOCAL RECOGNIZER DISCOVERY")
+                    onDiagnostic("VOICE INPUT -> RETRYING RECOGNIZER DISCOVERY")
                     onState(State.UNAVAILABLE)
                     startDelayed(2_500L)
                 }
@@ -117,30 +128,56 @@ class VoiceLoop(
     }
 
     private val onDeviceListener = object : OnDeviceSpeechInput.Listener {
-        override fun onReady() {
+        override fun onReady(backend: String) {
             handler.post {
                 if (destroyed || paused) {
                     onDeviceInput.stop()
                     return@post
                 }
-                consecutiveInputFailures = 0
                 listening = true
                 usingOnDeviceInput = true
-                onPartial("Listening locally...")
-                onDiagnostic("MIC -> ${onDeviceInput.backendLabel()} // API KEY FREE")
+                speechConfirmed = false
+                onPartial("Voice armed. Speak now.")
+                onDiagnostic("VOICE RECOGNIZER -> $backend READY // AWAITING REAL SPEECH")
+                onState(State.READY)
+            }
+        }
+
+        override fun onSpeechDetected() {
+            handler.post {
+                if (destroyed || paused || !usingOnDeviceInput) return@post
+                if (!speechConfirmed) {
+                    speechConfirmed = true
+                    consecutiveInputFailures = 0
+                    onDiagnostic("MIC -> SPEECH ACTIVITY CONFIRMED")
+                }
+                onPartial("Speech detected...")
                 onState(State.LISTENING)
             }
         }
 
         override fun onPartial(text: String) {
             handler.post {
-                if (!destroyed && listening && usingOnDeviceInput) onPartial(text)
+                if (!destroyed && listening && usingOnDeviceInput) {
+                    speechConfirmed = true
+                    consecutiveInputFailures = 0
+                    onState(State.LISTENING)
+                    onPartial(text)
+                }
             }
         }
 
         override fun onRms(value: Float) {
             handler.post {
-                if (!destroyed && listening && usingOnDeviceInput) onRms(value)
+                if (!destroyed && listening && usingOnDeviceInput) {
+                    if (value >= SPEECH_CONFIRM_THRESHOLD && !speechConfirmed) {
+                        speechConfirmed = true
+                        consecutiveInputFailures = 0
+                        onDiagnostic("MIC -> SPEECH ENERGY CONFIRMED")
+                        onState(State.LISTENING)
+                    }
+                    onRms(value)
+                }
             }
         }
 
@@ -152,13 +189,11 @@ class VoiceLoop(
             handler.post {
                 listening = false
                 usingOnDeviceInput = false
+                speechConfirmed = false
                 onRms(0f)
-                onDiagnostic("ANDROID SPEECH -> ERROR $code")
+                onDiagnostic("ANDROID SPEECH -> ${speechErrorName(code)} ($code)")
                 if (destroyed) return@post
 
-                // Cancelling recognition during navigation, processing, or TTS
-                // can produce a late callback. A paused loop must never turn
-                // that expected callback into a permanent red fault state.
                 if (paused) {
                     onDiagnostic("ANDROID SPEECH ERROR -> IGNORED WHILE PAUSED")
                     onState(State.READY)
@@ -167,13 +202,21 @@ class VoiceLoop(
 
                 consecutiveInputFailures++
                 if (recoverable || onDeviceInput.isAvailable()) {
-                    onDiagnostic("VOICE INPUT -> AUTOMATIC RECOVERY ${consecutiveInputFailures}")
+                    onDiagnostic("VOICE INPUT -> RECOVERY PASS ${consecutiveInputFailures}")
                     onState(State.READY)
                     startDelayed(recoveryDelayMs())
                 } else {
-                    onDiagnostic("VOICE INPUT -> SERVICE TEMPORARILY UNAVAILABLE")
-                    onState(State.UNAVAILABLE)
-                    startDelayed(3_000L)
+                    onDiagnostic("VOICE INPUT -> PERMISSION OR SERVICE UNAVAILABLE")
+                    onState(
+                        if (code == SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
+                            State.ERROR
+                        } else {
+                            State.UNAVAILABLE
+                        }
+                    )
+                    if (code != SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS) {
+                        startDelayed(3_000L)
+                    }
                 }
             }
         }
@@ -211,6 +254,7 @@ class VoiceLoop(
         paused = false
         listening = false
         usingOnDeviceInput = false
+        speechConfirmed = false
         consecutiveInputFailures = 0
         handler.removeCallbacksAndMessages(START_TOKEN)
         onDeviceInput.stop()
@@ -278,6 +322,7 @@ class VoiceLoop(
         paused = true
         listening = false
         usingOnDeviceInput = false
+        speechConfirmed = false
         outputCompletion = null
         handler.removeCallbacksAndMessages(null)
         onDeviceInput.destroy()
@@ -289,6 +334,8 @@ class VoiceLoop(
         onState(State.READY)
         if (gateway.isReady()) {
             usingOnDeviceInput = false
+            listening = true
+            speechConfirmed = false
             gateway.startListening()
             return
         }
@@ -296,13 +343,17 @@ class VoiceLoop(
         gateway.connect()
         if (onDeviceInput.isAvailable()) {
             usingOnDeviceInput = true
+            speechConfirmed = false
             val started = onDeviceInput.start()
+            listening = started
             if (!started) {
                 usingOnDeviceInput = false
                 consecutiveInputFailures++
                 onDiagnostic("ANDROID SPEECH -> START FAILED // RETRYING")
                 onState(State.READY)
                 startDelayed(recoveryDelayMs())
+            } else {
+                onDiagnostic("VOICE INPUT -> RECOGNIZER SESSION STARTED")
             }
             return
         }
@@ -314,11 +365,12 @@ class VoiceLoop(
     }
 
     private fun recoveryDelayMs(): Long =
-        (450L * consecutiveInputFailures.coerceIn(1, 6)).coerceAtMost(2_700L)
+        (500L * consecutiveInputFailures.coerceIn(1, 6)).coerceAtMost(3_000L)
 
     private fun stopAllInput() {
         listening = false
         usingOnDeviceInput = false
+        speechConfirmed = false
         handler.removeCallbacksAndMessages(START_TOKEN)
         onDeviceInput.stop()
         gateway.stopInput(sendForTranscription = false)
@@ -328,6 +380,7 @@ class VoiceLoop(
     private fun deliverTranscript(text: String, source: String) {
         listening = false
         usingOnDeviceInput = false
+        speechConfirmed = false
         consecutiveInputFailures = 0
         onRms(0f)
         val normalized = SpeechCommandNormalizer.normalize(text)
@@ -338,13 +391,31 @@ class VoiceLoop(
             return
         }
         paused = true
-        onDiagnostic("VOICE TRANSCRIPT -> ${normalized.displayText.take(72)} // $source")
+        onDiagnostic("VOICE RECOGNIZED -> ${normalized.displayText.take(72)} // $source")
         onState(State.PROCESSING)
         JarvisConversationBus.recordUser(normalized.displayText)
         onSpeech(normalized.displayText)
     }
 
+    private fun speechErrorName(code: Int): String = when (code) {
+        SpeechRecognizer.ERROR_NETWORK_TIMEOUT -> "NETWORK TIMEOUT"
+        SpeechRecognizer.ERROR_NETWORK -> "NETWORK ERROR"
+        SpeechRecognizer.ERROR_AUDIO -> "MICROPHONE AUDIO ERROR"
+        SpeechRecognizer.ERROR_SERVER -> "RECOGNIZER SERVER ERROR"
+        SpeechRecognizer.ERROR_CLIENT -> "RECOGNIZER CLIENT RESET"
+        SpeechRecognizer.ERROR_SPEECH_TIMEOUT -> "NO SPEECH ACTIVITY"
+        SpeechRecognizer.ERROR_NO_MATCH -> "NO SPEECH MATCH"
+        SpeechRecognizer.ERROR_RECOGNIZER_BUSY -> "RECOGNIZER BUSY"
+        SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "MICROPHONE PERMISSION DENIED"
+        SpeechRecognizer.ERROR_TOO_MANY_REQUESTS -> "TOO MANY RECOGNITION REQUESTS"
+        SpeechRecognizer.ERROR_SERVER_DISCONNECTED -> "RECOGNIZER DISCONNECTED"
+        SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED -> "LANGUAGE NOT SUPPORTED"
+        SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE -> "LANGUAGE PACK UNAVAILABLE"
+        else -> "UNKNOWN ERROR"
+    }
+
     companion object {
         private val START_TOKEN = Any()
+        private const val SPEECH_CONFIRM_THRESHOLD = 0.035f
     }
 }

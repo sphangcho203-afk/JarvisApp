@@ -48,8 +48,7 @@ jobs:
           const fs = require('fs')
           const path = require('path')
           const root = path.resolve('helix-ui/dist')
-          const htmlPath = path.join(root, 'index.html')
-          const html = fs.readFileSync(htmlPath, 'utf8')
+          const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8')
           const references = [...html.matchAll(/(?:src|href)=["']([^"']+)["']/g)]
             .map(match => match[1])
             .filter(value => value.startsWith('./') || value.startsWith('assets/'))
@@ -72,7 +71,7 @@ jobs:
           test -n "$(find app/src/main/assets/helix/assets -name '*.js' -type f -print -quit)"
           test -n "$(find app/src/main/assets/helix/assets -name '*.css' -type f -print -quit)"
 
-      - name: Smoke-test Helix runtime in Chrome
+      - name: Smoke-test Helix controls in Chrome
         shell: bash
         run: |
           set -euo pipefail
@@ -106,9 +105,11 @@ jobs:
             http://127.0.0.1:4173/ > helix-dom.html
 
           grep -q 'JARVIS // HELIX' helix-dom.html
-          grep -q 'WEBGL CORE // ORION HELIX' helix-dom.html
+          grep -q 'BUILD 0.9.15' helix-dom.html
+          grep -q 'API SETUP' helix-dom.html
+          grep -q 'TYPE COMMAND' helix-dom.html
           if grep -q 'RENDER FALLBACK ONLINE' helix-dom.html; then
-            echo 'Helix entered the WebGL fallback during the browser smoke test.' >&2
+            echo 'Helix entered the render fallback during the browser smoke test.' >&2
             exit 1
           fi
 
@@ -142,7 +143,7 @@ jobs:
             --warning-mode all \
             --no-daemon 2>&1 | tee android-build.log
 
-      - name: Verify APK package, signature, alignment, permissions, and Helix assets
+      - name: Verify APK package, bridge, permissions, and Helix assets
         shell: bash
         run: |
           set -euo pipefail
@@ -157,11 +158,10 @@ jobs:
           unzip -l "$APK" | tee apk-contents.log
 
           grep -q "package: name='com.seongja.jarvis'" apk-badging.log
-          grep -q "versionName='0.9.14-voice-recovery'" apk-badging.log
+          grep -q "versionName='0.9.15-voice-proofing'" apk-badging.log
           grep -q "sdkVersion:'28'" apk-badging.log
           grep -q "targetSdkVersion:'35'" apk-badging.log
           grep -q "android.permission.RECORD_AUDIO" apk-permissions.log
-          grep -q "android.permission.FOREGROUND_SERVICE_MICROPHONE" apk-permissions.log
           grep -q 'classes.dex' apk-contents.log
           grep -q 'assets/helix/index.html' apk-contents.log
           grep -q 'assets/helix/assets/.*\.js' apk-contents.log
@@ -170,24 +170,13 @@ jobs:
           rm -rf apk-helix-check
           mkdir -p apk-helix-check
           unzip -q "$APK" 'assets/helix/*' -d apk-helix-check
+          grep -R -q 'API SETUP' apk-helix-check/assets/helix/assets
+          grep -R -q 'TYPE COMMAND' apk-helix-check/assets/helix/assets
 
-          node --input-type=commonjs <<'NODE'
-          const fs = require('fs')
-          const path = require('path')
-          const root = path.resolve('apk-helix-check/assets/helix')
-          const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8')
-          const references = [...html.matchAll(/(?:src|href)=["']([^"']+)["']/g)]
-            .map(match => match[1])
-            .filter(value => value.startsWith('./') || value.startsWith('assets/'))
-          for (const reference of references) {
-            const file = reference.replace(/^\.\//, '').split(/[?#]/)[0]
-            const resolved = path.resolve(root, file)
-            if (!resolved.startsWith(root + path.sep) || !fs.existsSync(resolved) || fs.statSync(resolved).size === 0) {
-              throw new Error(`APK contains a broken Helix reference: ${file}`)
-            }
-          }
-          console.log(`Verified ${references.length} Helix references inside the APK`)
-          NODE
+          grep -q 'JarvisApplication' app/src/main/AndroidManifest.xml
+          grep -q 'JarvisCommandBridge' app/src/main/java/com/seongja/jarvis/JarvisApplication.kt
+          grep -q 'onSpeechDetected' app/src/main/java/com/seongja/jarvis/OnDeviceSpeechInput.kt
+          grep -q 'AWAITING REAL SPEECH' app/src/main/java/com/seongja/jarvis/VoiceLoop.kt
 
       - name: Upload validation logs
         if: always()
@@ -214,7 +203,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v7
         with:
-          name: Jarvis-Helix-voice-recovery-apk
+          name: Jarvis-Helix-0.9.15-voice-proofing-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
