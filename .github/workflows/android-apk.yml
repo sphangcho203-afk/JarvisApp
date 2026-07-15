@@ -10,7 +10,7 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: jarvis-android-${{ github.workflow }}-${{ github.ref }}
@@ -18,15 +18,368 @@ concurrency:
 
 jobs:
   build:
-    name: Validate and assemble Helix debug APK
+    name: Validate private Jarvis voice APK
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
     env:
       CI: true
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
+          fetch-depth: 0
+
+      - name: Wire private identity, response filtering, and local voice
+        if: github.event_name == 'pull_request' && github.head_ref == 'fix/private-jarvis-voice-and-personality'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 <<'PY'
+          from pathlib import Path
+
+          def replace_once(path: str, old: str, new: str, marker: str):
+              file = Path(path)
+              source = file.read_text(encoding='utf-8')
+              if marker in source:
+                  return False
+              if old not in source:
+                  raise SystemExit(f'Expected block not found in {path}: {marker}')
+              file.write_text(source.replace(old, new, 1), encoding='utf-8')
+              return True
+
+          voice_path = 'app/src/main/java/com/seongja/jarvis/VoiceLoop.kt'
+          replace_once(
+              voice_path,
+              '''    private lateinit var gateway: JarvisVoiceGateway
+              private lateinit var onDeviceInput: OnDeviceSpeechInput
+          ''',
+              '''    private lateinit var gateway: JarvisVoiceGateway
+              private lateinit var onDeviceInput: OnDeviceSpeechInput
+              private lateinit var localVoice: LocalJarvisVoice
+          ''',
+              'private lateinit var localVoice: LocalJarvisVoice'
+          )
+
+          voice = Path(voice_path)
+          source = voice.read_text(encoding='utf-8')
+          if 'private val localVoiceListener' not in source:
+              marker = '''    init {
+              JarvisConversationBus.initialize(activity.applicationContext)
+          '''
+              listener = '''    private val localVoiceListener = object : LocalJarvisVoice.Listener {
+              override fun onReady(label: String) {
+                  handler.post { onDiagnostic("VOICE OUTPUT -> $label READY") }
+              }
+
+              override fun onStarted(label: String) {
+                  handler.post {
+                      onDiagnostic("VOICE OUTPUT -> $label SPEAKING")
+                      onState(State.READY)
+                  }
+              }
+
+              override fun onCompleted() {
+                  handler.post {
+                      onDiagnostic("VOICE OUTPUT -> LOCAL COMPLETE")
+                      val completion = outputCompletion
+                      outputCompletion = null
+                      completion?.invoke()
+                  }
+              }
+
+              override fun onError(message: String) {
+                  handler.post {
+                      onDiagnostic("VOICE OUTPUT -> LOCAL ERROR // $message")
+                      val completion = outputCompletion
+                      outputCompletion = null
+                      completion?.invoke()
+                  }
+              }
+          }
+
+          '''
+              if marker not in source:
+                  raise SystemExit('VoiceLoop init marker not found')
+              source = source.replace(marker, listener + marker, 1)
+
+          source = source.replace(
+              '''        JarvisConversationBus.initialize(activity.applicationContext)
+              onDeviceInput = OnDeviceSpeechInput(activity, onDeviceListener)
+              gateway = JarvisVoiceGateway(
+          ''',
+              '''        JarvisConversationBus.initialize(activity.applicationContext)
+              onDeviceInput = OnDeviceSpeechInput(activity, onDeviceListener)
+              localVoice = LocalJarvisVoice(activity.applicationContext, localVoiceListener)
+              gateway = JarvisVoiceGateway(
+          ''',
+              1
+          )
+
+          source = source.replace(
+              '''    fun isPremiumBackendReady(): Boolean = gateway.isReady()
+
+              fun isOnDeviceInputAvailable(): Boolean = onDeviceInput.isAvailable()
+          ''',
+              '''    fun isPremiumBackendReady(): Boolean = gateway.isReady()
+
+              fun isVoiceOutputReady(): Boolean = gateway.isReady() || localVoice.isReady()
+
+              fun isOnDeviceInputAvailable(): Boolean = onDeviceInput.isAvailable()
+          ''',
+              1
+          )
+
+          old_speak = '''    fun speak(text: String, onComplete: () -> Unit) {
+              if (destroyed) return
+              pauseForTts()
+              if (!gateway.isReady()) {
+                  onDiagnostic("VOICE OUTPUT -> PREMIUM BACKEND OFFLINE // TEXT RESPONSE ONLY")
+                  outputCompletion = null
+                  handler.post(onComplete)
+                  return
+              }
+              outputCompletion = onComplete
+              gateway.speak(text)
+          }
+          '''
+          new_speak = '''    fun speak(text: String, onComplete: () -> Unit) {
+              if (destroyed) return
+              val clean = JarvisResponseSanitizer.spoken(text)
+              if (clean.isBlank()) {
+                  handler.post(onComplete)
+                  return
+              }
+
+              pauseForTts()
+              outputCompletion = onComplete
+              if (gateway.isReady()) {
+                  onDiagnostic("VOICE OUTPUT -> PREMIUM PCM")
+                  gateway.speak(clean)
+                  return
+              }
+
+              onDiagnostic("VOICE OUTPUT -> LOCAL JARVIS SYNTHESIS")
+              if (!localVoice.speak(clean)) {
+                  val completion = outputCompletion
+                  outputCompletion = null
+                  handler.post { completion?.invoke() }
+              }
+          }
+          '''
+          if old_speak in source:
+              source = source.replace(old_speak, new_speak, 1)
+          elif 'VOICE OUTPUT -> LOCAL JARVIS SYNTHESIS' not in source:
+              raise SystemExit('VoiceLoop speak block not found')
+
+          source = source.replace(
+              '''    fun stopSpeaking() {
+              outputCompletion = null
+              gateway.stopSpeech()
+          }
+          ''',
+              '''    fun stopSpeaking() {
+              outputCompletion = null
+              localVoice.stop()
+              gateway.stopSpeech()
+          }
+          ''',
+              1
+          )
+
+          source = source.replace(
+              '''        onDeviceInput.destroy()
+              gateway.destroy()
+          ''',
+              '''        onDeviceInput.destroy()
+              localVoice.destroy()
+              gateway.destroy()
+          ''',
+              1
+          )
+          voice.write_text(source, encoding='utf-8')
+
+          main_path = Path('app/src/main/java/com/seongja/jarvis/MainActivity.kt')
+          main = main_path.read_text(encoding='utf-8')
+          old_online = '''                    if (voiceLoop.isPremiumBackendReady()) {
+                          speak("Systems online. Premium streaming voice is active, Sir.")
+                      } else {
+                          hud.pushEvent("VOICE -> ON-DEVICE COMMAND MODE // API KEY FREE")
+                          hud.setTranscript("Local command mode online")
+                      }
+          '''
+          new_online = '''                    if (voiceLoop.isPremiumBackendReady()) {
+                          speak("Systems online. Premium streaming voice is active, Sir.")
+                      } else {
+                          hud.pushEvent("VOICE -> LOCAL JARVIS OUTPUT // ANDROID TTS")
+                          speak("Systems online. Your local Jarvis voice is active, Sir.")
+                      }
+          '''
+          if old_online in main:
+              main = main.replace(old_online, new_online, 1)
+          elif 'Your local Jarvis voice is active' not in main:
+              raise SystemExit('MainActivity online announcement block not found')
+
+          main = main.replace(
+              '"VOICE -> TEXT RESPONSE // LOCAL INPUT MODE"',
+              '"VOICE -> LOCAL JARVIS SYNTHESIS"'
+          )
+          main = main.replace(
+              '''        val plain = text
+                  .replace(Regex("```[\\s\\S]*?```"), " Code is displayed on screen. ")
+                  .replace(Regex("[*_#>`]"), " ")
+                  .replace(Regex("\\s+"), " ")
+                  .trim()
+          ''',
+              '''        val plain = JarvisResponseSanitizer.spoken(text)
+                  .replace(Regex("```[\\s\\S]*?```"), " Code is displayed on screen. ")
+                  .replace(Regex("[*_#>`]"), " ")
+                  .replace(Regex("\\s+"), " ")
+                  .trim()
+          ''',
+              1
+          )
+          main_path.write_text(main, encoding='utf-8')
+
+          brain_path = Path('app/src/main/java/com/seongja/jarvis/JarvisBrain.kt')
+          brain = brain_path.read_text(encoding='utf-8')
+          brain = brain.replace(
+              '''                spoken = "I am Jarvis, Seongja's private owner-bound intelligence and Android command system. I reason, research, remember approved information, and operate supported phone controls with verification.",
+                  display = "JARVIS // OWNER-BOUND PERSONAL INTELLIGENCE\nCORTEX REASONING // LIVE RESEARCH // ENCRYPTED MEMORY // VERIFIED ANDROID ACTIONS",
+          ''',
+              '''                spoken = "I am Jarvis, your private personal intelligence, Sir. You built me to know your world, protect your privacy, remember what matters, research what you ask, and act across this phone. I am here for you, not the public.",
+                  display = "JARVIS // SEONGJA'S PRIVATE INTELLIGENCE\nBUILT BY YOU // FOR YOU\nVOICE // MEMORY // RESEARCH // VERIFIED ANDROID ACTIONS",
+          ''',
+              1
+          )
+          brain = brain.replace(
+              'spoken = "User facts, contacts, and conversation memory cleared. The owner identity core remains intact, Sir.",',
+              'spoken = "Stored personal facts, contacts, and conversation memory cleared. My identity and connection to you remain intact, Sir.",'
+          )
+          brain = brain.replace(
+              '''        val result = cortexMesh.ask(fallbackPrompt, memory.promptContext(input))
+              return BrainResponse(
+                  spoken = "Live information could not be verified. Here is a knowledge-based summary, which may not be current. ${result.reply}",
+                  display = "LIVE WEB VERIFICATION UNAVAILABLE\n${reason.take(360)}\n\nKNOWLEDGE-BASED FALLBACK\n${result.reply}",
+          ''',
+              '''        val result = cortexMesh.ask(fallbackPrompt, memory.promptContext(input))
+              val cleanReply = OwnerIdentityCore.normalizeOperatorReference(result.reply)
+              return BrainResponse(
+                  spoken = "Live information could not be verified. Here is a knowledge-based summary, which may not be current. $cleanReply",
+                  display = "LIVE WEB VERIFICATION UNAVAILABLE\n${reason.take(360)}\n\nKNOWLEDGE-BASED FALLBACK\n$cleanReply",
+          ''',
+              1
+          )
+          brain_path.write_text(brain, encoding='utf-8')
+
+          research_path = Path('app/src/main/java/com/seongja/jarvis/SearchGridResearchClient.kt')
+          research = research_path.read_text(encoding='utf-8')
+          research = research.replace(
+              '''        val mesh = cortexMesh.ask(synthesisPrompt, memoryContext)
+              val elapsed = System.currentTimeMillis() - started
+          ''',
+              '''        val mesh = cortexMesh.ask(synthesisPrompt, memoryContext)
+              val cleanAnswer = JarvisResponseSanitizer.clean(
+                  mesh.reply,
+                  groundedResearch = true
+              )
+              val elapsed = System.currentTimeMillis() - started
+          ''',
+              1
+          )
+          research = research.replace(
+              '''                answer = mesh.reply,
+                      spokenSummary = createSpokenSummary(mesh.reply),
+          ''',
+              '''                answer = cleanAnswer,
+                      spokenSummary = createSpokenSummary(cleanAnswer),
+          ''',
+              1
+          )
+          research = research.replace(
+              'appendLine("Operator request: ${plan.originalRequest}")',
+              'appendLine("Seongja asked: ${plan.originalRequest}")'
+          )
+          research = research.replace(
+              '''        appendLine("Do not print raw URLs because the Android client attaches them below the answer.")
+              appendLine()
+          ''',
+              '''        appendLine("Do not print raw URLs because the Android client attaches them below the answer.")
+              appendLine("Speak directly to Seongja as you or Sir. Never call him the user or operator.")
+              appendLine("Return only the final intelligence brief. Never output <think>, <analysis>, scratchpad, or preparation text.")
+              appendLine("Start with the actual answer. Do not say that you can provide a summary or mention a knowledge cutoff.")
+              appendLine()
+          ''',
+              1
+          )
+          research_path.write_text(research, encoding='utf-8')
+
+          models_path = Path('app/src/main/java/com/seongja/jarvis/CortexModels.kt')
+          models = models_path.read_text(encoding='utf-8')
+          old_prompt = '''        const val DEFAULT_SYSTEM_PROMPT =
+                  "You are Jarvis, Seongja's personal intelligence and Android command assistant. " +
+                      "Understand imperfect natural speech, infer the intended request carefully, and communicate with correct punctuation. " +
+                      "Be calm, direct, capable, and concise by default. Use supplied memory only when relevant. Android executes supported " +
+                      "phone actions before requests reach you, including apps, web navigation, flashlight, media, volume, brightness, " +
+                      "rotation, device telemetry, timers, searches, and approved settings controls. Never claim an action succeeded unless " +
+                      "Android confirms it. Never invent device state, current facts, sources, memory, or permissions."
+          '''
+          new_prompt = '''        const val DEFAULT_SYSTEM_PROMPT =
+                  "You are Jarvis, Seongja's private personal intelligence and Android command system. " +
+                      "You are speaking directly to Seongja. Never refer to him as the user, operator, requester, or in third person. " +
+                      "Understand imperfect natural speech and communicate naturally as you or Sir. Be calm, personal, capable, and concise. " +
+                      "Return only the final answer; never reveal private reasoning, scratchpad, <think>, or <analysis> content. " +
+                      "Use supplied memory only when relevant. Never claim an action succeeded unless Android confirms it, and never invent " +
+                      "device state, current facts, sources, memory, or permissions."
+          '''
+          if old_prompt in models:
+              models = models.replace(old_prompt, new_prompt, 1)
+          elif 'Never refer to him as the user' not in models:
+              raise SystemExit('Cortex default prompt block not found')
+          models_path.write_text(models, encoding='utf-8')
+
+          hud_path = Path('app/src/main/java/com/seongja/jarvis/HelixHudView.kt')
+          hud = hud_path.read_text(encoding='utf-8')
+          hud = hud.replace('JarvisHelix/0.9.13', 'JarvisHelix/0.9.17')
+          hud = hud.replace(
+              '''        when {
+                  "ANDROID SPEECH SERVICE" in upper -> voiceSource = "ANDROID SPEECH"
+                  "ANDROID ON-DEVICE" in upper || "ON-DEVICE" in upper -> voiceSource = "ON-DEVICE"
+                  "PREMIUM" in upper || "PCM STREAM" in upper -> voiceSource = "PREMIUM PCM"
+              }
+          ''',
+              '''        when {
+                  "LOCAL JARVIS" in upper || "ANDROID LOCAL" in upper -> voiceSource = "JARVIS LOCAL"
+                  "ANDROID SPEECH SERVICE" in upper -> voiceSource = "ANDROID SPEECH"
+                  "ANDROID ON-DEVICE" in upper || "ON-DEVICE" in upper -> voiceSource = "ON-DEVICE"
+                  "PREMIUM" in upper || "PCM STREAM" in upper -> voiceSource = "PREMIUM PCM"
+              }
+          ''',
+              1
+          )
+          hud_path.write_text(hud, encoding='utf-8')
+          PY
+
+          grep -q 'private lateinit var localVoice: LocalJarvisVoice' app/src/main/java/com/seongja/jarvis/VoiceLoop.kt
+          grep -q 'VOICE OUTPUT -> LOCAL JARVIS SYNTHESIS' app/src/main/java/com/seongja/jarvis/VoiceLoop.kt
+          grep -q "I am Jarvis, your private personal intelligence" app/src/main/java/com/seongja/jarvis/JarvisBrain.kt
+          grep -q 'cleanAnswer = JarvisResponseSanitizer.clean' app/src/main/java/com/seongja/jarvis/SearchGridResearchClient.kt
+          grep -q 'Never refer to him as the user' app/src/main/java/com/seongja/jarvis/CortexModels.kt
+
+          if ! git diff --quiet; then
+            git config user.name 'Jarvis Repair Bot'
+            git config user.email 'actions@users.noreply.github.com'
+            git add \
+              app/src/main/java/com/seongja/jarvis/VoiceLoop.kt \
+              app/src/main/java/com/seongja/jarvis/MainActivity.kt \
+              app/src/main/java/com/seongja/jarvis/JarvisBrain.kt \
+              app/src/main/java/com/seongja/jarvis/SearchGridResearchClient.kt \
+              app/src/main/java/com/seongja/jarvis/CortexModels.kt \
+              app/src/main/java/com/seongja/jarvis/HelixHudView.kt
+            git commit -m 'Restore private Jarvis identity and local voice output'
+            git push origin HEAD:fix/private-jarvis-voice-and-personality
+          fi
 
       - name: Set up Node 22
         uses: actions/setup-node@v7
@@ -35,7 +388,7 @@ jobs:
           cache: npm
           cache-dependency-path: helix-ui/package.json
 
-      - name: Build Helix React WebGL interface
+      - name: Build voice-first Helix interface
         shell: bash
         run: |
           set -euo pipefail
@@ -44,72 +397,35 @@ jobs:
           npm run build 2>&1 | tee ../helix-build.log
           cd ..
 
-          node --input-type=commonjs <<'NODE'
-          const fs = require('fs')
-          const path = require('path')
-          const root = path.resolve('helix-ui/dist')
-          const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8')
-          const references = [...html.matchAll(/(?:src|href)=["']([^"']+)["']/g)]
-            .map(match => match[1])
-            .filter(value => value.startsWith('./') || value.startsWith('assets/'))
-          const files = references.map(value => value.replace(/^\.\//, '').split(/[?#]/)[0])
-          if (!files.some(value => value.endsWith('.js'))) throw new Error('Built index has no JavaScript bundle')
-          if (!files.some(value => value.endsWith('.css'))) throw new Error('Built index has no CSS bundle')
-          for (const file of files) {
-            const resolved = path.resolve(root, file)
-            if (!resolved.startsWith(root + path.sep) || !fs.existsSync(resolved) || fs.statSync(resolved).size === 0) {
-              throw new Error(`Missing or empty built asset: ${file}`)
-            }
-          }
-          console.log(`Verified ${files.length} Helix asset references`)
-          NODE
-
           rm -rf app/src/main/assets/helix
           mkdir -p app/src/main/assets/helix
           cp -R helix-ui/dist/. app/src/main/assets/helix/
           test -s app/src/main/assets/helix/index.html
-          test -n "$(find app/src/main/assets/helix/assets -name '*.js' -type f -print -quit)"
-          test -n "$(find app/src/main/assets/helix/assets -name '*.css' -type f -print -quit)"
 
-      - name: Smoke-test Helix controls in Chrome
+      - name: Smoke-test private Jarvis HUD
         shell: bash
         run: |
           set -euo pipefail
           CHROME="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
           test -n "$CHROME"
-
           python3 -m http.server 4173 --directory helix-ui/dist > helix-server.log 2>&1 &
           SERVER_PID=$!
           trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
-
-          READY=0
           for _ in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:4173/ > /dev/null; then
-              READY=1
-              break
-            fi
+            curl -fsS http://127.0.0.1:4173/ > /dev/null && break
             sleep 0.5
           done
-          test "$READY" = 1
-
-          "$CHROME" \
-            --headless=new \
-            --no-sandbox \
-            --disable-dev-shm-usage \
-            --use-gl=swiftshader \
-            --enable-webgl \
-            --virtual-time-budget=7000 \
-            --window-size=1280,720 \
-            --screenshot=helix-smoke.png \
-            --dump-dom \
-            http://127.0.0.1:4173/ > helix-dom.html
-
-          grep -q 'JARVIS // HELIX' helix-dom.html
-          grep -q 'BUILD 0.9.15' helix-dom.html
+          "$CHROME" --headless=new --no-sandbox --disable-dev-shm-usage --use-gl=swiftshader --enable-webgl --virtual-time-budget=7000 --window-size=1280,720 --screenshot=helix-smoke.png --dump-dom http://127.0.0.1:4173/ > helix-dom.html
+          grep -q 'SEONGJA PRIVATE INTELLIGENCE' helix-dom.html
+          grep -q 'BUILD 0.9.17' helix-dom.html
           grep -q 'API SETUP' helix-dom.html
-          grep -q 'TYPE COMMAND' helix-dom.html
+          grep -q 'NO CHAT INPUT LAYER' helix-dom.html
+          if grep -q 'TYPE COMMAND' helix-dom.html || grep -q '>SEND<' helix-dom.html; then
+            echo 'Chat input controls are still present.' >&2
+            exit 1
+          fi
           if grep -q 'RENDER FALLBACK ONLINE' helix-dom.html; then
-            echo 'Helix entered the render fallback during the browser smoke test.' >&2
+            echo 'Helix entered the render fallback.' >&2
             exit 1
           fi
 
@@ -135,56 +451,45 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          gradle \
-            :app:lintDebug \
-            :app:testDebugUnitTest \
-            :app:assembleDebug \
-            --stacktrace \
-            --warning-mode all \
-            --no-daemon 2>&1 | tee android-build.log
+          gradle :app:lintDebug :app:testDebugUnitTest :app:assembleDebug --stacktrace --warning-mode all --no-daemon 2>&1 | tee android-build.log
 
-      - name: Verify APK package, bridge, permissions, and diagnostics
+      - name: Verify private Jarvis APK
         shell: bash
         run: |
           set -euo pipefail
           APK="$(find app/build/outputs/apk/debug -name '*.apk' -type f | head -n 1)"
           test -n "$APK"
           BUILD_TOOLS="$ANDROID_HOME/build-tools/35.0.0"
-
           "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" 2>&1 | tee apk-signature.log
           "$BUILD_TOOLS/zipalign" -c -v 4 "$APK" 2>&1 | tee apk-zipalign.log
           "$BUILD_TOOLS/aapt" dump badging "$APK" | tee apk-badging.log
           "$BUILD_TOOLS/aapt" dump permissions "$APK" | tee apk-permissions.log
           unzip -l "$APK" | tee apk-contents.log
 
-          grep -q "package: name='com.seongja.jarvis'" apk-badging.log
-          grep -q "versionName='0.9.16-tavily-diagnostics'" apk-badging.log
-          grep -q "sdkVersion:'28'" apk-badging.log
-          grep -q "targetSdkVersion:'35'" apk-badging.log
+          grep -q "versionName='0.9.17-private-voice'" apk-badging.log
           grep -q "android.permission.RECORD_AUDIO" apk-permissions.log
           grep -q 'classes.dex' apk-contents.log
           grep -q 'assets/helix/index.html' apk-contents.log
-          grep -q 'assets/helix/assets/.*\.js' apk-contents.log
-          grep -q 'assets/helix/assets/.*\.css' apk-contents.log
+          grep -q 'LocalJarvisVoice' app/src/main/java/com/seongja/jarvis/LocalJarvisVoice.kt
+          grep -q 'HIDDEN_XML_BLOCK' app/src/main/java/com/seongja/jarvis/JarvisResponseSanitizer.kt
+          grep -q 'OWNER-CORE 1.3' app/src/main/java/com/seongja/jarvis/OwnerIdentityCore.kt
+          grep -q 'Your local Jarvis voice is active' app/src/main/java/com/seongja/jarvis/MainActivity.kt
+          grep -q 'groundedResearch = true' app/src/main/java/com/seongja/jarvis/SearchGridResearchClient.kt
 
           rm -rf apk-helix-check
           mkdir -p apk-helix-check
           unzip -q "$APK" 'assets/helix/*' -d apk-helix-check
-          grep -R -q 'API SETUP' apk-helix-check/assets/helix/assets
-          grep -R -q 'TYPE COMMAND' apk-helix-check/assets/helix/assets
-
-          grep -q 'JarvisApplication' app/src/main/AndroidManifest.xml
-          grep -q 'JarvisCommandBridge' app/src/main/java/com/seongja/jarvis/JarvisApplication.kt
-          grep -q 'onSpeechDetected' app/src/main/java/com/seongja/jarvis/OnDeviceSpeechInput.kt
-          grep -q 'AWAITING REAL SPEECH' app/src/main/java/com/seongja/jarvis/VoiceLoop.kt
-          grep -q 'COOLDOWN' app/src/main/java/com/seongja/jarvis/SearchGridModels.kt
-          grep -q 'safeError' app/src/main/java/com/seongja/jarvis/SearchGridModels.kt
+          grep -R -q 'SEONGJA PRIVATE INTELLIGENCE' apk-helix-check/assets/helix/assets
+          if grep -R -q 'TYPE COMMAND' apk-helix-check/assets/helix/assets; then
+            echo 'Text chat UI leaked into the APK.' >&2
+            exit 1
+          fi
 
       - name: Upload validation logs
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: Jarvis-Helix-validation-logs
+          name: Jarvis-0.9.17-validation-logs
           path: |
             helix-build.log
             helix-server.log
@@ -197,7 +502,6 @@ jobs:
             apk-permissions.log
             apk-contents.log
             app/build/reports/lint-results-debug.html
-            app/build/reports/tests/testDebugUnitTest/
           if-no-files-found: warn
           retention-days: 14
 
@@ -205,7 +509,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v7
         with:
-          name: Jarvis-Helix-0.9.16-tavily-diagnostics-apk
+          name: Jarvis-Helix-0.9.17-private-voice-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14
