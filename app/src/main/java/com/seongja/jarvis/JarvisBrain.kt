@@ -71,8 +71,8 @@ class JarvisBrain(context: Context) {
 
         if (lower in setOf("who are you", "tell me about yourself", "what are you")) {
             return localResponse(
-                spoken = "I am Jarvis, Seongja's private owner-bound intelligence and Android command system. I reason, research, remember approved information, and operate supported phone controls with verification.",
-                display = "JARVIS // OWNER-BOUND PERSONAL INTELLIGENCE\nCORTEX REASONING // LIVE RESEARCH // ENCRYPTED MEMORY // VERIFIED ANDROID ACTIONS",
+                spoken = "I am Jarvis, your private personal intelligence, Sir. You built me to know your world, protect your privacy, remember what matters, research what you ask, and act across this phone. I am here for you, not the public.",
+                display = "JARVIS // SEONGJA'S PRIVATE INTELLIGENCE\nBUILT BY YOU // FOR YOU\nVOICE // MEMORY // RESEARCH // VERIFIED ANDROID ACTIONS",
                 intent = "dialogue/self_identity"
             )
         }
@@ -229,9 +229,10 @@ class JarvisBrain(context: Context) {
             appendLine("Answer from existing knowledge only. State clearly that freshness cannot be verified. Do not pretend web research occurred.")
         }
         val result = cortexMesh.ask(fallbackPrompt, memory.promptContext(input))
+        val cleanReply = OwnerIdentityCore.normalizeOperatorReference(result.reply)
         return BrainResponse(
-            spoken = "Live information could not be verified. Here is a knowledge-based summary, which may not be current. ${result.reply}",
-            display = "LIVE WEB VERIFICATION UNAVAILABLE\n${reason.take(360)}\n\nKNOWLEDGE-BASED FALLBACK\n${result.reply}",
+            spoken = "Live information could not be verified. Here is a knowledge-based summary, which may not be current. $cleanReply",
+            display = "LIVE WEB VERIFICATION UNAVAILABLE\n${reason.take(360)}\n\nKNOWLEDGE-BASED FALLBACK\n$cleanReply",
             intent = "web_research/fallback",
             confidence = 0.55f,
             mode = BrainMode.ALERT,
@@ -374,7 +375,7 @@ class JarvisBrain(context: Context) {
         if (lower == "clear memory" || lower == "forget everything") {
             memory.clearUserFactsKeepIdentity()
             return localResponse(
-                spoken = "User facts, contacts, and conversation memory cleared. The owner identity core remains intact, Sir.",
+                spoken = "Stored personal facts, contacts, and conversation memory cleared. My identity and connection to you remain intact, Sir.",
                 display = "MEMORY CLEARED // OWNER IDENTITY CORE RETAINED",
                 intent = "memory/clear"
             )

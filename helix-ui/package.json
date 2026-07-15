@@ -1,7 +1,7 @@
 {
   "name": "jarvis-helix-android-hud",
   "private": true,
-  "version": "0.9.15",
+  "version": "0.9.17",
   "type": "module",
   "scripts": {
     "build": "tsc -b && vite build"

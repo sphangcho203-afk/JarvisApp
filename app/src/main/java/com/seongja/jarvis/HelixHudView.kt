@@ -80,7 +80,7 @@ class HelixHudView(context: Context) : WebView(context) {
             setSupportZoom(false)
             setGeolocationEnabled(false)
             databaseEnabled = false
-            userAgentString = "$userAgentString JarvisHelix/0.9.13"
+            userAgentString = "$userAgentString JarvisHelix/0.9.17"
             @Suppress("DEPRECATION")
             saveFormData = false
             @Suppress("DEPRECATION")

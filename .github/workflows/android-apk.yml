@@ -18,9 +18,9 @@ concurrency:
 
 jobs:
   build:
-    name: Validate and assemble Helix debug APK
+    name: Validate private Jarvis voice APK
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
     env:
       CI: true
 
@@ -35,7 +35,7 @@ jobs:
           cache: npm
           cache-dependency-path: helix-ui/package.json
 
-      - name: Build Helix React WebGL interface
+      - name: Build voice-first Helix interface
         shell: bash
         run: |
           set -euo pipefail
@@ -44,26 +44,6 @@ jobs:
           npm run build 2>&1 | tee ../helix-build.log
           cd ..
 
-          node --input-type=commonjs <<'NODE'
-          const fs = require('fs')
-          const path = require('path')
-          const root = path.resolve('helix-ui/dist')
-          const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8')
-          const references = [...html.matchAll(/(?:src|href)=["']([^"']+)["']/g)]
-            .map(match => match[1])
-            .filter(value => value.startsWith('./') || value.startsWith('assets/'))
-          const files = references.map(value => value.replace(/^\.\//, '').split(/[?#]/)[0])
-          if (!files.some(value => value.endsWith('.js'))) throw new Error('Built index has no JavaScript bundle')
-          if (!files.some(value => value.endsWith('.css'))) throw new Error('Built index has no CSS bundle')
-          for (const file of files) {
-            const resolved = path.resolve(root, file)
-            if (!resolved.startsWith(root + path.sep) || !fs.existsSync(resolved) || fs.statSync(resolved).size === 0) {
-              throw new Error(`Missing or empty built asset: ${file}`)
-            }
-          }
-          console.log(`Verified ${files.length} Helix asset references`)
-          NODE
-
           rm -rf app/src/main/assets/helix
           mkdir -p app/src/main/assets/helix
           cp -R helix-ui/dist/. app/src/main/assets/helix/
@@ -71,7 +51,7 @@ jobs:
           test -n "$(find app/src/main/assets/helix/assets -name '*.js' -type f -print -quit)"
           test -n "$(find app/src/main/assets/helix/assets -name '*.css' -type f -print -quit)"
 
-      - name: Smoke-test Helix controls in Chrome
+      - name: Smoke-test private Jarvis HUD
         shell: bash
         run: |
           set -euo pipefail
@@ -104,12 +84,18 @@ jobs:
             --dump-dom \
             http://127.0.0.1:4173/ > helix-dom.html
 
-          grep -q 'JARVIS // HELIX' helix-dom.html
-          grep -q 'BUILD 0.9.15' helix-dom.html
+          grep -q 'SEONGJA PRIVATE INTELLIGENCE' helix-dom.html
+          grep -q 'BUILD 0.9.17' helix-dom.html
           grep -q 'API SETUP' helix-dom.html
-          grep -q 'TYPE COMMAND' helix-dom.html
+          grep -q 'NO CHAT INPUT LAYER' helix-dom.html
+          grep -q 'JARVIS // TO SEONGJA' helix-dom.html
+
+          if grep -q 'TYPE COMMAND' helix-dom.html || grep -q '>SEND<' helix-dom.html; then
+            echo 'Chat input controls are still present.' >&2
+            exit 1
+          fi
           if grep -q 'RENDER FALLBACK ONLINE' helix-dom.html; then
-            echo 'Helix entered the render fallback during the browser smoke test.' >&2
+            echo 'Helix entered the render fallback.' >&2
             exit 1
           fi
 
@@ -143,7 +129,7 @@ jobs:
             --warning-mode all \
             --no-daemon 2>&1 | tee android-build.log
 
-      - name: Verify APK package, bridge, permissions, and diagnostics
+      - name: Verify private Jarvis APK
         shell: bash
         run: |
           set -euo pipefail
@@ -158,7 +144,7 @@ jobs:
           unzip -l "$APK" | tee apk-contents.log
 
           grep -q "package: name='com.seongja.jarvis'" apk-badging.log
-          grep -q "versionName='0.9.16-tavily-diagnostics'" apk-badging.log
+          grep -q "versionName='0.9.17-private-voice'" apk-badging.log
           grep -q "sdkVersion:'28'" apk-badging.log
           grep -q "targetSdkVersion:'35'" apk-badging.log
           grep -q "android.permission.RECORD_AUDIO" apk-permissions.log
@@ -167,24 +153,30 @@ jobs:
           grep -q 'assets/helix/assets/.*\.js' apk-contents.log
           grep -q 'assets/helix/assets/.*\.css' apk-contents.log
 
+          grep -q 'private lateinit var localVoice' app/src/main/java/com/seongja/jarvis/VoiceLoop.kt
+          grep -q 'LOCAL JARVIS SYNTHESIS' app/src/main/java/com/seongja/jarvis/VoiceLoop.kt
+          grep -q 'HIDDEN_XML_BLOCK' app/src/main/java/com/seongja/jarvis/JarvisResponseSanitizer.kt
+          grep -q 'OWNER-CORE 1.3' app/src/main/java/com/seongja/jarvis/OwnerIdentityCore.kt
+          grep -q 'I am Jarvis, your private personal intelligence' app/src/main/java/com/seongja/jarvis/JarvisBrain.kt
+          grep -q 'groundedResearch = true' app/src/main/java/com/seongja/jarvis/SearchGridResearchClient.kt
+          grep -q 'Never refer to Seongja as user' app/src/main/java/com/seongja/jarvis/OwnerIdentityCore.kt || \
+            grep -q 'Never refer to him as the user' app/src/main/java/com/seongja/jarvis/CortexModels.kt
+
           rm -rf apk-helix-check
           mkdir -p apk-helix-check
           unzip -q "$APK" 'assets/helix/*' -d apk-helix-check
-          grep -R -q 'API SETUP' apk-helix-check/assets/helix/assets
-          grep -R -q 'TYPE COMMAND' apk-helix-check/assets/helix/assets
-
-          grep -q 'JarvisApplication' app/src/main/AndroidManifest.xml
-          grep -q 'JarvisCommandBridge' app/src/main/java/com/seongja/jarvis/JarvisApplication.kt
-          grep -q 'onSpeechDetected' app/src/main/java/com/seongja/jarvis/OnDeviceSpeechInput.kt
-          grep -q 'AWAITING REAL SPEECH' app/src/main/java/com/seongja/jarvis/VoiceLoop.kt
-          grep -q 'COOLDOWN' app/src/main/java/com/seongja/jarvis/SearchGridModels.kt
-          grep -q 'safeError' app/src/main/java/com/seongja/jarvis/SearchGridModels.kt
+          grep -R -q 'SEONGJA PRIVATE INTELLIGENCE' apk-helix-check/assets/helix/assets
+          grep -R -q 'JARVIS // TO SEONGJA' apk-helix-check/assets/helix/assets
+          if grep -R -q 'TYPE COMMAND' apk-helix-check/assets/helix/assets; then
+            echo 'Text chat UI leaked into the APK.' >&2
+            exit 1
+          fi
 
       - name: Upload validation logs
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: Jarvis-Helix-validation-logs
+          name: Jarvis-0.9.17-validation-logs
           path: |
             helix-build.log
             helix-server.log
@@ -205,7 +197,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v7
         with:
-          name: Jarvis-Helix-0.9.16-tavily-diagnostics-apk
+          name: Jarvis-Helix-0.9.17-private-voice-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14

@@ -11,8 +11,8 @@ android {
         applicationId = "com.seongja.jarvis"
         minSdk = 28
         targetSdk = 35
-        versionCode = 26
-        versionName = "0.9.16-tavily-diagnostics"
+        versionCode = 27
+        versionName = "0.9.17-private-voice"
     }
 
     buildTypes {
