@@ -1,0 +1,35 @@
+name: Apply local device agent wiring
+
+on:
+  push:
+    branches:
+      - feat/local-device-agent
+    paths:
+      - tools/wire_local_device_agent.py
+      - .github/workflows/apply-local-agent-wire.yml
+
+permissions:
+  contents: write
+
+jobs:
+  wire:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: feat/local-device-agent
+          fetch-depth: 0
+
+      - name: Apply local-agent wiring
+        run: python tools/wire_local_device_agent.py
+
+      - name: Commit generated integration
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git diff --cached --quiet || git commit -m "Wire local device automation and wake listener"
+          git push origin HEAD:feat/local-device-agent
