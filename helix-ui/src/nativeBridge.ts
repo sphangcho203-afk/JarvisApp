@@ -3,7 +3,11 @@ import type { AudioMetrics, CountdownState, HelixState, NativePayload, NativeTel
 
 declare global {
   interface Window {
-    JarvisAndroid?: { onHelixReady: () => void; onCoreTap: () => void }
+    JarvisAndroid?: {
+      onHelixReady: () => void
+      onCoreTap: () => void
+      onHelixError?: (message: string) => void
+    }
     jarvisHelix?: { receive: (payload: NativePayload) => void }
   }
 }
