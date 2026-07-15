@@ -10,6 +10,7 @@ declare global {
     }
     JarvisCommandBridge?: {
       openApiSetup: () => void
+      openPermissionCenter: () => void
     }
     jarvisHelix?: { receive: (payload: NativePayload) => void }
   }
@@ -33,7 +34,7 @@ export function useNativeBridge() {
   const [bridgeReady, setBridgeReady] = useState(false)
   const [logs, setLogs] = useState<TerminalLog[]>([
     { id: 1, time: '00:00:01', channel: 'CORE', text: 'HELIX lattice initialized.' },
-    { id: 2, time: '00:00:02', channel: 'SYS', text: 'Private Android command fabric awaiting bridge.' },
+    { id: 2, time: '00:00:02', channel: 'SYS', text: 'Android command fabric awaiting verified permissions.' },
     { id: 3, time: '00:00:03', channel: 'VOICE', text: 'Jarvis voice array armed.' },
   ])
 
@@ -72,6 +73,14 @@ export function useNativeBridge() {
     return () => { delete window.jarvisHelix }
   }, [])
 
+  const openSetup = () => {
+    if (telemetry.cloudConfigured) {
+      window.JarvisCommandBridge?.openPermissionCenter()
+    } else {
+      window.JarvisCommandBridge?.openApiSetup()
+    }
+  }
+
   return {
     mode,
     metricsRef,
@@ -83,7 +92,8 @@ export function useNativeBridge() {
     bridgeReady,
     logs,
     clearLogs: () => setLogs([]),
-    openApiSetup: () => window.JarvisCommandBridge?.openApiSetup(),
+    setupLabel: telemetry.cloudConfigured ? 'ANDROID' : 'API SETUP',
+    openSetup,
     tapCore: () => {
       if (!telemetry.cloudConfigured && window.JarvisCommandBridge) {
         window.JarvisCommandBridge.openApiSetup()
@@ -98,6 +108,6 @@ function channelFor(text: string): TerminalLog['channel'] {
   const value = text.toUpperCase()
   if (value.includes('ERROR') || value.includes('FAILED') || value.includes('DENIED')) return 'WARN'
   if (value.includes('VOICE') || value.includes('MIC')) return 'VOICE'
-  if (value.includes('ACTION') || value.includes('SYSTEM') || value.includes('DEVICE')) return 'SYS'
+  if (value.includes('ACTION') || value.includes('SYSTEM') || value.includes('DEVICE') || value.includes('PERMISSION')) return 'SYS'
   return 'CORE'
 }
