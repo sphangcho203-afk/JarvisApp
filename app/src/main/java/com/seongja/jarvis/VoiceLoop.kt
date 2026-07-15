@@ -21,6 +21,7 @@ class VoiceLoop(
     private var paused = true
     private var listening = false
     private var usingOnDeviceInput = false
+    private var consecutiveInputFailures = 0
     private var outputCompletion: (() -> Unit)? = null
     private lateinit var gateway: JarvisVoiceGateway
     private lateinit var onDeviceInput: OnDeviceSpeechInput
@@ -28,6 +29,7 @@ class VoiceLoop(
     private val gatewayListener = object : JarvisVoiceGateway.Listener {
         override fun onBackendReady() {
             handler.post {
+                consecutiveInputFailures = 0
                 onDiagnostic("VOICE BACKEND -> READY // PREMIUM PCM STREAMING")
                 onState(State.READY)
                 if (!paused && !listening) startDelayed(250L)
@@ -40,6 +42,7 @@ class VoiceLoop(
                     gateway.stopInput(sendForTranscription = false)
                     return@post
                 }
+                consecutiveInputFailures = 0
                 listening = true
                 usingOnDeviceInput = false
                 onPartial("Listening...")
@@ -92,11 +95,22 @@ class VoiceLoop(
                 listening = false
                 onRms(0f)
                 onDiagnostic("PREMIUM VOICE UNAVAILABLE -> $message")
-                if (!destroyed && !paused && onDeviceInput.isAvailable()) {
-                    onDiagnostic("VOICE INPUT -> SWITCHING TO ON-DEVICE MODE")
-                    startDelayed(350L)
+                if (destroyed) return@post
+                if (paused) {
+                    onDiagnostic("VOICE ERROR -> IGNORED WHILE INPUT PAUSED")
+                    onState(State.READY)
+                    return@post
+                }
+
+                consecutiveInputFailures++
+                if (onDeviceInput.isAvailable()) {
+                    onDiagnostic("VOICE INPUT -> SWITCHING TO ANDROID SPEECH")
+                    onState(State.READY)
+                    startDelayed(recoveryDelayMs())
                 } else {
-                    onState(State.ERROR)
+                    onDiagnostic("VOICE INPUT -> RETRYING LOCAL RECOGNIZER DISCOVERY")
+                    onState(State.UNAVAILABLE)
+                    startDelayed(2_500L)
                 }
             }
         }
@@ -109,10 +123,11 @@ class VoiceLoop(
                     onDeviceInput.stop()
                     return@post
                 }
+                consecutiveInputFailures = 0
                 listening = true
                 usingOnDeviceInput = true
                 onPartial("Listening locally...")
-                onDiagnostic("MIC -> ANDROID ON-DEVICE SPEECH // API KEY FREE")
+                onDiagnostic("MIC -> ${onDeviceInput.backendLabel()} // API KEY FREE")
                 onState(State.LISTENING)
             }
         }
@@ -130,7 +145,7 @@ class VoiceLoop(
         }
 
         override fun onFinal(text: String) {
-            handler.post { deliverTranscript(text, "android_on_device") }
+            handler.post { deliverTranscript(text, "android_speech") }
         }
 
         override fun onError(code: Int, recoverable: Boolean) {
@@ -138,12 +153,27 @@ class VoiceLoop(
                 listening = false
                 usingOnDeviceInput = false
                 onRms(0f)
-                onDiagnostic("ON-DEVICE SPEECH -> ERROR $code")
-                if (!destroyed && !paused && recoverable) {
+                onDiagnostic("ANDROID SPEECH -> ERROR $code")
+                if (destroyed) return@post
+
+                // Cancelling recognition during navigation, processing, or TTS
+                // can produce a late callback. A paused loop must never turn
+                // that expected callback into a permanent red fault state.
+                if (paused) {
+                    onDiagnostic("ANDROID SPEECH ERROR -> IGNORED WHILE PAUSED")
                     onState(State.READY)
-                    startDelayed(650L)
+                    return@post
+                }
+
+                consecutiveInputFailures++
+                if (recoverable || onDeviceInput.isAvailable()) {
+                    onDiagnostic("VOICE INPUT -> AUTOMATIC RECOVERY ${consecutiveInputFailures}")
+                    onState(State.READY)
+                    startDelayed(recoveryDelayMs())
                 } else {
-                    onState(State.ERROR)
+                    onDiagnostic("VOICE INPUT -> SERVICE TEMPORARILY UNAVAILABLE")
+                    onState(State.UNAVAILABLE)
+                    startDelayed(3_000L)
                 }
             }
         }
@@ -181,8 +211,12 @@ class VoiceLoop(
         paused = false
         listening = false
         usingOnDeviceInput = false
+        consecutiveInputFailures = 0
+        handler.removeCallbacksAndMessages(START_TOKEN)
         onDeviceInput.stop()
         gateway.stopSpeech()
+        onRms(0f)
+        onState(State.READY)
         handler.postDelayed({ startNow() }, 700L)
     }
 
@@ -221,6 +255,7 @@ class VoiceLoop(
         if (destroyed) return
         paused = false
         onDiagnostic("VOICE INPUT -> REARMING")
+        onState(State.READY)
         startDelayed(delayMs)
     }
 
@@ -233,6 +268,7 @@ class VoiceLoop(
     fun resume() {
         if (destroyed) return
         paused = false
+        onState(State.READY)
         gateway.connect()
         startDelayed(650L)
     }
@@ -263,17 +299,22 @@ class VoiceLoop(
             val started = onDeviceInput.start()
             if (!started) {
                 usingOnDeviceInput = false
-                onDiagnostic("ON-DEVICE SPEECH -> START FAILED")
-                onState(State.ERROR)
-                startDelayed(1_200L)
+                consecutiveInputFailures++
+                onDiagnostic("ANDROID SPEECH -> START FAILED // RETRYING")
+                onState(State.READY)
+                startDelayed(recoveryDelayMs())
             }
             return
         }
 
-        onDiagnostic("VOICE INPUT -> NO LOCAL RECOGNIZER AVAILABLE")
+        consecutiveInputFailures++
+        onDiagnostic("VOICE INPUT -> NO ANDROID RECOGNIZER // RETRYING")
         onState(State.UNAVAILABLE)
-        startDelayed(1_800L)
+        startDelayed(3_000L)
     }
+
+    private fun recoveryDelayMs(): Long =
+        (450L * consecutiveInputFailures.coerceIn(1, 6)).coerceAtMost(2_700L)
 
     private fun stopAllInput() {
         listening = false
@@ -287,6 +328,7 @@ class VoiceLoop(
     private fun deliverTranscript(text: String, source: String) {
         listening = false
         usingOnDeviceInput = false
+        consecutiveInputFailures = 0
         onRms(0f)
         val normalized = SpeechCommandNormalizer.normalize(text)
         if (normalized.commandText.isBlank()) {
