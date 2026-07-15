@@ -180,7 +180,7 @@ class PermissionCenterActivity : Activity() {
         }, matchWidth(bottom = 8))
 
         root.addView(TextView(this).apply {
-            text = "You can reopen this screen later from API Setup. Android may revoke permissions or accessibility services at any time, so Jarvis must continue verifying state before every sensitive action."
+            text = "After API setup is complete, the HELIX setup button becomes ANDROID and reopens this screen. Android may revoke permissions or accessibility services at any time, so Jarvis must continue verifying state before every sensitive action."
             textSize = 11f
             setTextColor(Color.GRAY)
             setPadding(0, dp(8), 0, 0)
@@ -351,13 +351,23 @@ class PermissionCenterActivity : Activity() {
         Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
             hasPermission(Manifest.permission.POST_NOTIFICATIONS)
 
+    @Suppress("DEPRECATION")
     private fun hasUsageAccess(): Boolean {
         val appOps = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
-        return appOps.unsafeCheckOpNoThrow(
-            AppOpsManager.OPSTR_GET_USAGE_STATS,
-            android.os.Process.myUid(),
-            packageName
-        ) == AppOpsManager.MODE_ALLOWED
+        val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            appOps.unsafeCheckOpNoThrow(
+                AppOpsManager.OPSTR_GET_USAGE_STATS,
+                android.os.Process.myUid(),
+                packageName
+            )
+        } else {
+            appOps.checkOpNoThrow(
+                AppOpsManager.OPSTR_GET_USAGE_STATS,
+                android.os.Process.myUid(),
+                packageName
+            )
+        }
+        return mode == AppOpsManager.MODE_ALLOWED
     }
 
     private fun hasNotificationListenerAccess(): Boolean {
