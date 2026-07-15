@@ -9,7 +9,10 @@ import android.os.Looper
 import android.os.SystemClock
 import android.view.HapticFeedbackConstants
 import android.view.View
+import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
+import android.webkit.WebChromeClient
+import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
@@ -45,6 +48,7 @@ class HelixHudView(context: Context) : WebView(context) {
     private var voiceSource = "LOCAL"
     private var coreTapListener: (() -> Unit)? = null
     private var lastAudioDispatchAt = 0L
+    private var bridgeTimeout: Runnable? = null
 
     private val telemetryTicker = object : Runnable {
         override fun run() {
@@ -76,7 +80,7 @@ class HelixHudView(context: Context) : WebView(context) {
             setSupportZoom(false)
             setGeolocationEnabled(false)
             databaseEnabled = false
-            userAgentString = "$userAgentString JarvisHelix/0.9.12"
+            userAgentString = "$userAgentString JarvisHelix/0.9.13"
             @Suppress("DEPRECATION")
             saveFormData = false
             @Suppress("DEPRECATION")
@@ -87,16 +91,50 @@ class HelixHudView(context: Context) : WebView(context) {
 
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
         addJavascriptInterface(AndroidBridge(), BRIDGE_NAME)
+
+        webChromeClient = object : WebChromeClient() {
+            override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
+                val message = consoleMessage?.message()?.trim().orEmpty()
+                if (
+                    message.isNotBlank() &&
+                    consoleMessage?.messageLevel() == ConsoleMessage.MessageLevel.ERROR
+                ) {
+                    reportRuntimeError("HELIX JS -> ${message.take(MAX_EVENT_CHARS)}")
+                }
+                return true
+            }
+        }
+
         webViewClient = object : WebViewClient() {
             override fun shouldOverrideUrlLoading(
                 view: WebView?,
                 request: WebResourceRequest?
-            ): Boolean = request?.url?.scheme != "file"
+            ): Boolean = !isAllowedNavigation(request?.url?.toString())
+
+            @Suppress("DEPRECATION")
+            override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean =
+                !isAllowedNavigation(url)
 
             override fun onPageFinished(view: WebView?, url: String?) {
                 super.onPageFinished(view, url)
-                if (url?.startsWith(HELIX_ASSET_URL) == true) {
+                if (url == HELIX_ASSET_URL) {
                     dispatchEvent("HELIX DOCUMENT -> LOADED", "SYS")
+                    armBridgeTimeout()
+                }
+            }
+
+            override fun onReceivedError(
+                view: WebView?,
+                request: WebResourceRequest?,
+                error: WebResourceError?
+            ) {
+                super.onReceivedError(view, request, error)
+                if (request?.isForMainFrame == true) {
+                    val code = error?.errorCode ?: -1
+                    val description = error?.description?.toString().orEmpty()
+                    showNativeFallback(
+                        "HELIX document failed to load ($code). ${description.take(120)}"
+                    )
                 }
             }
         }
@@ -211,6 +249,7 @@ class HelixHudView(context: Context) : WebView(context) {
     fun release() {
         if (released) return
         released = true
+        cancelBridgeTimeout()
         stopTelemetry()
         handler.removeCallbacksAndMessages(null)
         coreTapListener = null
@@ -319,17 +358,106 @@ class HelixHudView(context: Context) : WebView(context) {
         }
     }
 
+    private fun armBridgeTimeout() {
+        cancelBridgeTimeout()
+        bridgeTimeout = Runnable {
+            if (!pageReady && !released) {
+                showNativeFallback("The HELIX native bridge did not initialize within 12 seconds.")
+            }
+        }.also { handler.postDelayed(it, BRIDGE_READY_TIMEOUT_MS) }
+    }
+
+    private fun cancelBridgeTimeout() {
+        bridgeTimeout?.let(handler::removeCallbacks)
+        bridgeTimeout = null
+    }
+
+    private fun reportRuntimeError(message: String) {
+        post {
+            if (released) return@post
+            currentMode = "ERROR"
+            dispatchEvent(message.take(MAX_EVENT_CHARS), "WARN")
+        }
+    }
+
+    private fun showNativeFallback(reason: String) {
+        post {
+            if (released) return@post
+            cancelBridgeTimeout()
+            pageReady = false
+            pendingPayloads.clear()
+            currentMode = "ERROR"
+            loadDataWithBaseURL(
+                HELIX_ASSET_ROOT,
+                fallbackHtml(reason),
+                "text/html",
+                "UTF-8",
+                null
+            )
+        }
+    }
+
+    private fun fallbackHtml(reason: String): String {
+        val safeReason = reason
+            .replace("&", "&amp;")
+            .replace("<", "&lt;")
+            .replace(">", "&gt;")
+            .replace("\"", "&quot;")
+            .replace("'", "&#39;")
+            .take(320)
+
+        return """
+            <!doctype html>
+            <html lang="en">
+            <head>
+              <meta charset="utf-8">
+              <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+              <style>
+                *{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;background:#02060a;color:#e9fbff;font-family:monospace}
+                body{display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 50% 35%,rgba(74,222,255,.14),transparent 34%),#02060a}
+                main{width:min(680px,100%);border:1px solid rgba(74,222,255,.35);padding:28px;text-align:center;box-shadow:inset 0 0 50px rgba(74,222,255,.05),0 0 35px rgba(74,222,255,.08)}
+                .eyebrow{color:#4adeff;font-size:11px;letter-spacing:.28em}.title{font-size:18px;letter-spacing:.15em;margin:18px 0 10px}.copy{color:rgba(255,255,255,.58);font-size:12px;line-height:1.8}
+                pre{white-space:pre-wrap;overflow-wrap:anywhere;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);color:rgba(255,255,255,.48);font-size:10px;padding:12px;margin:20px 0}
+                .actions{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}button{font:10px monospace;letter-spacing:.16em;padding:11px 15px}button:first-child{border:0;background:#4adeff;color:#021018}button:last-child{border:1px solid rgba(74,222,255,.38);background:transparent;color:#4adeff}
+              </style>
+            </head>
+            <body>
+              <main>
+                <div class="eyebrow">JARVIS // HELIX</div>
+                <div class="title">NATIVE FALLBACK ONLINE</div>
+                <p class="copy">The visual document could not initialize. The native Android command core remains available.</p>
+                <pre>$safeReason</pre>
+                <div class="actions">
+                  <button onclick="location.href='index.html'">RETRY HELIX</button>
+                  <button onclick="window.JarvisAndroid&&window.JarvisAndroid.onCoreTap()">RECALIBRATE VOICE</button>
+                </div>
+              </main>
+            </body>
+            </html>
+        """.trimIndent()
+    }
+
+    private fun isAllowedNavigation(url: String?): Boolean =
+        url == "about:blank" || url?.startsWith(HELIX_ASSET_ROOT) == true
+
     inner class AndroidBridge {
         @JavascriptInterface
         fun onHelixReady() {
             post {
                 if (released) return@post
+                cancelBridgeTimeout()
                 pageReady = true
                 dispatch(JSONObject().put("type", "ready"))
                 flushPending()
                 dispatchTelemetry()
                 dispatchEvent("HELIX WEBGL -> NATIVE BRIDGE LOCKED", "SYS")
             }
+        }
+
+        @JavascriptInterface
+        fun onHelixError(message: String) {
+            val clean = message.replace(Regex("\\s+"), " ").take(MAX_EVENT_CHARS)
+            reportRuntimeError("HELIX RENDER -> $clean")
         }
 
         @JavascriptInterface
@@ -344,9 +472,11 @@ class HelixHudView(context: Context) : WebView(context) {
 
     companion object {
         private const val BRIDGE_NAME = "JarvisAndroid"
-        private const val HELIX_ASSET_URL = "file:///android_asset/helix/index.html"
+        private const val HELIX_ASSET_ROOT = "file:///android_asset/helix/"
+        private const val HELIX_ASSET_URL = "${HELIX_ASSET_ROOT}index.html"
         private const val TELEMETRY_INTERVAL_MS = 1_000L
         private const val AUDIO_DISPATCH_INTERVAL_MS = 45L
+        private const val BRIDGE_READY_TIMEOUT_MS = 12_000L
         private const val MAX_PENDING_PAYLOADS = 96
         private const val MAX_TEXT_CHARS = 12_000
         private const val MAX_EVENT_CHARS = 180

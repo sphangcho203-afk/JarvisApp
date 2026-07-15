@@ -12,17 +12,24 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: jarvis-android-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
-    name: Assemble Helix debug APK
+    name: Validate and assemble Helix debug APK
     runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      CI: true
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Node 22
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '22'
           cache: npm
@@ -31,11 +38,33 @@ jobs:
       - name: Build Helix React WebGL interface
         shell: bash
         run: |
-          set -o pipefail
+          set -euo pipefail
           cd helix-ui
           npm install --no-audit --no-fund
           npm run build 2>&1 | tee ../helix-build.log
           cd ..
+
+          node --input-type=commonjs <<'NODE'
+          const fs = require('fs')
+          const path = require('path')
+          const root = path.resolve('helix-ui/dist')
+          const htmlPath = path.join(root, 'index.html')
+          const html = fs.readFileSync(htmlPath, 'utf8')
+          const references = [...html.matchAll(/(?:src|href)=["']([^"']+)["']/g)]
+            .map(match => match[1])
+            .filter(value => value.startsWith('./') || value.startsWith('assets/'))
+          const files = references.map(value => value.replace(/^\.\//, '').split(/[?#]/)[0])
+          if (!files.some(value => value.endsWith('.js'))) throw new Error('Built index has no JavaScript bundle')
+          if (!files.some(value => value.endsWith('.css'))) throw new Error('Built index has no CSS bundle')
+          for (const file of files) {
+            const resolved = path.resolve(root, file)
+            if (!resolved.startsWith(root + path.sep) || !fs.existsSync(resolved) || fs.statSync(resolved).size === 0) {
+              throw new Error(`Missing or empty built asset: ${file}`)
+            }
+          }
+          console.log(`Verified ${files.length} Helix asset references`)
+          NODE
+
           rm -rf app/src/main/assets/helix
           mkdir -p app/src/main/assets/helix
           cp -R helix-ui/dist/. app/src/main/assets/helix/
@@ -43,54 +72,149 @@ jobs:
           test -n "$(find app/src/main/assets/helix/assets -name '*.js' -type f -print -quit)"
           test -n "$(find app/src/main/assets/helix/assets -name '*.css' -type f -print -quit)"
 
+      - name: Smoke-test Helix runtime in Chrome
+        shell: bash
+        run: |
+          set -euo pipefail
+          CHROME="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          test -n "$CHROME"
+
+          python3 -m http.server 4173 --directory helix-ui/dist > helix-server.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+
+          READY=0
+          for _ in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:4173/ > /dev/null; then
+              READY=1
+              break
+            fi
+            sleep 0.5
+          done
+          test "$READY" = 1
+
+          "$CHROME" \
+            --headless=new \
+            --no-sandbox \
+            --disable-dev-shm-usage \
+            --use-gl=swiftshader \
+            --enable-webgl \
+            --virtual-time-budget=7000 \
+            --window-size=1280,720 \
+            --screenshot=helix-smoke.png \
+            --dump-dom \
+            http://127.0.0.1:4173/ > helix-dom.html
+
+          grep -q 'JARVIS // HELIX' helix-dom.html
+          grep -q 'WEBGL CORE // ORION HELIX' helix-dom.html
+          if grep -q 'RENDER FALLBACK ONLINE' helix-dom.html; then
+            echo 'Helix entered the WebGL fallback during the browser smoke test.' >&2
+            exit 1
+          fi
+
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Install Android SDK 35
+        shell: bash
         run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v5
         with:
           gradle-version: 8.10.2
 
-      - name: Build debug APK
+      - name: Lint, test, and build debug APK
         shell: bash
         run: |
           set -o pipefail
-          gradle :app:assembleDebug --stacktrace --no-daemon 2>&1 | tee android-build.log
+          gradle \
+            :app:lintDebug \
+            :app:testDebugUnitTest \
+            :app:assembleDebug \
+            --stacktrace \
+            --warning-mode all \
+            --no-daemon 2>&1 | tee android-build.log
 
-      - name: Verify Helix assets inside APK
+      - name: Verify APK package, signature, alignment, permissions, and Helix assets
         shell: bash
         run: |
+          set -euo pipefail
           APK="$(find app/build/outputs/apk/debug -name '*.apk' -type f | head -n 1)"
           test -n "$APK"
-          unzip -l "$APK" | tee apk-contents.log
-          unzip -l "$APK" | grep -q 'assets/helix/index.html'
-          unzip -l "$APK" | grep -q 'assets/helix/assets/.*\.js'
-          unzip -l "$APK" | grep -q 'assets/helix/assets/.*\.css'
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/35.0.0"
 
-      - name: Upload build logs
+          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" 2>&1 | tee apk-signature.log
+          "$BUILD_TOOLS/zipalign" -c -v 4 "$APK" 2>&1 | tee apk-zipalign.log
+          "$BUILD_TOOLS/aapt" dump badging "$APK" | tee apk-badging.log
+          "$BUILD_TOOLS/aapt" dump permissions "$APK" | tee apk-permissions.log
+          unzip -l "$APK" | tee apk-contents.log
+
+          grep -q "package: name='com.seongja.jarvis'" apk-badging.log
+          grep -q "versionName='0.9.13-helix-hardening'" apk-badging.log
+          grep -q "sdkVersion:'28'" apk-badging.log
+          grep -q "targetSdkVersion:'35'" apk-badging.log
+          grep -q "android.permission.RECORD_AUDIO" apk-permissions.log
+          grep -q "android.permission.FOREGROUND_SERVICE_MICROPHONE" apk-permissions.log
+          grep -q 'classes.dex' apk-contents.log
+          grep -q 'assets/helix/index.html' apk-contents.log
+          grep -q 'assets/helix/assets/.*\.js' apk-contents.log
+          grep -q 'assets/helix/assets/.*\.css' apk-contents.log
+
+          rm -rf apk-helix-check
+          mkdir -p apk-helix-check
+          unzip -q "$APK" 'assets/helix/*' -d apk-helix-check
+
+          node --input-type=commonjs <<'NODE'
+          const fs = require('fs')
+          const path = require('path')
+          const root = path.resolve('apk-helix-check/assets/helix')
+          const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8')
+          const references = [...html.matchAll(/(?:src|href)=["']([^"']+)["']/g)]
+            .map(match => match[1])
+            .filter(value => value.startsWith('./') || value.startsWith('assets/'))
+          for (const reference of references) {
+            const file = reference.replace(/^\.\//, '').split(/[?#]/)[0]
+            const resolved = path.resolve(root, file)
+            if (!resolved.startsWith(root + path.sep) || !fs.existsSync(resolved) || fs.statSync(resolved).size === 0) {
+              throw new Error(`APK contains a broken Helix reference: ${file}`)
+            }
+          }
+          console.log(`Verified ${references.length} Helix references inside the APK`)
+          NODE
+
+      - name: Upload validation logs
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: Jarvis-Helix-build-logs
+          name: Jarvis-Helix-validation-logs
           path: |
             helix-build.log
+            helix-server.log
+            helix-dom.html
+            helix-smoke.png
             android-build.log
+            apk-signature.log
+            apk-zipalign.log
+            apk-badging.log
+            apk-permissions.log
             apk-contents.log
+            app/build/reports/lint-results-debug.html
+            app/build/reports/tests/testDebugUnitTest/
           if-no-files-found: warn
+          retention-days: 14
 
-      - name: Upload APK artifact
+      - name: Upload verified APK artifact
         if: success()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
-          name: Jarvis-Helix-debug-apk
+          name: Jarvis-Helix-verified-debug-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+          retention-days: 14

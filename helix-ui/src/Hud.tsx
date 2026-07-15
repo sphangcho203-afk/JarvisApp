@@ -42,7 +42,7 @@ function Status({ mode, theme, telemetry, bridgeReady }: { mode: HelixState; the
   return <header className="relative z-20 flex h-[58px] items-center justify-between border-b border-white/8 bg-black/25 px-3 backdrop-blur-xl md:px-6">
     <div className="flex min-w-0 items-center gap-3">
       <div className="grid size-8 place-items-center border font-mono text-[9px]" style={{ borderColor: `rgba(${theme.rgb}/.55)`, color: theme.hex, boxShadow: `inset 0 0 15px rgba(${theme.rgb}/.15)` }}>JH</div>
-      <div className="min-w-0"><p className="truncate font-mono text-[11px] tracking-[.2em] text-white/90 md:text-sm">JARVIS // HELIX</p><p className="truncate font-mono text-[7px] tracking-[.22em] text-white/32 md:text-[9px]">ANDROID COGNITIVE INTERFACE // BUILD 0.9.12</p></div>
+      <div className="min-w-0"><p className="truncate font-mono text-[11px] tracking-[.2em] text-white/90 md:text-sm">JARVIS // HELIX</p><p className="truncate font-mono text-[7px] tracking-[.22em] text-white/32 md:text-[9px]">ANDROID COGNITIVE INTERFACE // BUILD 0.9.13</p></div>
     </div>
     <div className="flex items-center gap-3 font-mono text-[7px] tracking-[.16em] text-white/45 md:text-[9px]">
       <span className="hidden md:inline">{telemetry.time} // {telemetry.voiceSource.toUpperCase()} // {bridgeReady ? 'NATIVE LOCK' : 'SYNC'}</span>
