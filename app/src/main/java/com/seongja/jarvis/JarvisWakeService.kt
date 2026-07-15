@@ -24,17 +24,20 @@ import java.util.concurrent.atomic.AtomicBoolean
  *
  * It uses only Android's on-device speech recognizer. When on-device recognition
  * is unavailable, the service refuses to start rather than silently using a
- * network recognizer.
+ * network recognizer. The visible foreground notification remains active while
+ * the feature is enabled.
  */
 class JarvisWakeService : Service(), RecognitionListener {
     private val handler = Handler(Looper.getMainLooper())
     private var recognizer: SpeechRecognizer? = null
     private var listening = false
     private var destroyed = false
+    private var pausedForConversation = false
     private var lastWakeAtMs = 0L
 
     override fun onCreate() {
         super.onCreate()
+        instance = this
         running.set(true)
         createNotificationChannel()
         startForeground(NOTIFICATION_ID, buildNotification())
@@ -42,12 +45,32 @@ class JarvisWakeService : Service(), RecognitionListener {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP) {
-            stopSelf()
-            return START_NOT_STICKY
+        when (intent?.action) {
+            ACTION_STOP -> {
+                setEnabled(this, false)
+                stopSelf()
+                return START_NOT_STICKY
+            }
+
+            ACTION_PAUSE -> {
+                pauseRecognition()
+                return START_STICKY
+            }
+
+            ACTION_RESUME -> {
+                pausedForConversation = false
+                startListeningSoon(250L)
+                return START_STICKY
+            }
+
+            else -> {
+                if (isEnabled(this)) {
+                    pausedForConversation = false
+                    startListeningSoon(250L)
+                }
+                return START_STICKY
+            }
         }
-        startListeningSoon(250L)
-        return START_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
@@ -56,6 +79,7 @@ class JarvisWakeService : Service(), RecognitionListener {
         destroyed = true
         listening = false
         running.set(false)
+        if (instance === this) instance = null
         handler.removeCallbacksAndMessages(null)
         runCatching { recognizer?.cancel() }
         runCatching { recognizer?.destroy() }
@@ -80,7 +104,7 @@ class JarvisWakeService : Service(), RecognitionListener {
     }
 
     private fun startListeningSoon(delayMs: Long) {
-        if (destroyed) return
+        if (destroyed || pausedForConversation || !isEnabled(this)) return
         handler.removeCallbacks(START_TOKEN)
         handler.postAtTime(
             { startListening() },
@@ -90,7 +114,7 @@ class JarvisWakeService : Service(), RecognitionListener {
     }
 
     private fun startListening() {
-        if (destroyed || listening) return
+        if (destroyed || pausedForConversation || listening || !isEnabled(this)) return
         val engine = recognizer ?: return
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(
@@ -111,6 +135,13 @@ class JarvisWakeService : Service(), RecognitionListener {
             }
     }
 
+    private fun pauseRecognition() {
+        pausedForConversation = true
+        listening = false
+        handler.removeCallbacks(START_TOKEN)
+        runCatching { recognizer?.cancel() }
+    }
+
     private fun inspectResults(bundle: Bundle?, final: Boolean) {
         val candidates = bundle
             ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
@@ -124,7 +155,7 @@ class JarvisWakeService : Service(), RecognitionListener {
             WAKE_PHRASES.any { phrase -> normalized.contains(phrase) }
         }
         if (matched != null) summonJarvis()
-        if (final) {
+        if (final && !pausedForConversation) {
             listening = false
             startListeningSoon(RESTART_DELAY_MS)
         }
@@ -134,8 +165,7 @@ class JarvisWakeService : Service(), RecognitionListener {
         val now = android.os.SystemClock.elapsedRealtime()
         if (now - lastWakeAtMs < WAKE_COOLDOWN_MS) return
         lastWakeAtMs = now
-        listening = false
-        runCatching { recognizer?.cancel() }
+        pauseRecognition()
 
         val intent = Intent(this, MainActivity::class.java).apply {
             addFlags(
@@ -146,7 +176,6 @@ class JarvisWakeService : Service(), RecognitionListener {
             putExtra(EXTRA_WAKE_DETECTED, true)
         }
         runCatching { startActivity(intent) }
-        startListeningSoon(WAKE_REARM_DELAY_MS)
     }
 
     private fun buildNotification(): android.app.Notification {
@@ -204,7 +233,7 @@ class JarvisWakeService : Service(), RecognitionListener {
 
     override fun onError(error: Int) {
         listening = false
-        if (!destroyed) startListeningSoon(RESTART_DELAY_MS)
+        if (!destroyed && !pausedForConversation) startListeningSoon(RESTART_DELAY_MS)
     }
 
     override fun onResults(results: Bundle?) = inspectResults(results, final = true)
@@ -216,13 +245,20 @@ class JarvisWakeService : Service(), RecognitionListener {
     companion object {
         const val EXTRA_WAKE_DETECTED = "jarvis_wake_detected"
         private const val ACTION_STOP = "com.seongja.jarvis.action.STOP_WAKE_LISTENER"
+        private const val ACTION_PAUSE = "com.seongja.jarvis.action.PAUSE_WAKE_LISTENER"
+        private const val ACTION_RESUME = "com.seongja.jarvis.action.RESUME_WAKE_LISTENER"
         private const val CHANNEL_ID = "jarvis_wake_listener"
         private const val NOTIFICATION_ID = 7011
+        private const val PREFS = "jarvis_wake_preferences"
+        private const val PREF_ENABLED = "wake_enabled"
         private const val RESTART_DELAY_MS = 550L
-        private const val WAKE_REARM_DELAY_MS = 3_500L
         private const val WAKE_COOLDOWN_MS = 4_000L
         private val START_TOKEN = Any()
         private val running = AtomicBoolean(false)
+
+        @Volatile
+        private var instance: JarvisWakeService? = null
+
         private val WAKE_PHRASES = setOf(
             "wake up jarvis",
             "hey jarvis",
@@ -230,6 +266,10 @@ class JarvisWakeService : Service(), RecognitionListener {
         )
 
         fun isRunning(): Boolean = running.get()
+
+        fun isEnabled(context: Context): Boolean =
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .getBoolean(PREF_ENABLED, false)
 
         fun canRun(context: Context): Boolean =
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
@@ -239,17 +279,55 @@ class JarvisWakeService : Service(), RecognitionListener {
 
         fun start(context: Context): Boolean {
             if (!canRun(context)) return false
+            setEnabled(context, true)
             return runCatching {
                 context.startForegroundService(
-                    Intent(context, JarvisWakeService::class.java)
+                    Intent(context, JarvisWakeService::class.java).apply {
+                        action = ACTION_RESUME
+                    }
                 )
                 true
             }.getOrDefault(false)
         }
 
-        fun stop(context: Context): Boolean = runCatching {
-            context.stopService(Intent(context, JarvisWakeService::class.java))
-            true
-        }.getOrDefault(false)
+        fun pause(context: Context): Boolean {
+            if (!isRunning()) return true
+            instance?.pauseRecognition()
+            return runCatching {
+                context.startService(
+                    Intent(context, JarvisWakeService::class.java).apply {
+                        action = ACTION_PAUSE
+                    }
+                )
+                true
+            }.getOrDefault(false)
+        }
+
+        fun resume(context: Context): Boolean {
+            if (!isEnabled(context) || !canRun(context)) return false
+            return runCatching {
+                context.startForegroundService(
+                    Intent(context, JarvisWakeService::class.java).apply {
+                        action = ACTION_RESUME
+                    }
+                )
+                true
+            }.getOrDefault(false)
+        }
+
+        fun stop(context: Context): Boolean {
+            setEnabled(context, false)
+            return runCatching {
+                context.stopService(Intent(context, JarvisWakeService::class.java))
+                true
+            }.getOrDefault(false)
+        }
+
+        private fun setEnabled(context: Context, enabled: Boolean) {
+            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean(PREF_ENABLED, enabled)
+                .apply()
+        }
     }
 }
