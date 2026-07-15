@@ -11,8 +11,8 @@ android {
         applicationId = "com.seongja.jarvis"
         minSdk = 28
         targetSdk = 35
-        versionCode = 28
-        versionName = "0.9.18-cartesia-sonic"
+        versionCode = 29
+        versionName = "0.9.19-permission-center"
     }
 
     buildTypes {
