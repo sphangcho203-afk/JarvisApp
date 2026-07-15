@@ -3,6 +3,7 @@ package com.seongja.jarvis
 import android.app.Activity
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 
 class VoiceLoop(
     private val activity: Activity,
@@ -20,97 +21,101 @@ class VoiceLoop(
     private var paused = true
     private var listening = false
     private var outputCompletion: (() -> Unit)? = null
+    private lateinit var gateway: JarvisVoiceGateway
 
-    private val gateway = JarvisVoiceGateway(
-        context = activity.applicationContext,
-        listener = object : JarvisVoiceGateway.Listener {
-            override fun onBackendReady() {
-                handler.post {
-                    onDiagnostic("VOICE BACKEND -> READY // PCM STREAMING")
-                    onState(State.READY)
-                    if (!paused && !listening) startDelayed(250L)
-                }
-            }
-
-            override fun onListening() {
-                handler.post {
-                    if (destroyed || paused) {
-                        gateway.stopInput(sendForTranscription = false)
-                        return@post
-                    }
-                    listening = true
-                    onPartial("Listening...")
-                    onDiagnostic("MIC -> RAW AUDIO ACTIVE // GOOGLE CHIME REMOVED")
-                    onState(State.LISTENING)
-                }
-            }
-
-            override fun onTranscribing() {
-                handler.post {
-                    listening = false
-                    onRms(0f)
-                    onDiagnostic("VOICE -> TRANSCRIBING PCM INPUT")
-                    onState(State.PROCESSING)
-                }
-            }
-
-            override fun onTranscript(text: String) {
-                handler.post {
-                    listening = false
-                    onRms(0f)
-                    val normalized = SpeechCommandNormalizer.normalize(text)
-                    if (normalized.commandText.isBlank()) {
-                        onDiagnostic("VOICE TRANSCRIPT -> EMPTY")
-                        onState(State.READY)
-                        if (!paused) startDelayed(700L)
-                        return@post
-                    }
-                    paused = true
-                    onDiagnostic("VOICE TRANSCRIPT -> ${normalized.displayText.take(72)}")
-                    onState(State.PROCESSING)
-                    JarvisConversationBus.recordUser(normalized.displayText)
-                    onSpeech(normalized.displayText)
-                }
-            }
-
-            override fun onRms(value: Float) {
-                handler.post {
-                    if (!destroyed && listening) onRms(value)
-                }
-            }
-
-            override fun onSpeechOutputStarted(provider: String) {
-                handler.post {
-                    onDiagnostic("VOICE OUTPUT -> ${provider.uppercase()} STREAM")
-                    onState(State.READY)
-                }
-            }
-
-            override fun onSpeechOutputCompleted() {
-                handler.post {
-                    onDiagnostic("VOICE OUTPUT -> COMPLETE")
-                    outputCompletion?.also { outputCompletion = null }?.invoke()
-                }
-            }
-
-            override fun onDiagnostic(message: String) {
-                handler.post { onDiagnostic(message) }
-            }
-
-            override fun onError(message: String) {
-                handler.post {
-                    listening = false
-                    onRms(0f)
-                    onDiagnostic("VOICE ERROR -> $message")
-                    onState(State.ERROR)
-                    if (!destroyed && !paused) startDelayed(1_800L)
-                }
+    private val gatewayListener = object : JarvisVoiceGateway.Listener {
+        override fun onBackendReady() {
+            handler.post {
+                onDiagnostic("VOICE BACKEND -> READY // PCM STREAMING")
+                onState(State.READY)
+                if (!paused && !listening) startDelayed(250L)
             }
         }
-    )
+
+        override fun onListening() {
+            handler.post {
+                if (destroyed || paused) {
+                    gateway.stopInput(sendForTranscription = false)
+                    return@post
+                }
+                listening = true
+                onPartial("Listening...")
+                onDiagnostic("MIC -> RAW AUDIO ACTIVE // GOOGLE CHIME REMOVED")
+                onState(State.LISTENING)
+            }
+        }
+
+        override fun onTranscribing() {
+            handler.post {
+                listening = false
+                onRms(0f)
+                onDiagnostic("VOICE -> TRANSCRIBING PCM INPUT")
+                onState(State.PROCESSING)
+            }
+        }
+
+        override fun onTranscript(text: String) {
+            handler.post {
+                listening = false
+                onRms(0f)
+                val normalized = SpeechCommandNormalizer.normalize(text)
+                if (normalized.commandText.isBlank()) {
+                    onDiagnostic("VOICE TRANSCRIPT -> EMPTY")
+                    onState(State.READY)
+                    if (!paused) startDelayed(700L)
+                    return@post
+                }
+                paused = true
+                onDiagnostic("VOICE TRANSCRIPT -> ${normalized.displayText.take(72)}")
+                onState(State.PROCESSING)
+                JarvisConversationBus.recordUser(normalized.displayText)
+                onSpeech(normalized.displayText)
+            }
+        }
+
+        override fun onRms(value: Float) {
+            handler.post {
+                if (!destroyed && listening) onRms(value)
+            }
+        }
+
+        override fun onSpeechOutputStarted(provider: String) {
+            handler.post {
+                onDiagnostic("VOICE OUTPUT -> ${provider.uppercase()} STREAM")
+                onState(State.READY)
+            }
+        }
+
+        override fun onSpeechOutputCompleted() {
+            handler.post {
+                onDiagnostic("VOICE OUTPUT -> COMPLETE")
+                val completion = outputCompletion
+                outputCompletion = null
+                completion?.invoke()
+            }
+        }
+
+        override fun onDiagnostic(message: String) {
+            handler.post { onDiagnostic(message) }
+        }
+
+        override fun onError(message: String) {
+            handler.post {
+                listening = false
+                onRms(0f)
+                onDiagnostic("VOICE ERROR -> $message")
+                onState(State.ERROR)
+                if (!destroyed && !paused) startDelayed(1_800L)
+            }
+        }
+    }
 
     init {
         JarvisConversationBus.initialize(activity.applicationContext)
+        gateway = JarvisVoiceGateway(
+            context = activity.applicationContext,
+            listener = gatewayListener
+        )
         gateway.connect()
     }
 
@@ -122,7 +127,7 @@ class VoiceLoop(
         handler.postAtTime(
             { startNow() },
             START_TOKEN,
-            android.os.SystemClock.uptimeMillis() + delayMs.coerceAtLeast(200L)
+            SystemClock.uptimeMillis() + delayMs.coerceAtLeast(200L)
         )
     }
 
