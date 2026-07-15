@@ -9,7 +9,7 @@ android {
 
     defaultConfig {
         applicationId = "com.seongja.jarvis"
-        minSdk = 26
+        minSdk = 28
         targetSdk = 35
         versionCode = 23
         versionName = "0.9.13-helix-hardening"
