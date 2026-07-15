@@ -64,12 +64,12 @@ class MainActivity : Activity() {
             hud.pushEvent("WAKE PHRASE -> DETECTED // LOCAL SUMMON")
         }
         hud.pushEvent("PHASE 10 -> LOCAL DEVICE AGENT")
-        hud.pushEvent("GOOGLE SPEECH RECOGNIZER -> REMOVED")
+        hud.pushEvent("ON-DEVICE SPEECH -> API-KEY-FREE COMMAND FALLBACK")
         hud.pushEvent("ANDROID TEXT TO SPEECH -> REMOVED")
-        hud.pushEvent("MICROPHONE -> RAW PCM16 // NO GOOGLE CHIME")
-        hud.pushEvent("VOICE OUTPUT -> OPENAI ONYX / ELEVENLABS PCM")
-        hud.pushEvent("GEMINI NODES -> 6 // GROQ NODES -> 4")
-        hud.pushEvent("SAY CONFIGURE APIS -> SECURE MESH SETUP")
+        hud.pushEvent("MICROPHONE -> RAW PCM / ON-DEVICE HANDOFF")
+        hud.pushEvent("PREMIUM VOICE OUTPUT -> OPTIONAL LOCAL RUNTIME")
+        hud.pushEvent("CLOUD CORTEX -> OPTIONAL")
+        hud.pushEvent("APP AUTOMATION -> GMAIL / WHATSAPP / SCREEN CONTEXT")
         hud.pushEvent("SYSTEM CONTROL -> QUICK SETTINGS EXECUTOR")
         hud.pushEvent("TAP -> RECALIBRATE VOICE ARRAY")
 

@@ -240,15 +240,22 @@ class LocalAppAgent(
             )
         }
 
-        val snapshot = JarvisAppAutomationService.snapshot()
-            ?: return result(
-                actionId = "screen_context",
-                target = "active window",
-                status = DeviceActionStatus.FAILED,
-                spoken = "Android did not expose a readable active window.",
-                startedAtMs = startedAtMs,
-                trace = listOf("local_app_agent", "active_window_unavailable")
+        val liveSnapshot = JarvisAppAutomationService.snapshot()
+        val snapshot = when {
+            liveSnapshot != null && liveSnapshot.packageName != appContext.packageName -> liveSnapshot
+            else -> ScreenContextBridge.recent()
+        } ?: return result(
+            actionId = "screen_context",
+            target = "active window",
+            status = DeviceActionStatus.FAILED,
+            spoken = "Android did not expose a readable app screen. Summon Jarvis while the target app is visible, then ask again.",
+            startedAtMs = startedAtMs,
+            trace = listOf(
+                "local_app_agent",
+                "active_window_unavailable",
+                "pre_summon_snapshot_unavailable"
             )
+        )
 
         return result(
             actionId = "screen_context",
@@ -261,6 +268,11 @@ class LocalAppAgent(
                 "on_demand_accessibility_snapshot",
                 "package=${snapshot.packageName}",
                 "items=${snapshot.visibleText.size}",
+                if (liveSnapshot?.packageName == snapshot.packageName) {
+                    "live_snapshot"
+                } else {
+                    "pre_summon_snapshot"
+                },
                 "snapshot_not_persisted"
             )
         )

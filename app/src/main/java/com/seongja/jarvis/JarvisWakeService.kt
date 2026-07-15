@@ -16,6 +16,8 @@ import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
+import com.jarvis.core.device.JarvisAppAutomationService
+import com.jarvis.core.device.ScreenContextBridge
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -166,6 +168,7 @@ class JarvisWakeService : Service(), RecognitionListener {
         if (now - lastWakeAtMs < WAKE_COOLDOWN_MS) return
         lastWakeAtMs = now
         pauseRecognition()
+        ScreenContextBridge.capture(JarvisAppAutomationService.snapshot())
 
         val intent = Intent(this, MainActivity::class.java).apply {
             addFlags(
