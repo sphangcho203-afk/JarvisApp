@@ -10,8 +10,11 @@ import android.speech.SpeechRecognizer
 import java.util.Locale
 
 /**
- * API-key-free speech input backed strictly by Android's on-device recognizer.
- * It never falls back to a network recognition service.
+ * API-key-free Android speech input.
+ *
+ * A dedicated on-device recognizer is preferred when the phone provides one.
+ * If its language pack or service is unavailable, the class falls back to the
+ * phone's normal SpeechRecognizer service instead of leaving Jarvis unusable.
  */
 class OnDeviceSpeechInput(
     private val activity: Activity,
@@ -29,16 +32,22 @@ class OnDeviceSpeechInput(
     private var recognizer: SpeechRecognizer? = null
     private var active = false
     private var destroyed = false
+    private var cancellationInFlight = false
+    private var dedicatedOnDeviceDisabled = false
+    private var usingDedicatedOnDevice = false
 
     fun isAvailable(): Boolean =
-        Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
-            SpeechRecognizer.isOnDeviceRecognitionAvailable(activity)
+        hasDedicatedOnDeviceRecognizer() || SpeechRecognizer.isRecognitionAvailable(activity)
 
     fun isActive(): Boolean = active
+
+    fun backendLabel(): String =
+        if (usingDedicatedOnDevice) "ANDROID ON-DEVICE" else "ANDROID SPEECH SERVICE"
 
     fun start(): Boolean {
         if (destroyed || active || !isAvailable()) return false
         val engine = recognizer ?: createRecognizer() ?: return false
+        cancellationInFlight = false
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(
                 RecognizerIntent.EXTRA_LANGUAGE_MODEL,
@@ -46,9 +55,11 @@ class OnDeviceSpeechInput(
             )
             putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 5)
-            putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
             putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
             putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, activity.packageName)
+            if (usingDedicatedOnDevice) {
+                putExtra(RecognizerIntent.EXTRA_PREFER_OFFLINE, true)
+            }
         }
         active = true
         return runCatching {
@@ -56,6 +67,7 @@ class OnDeviceSpeechInput(
             true
         }.getOrElse {
             active = false
+            resetRecognizer()
             false
         }
     }
@@ -63,6 +75,7 @@ class OnDeviceSpeechInput(
     fun stop() {
         if (!active) return
         active = false
+        cancellationInFlight = true
         runCatching { recognizer?.cancel() }
         listener.onRms(0f)
     }
@@ -70,21 +83,42 @@ class OnDeviceSpeechInput(
     fun destroy() {
         destroyed = true
         active = false
+        cancellationInFlight = true
         runCatching { recognizer?.cancel() }
         runCatching { recognizer?.destroy() }
         recognizer = null
     }
 
+    private fun hasDedicatedOnDeviceRecognizer(): Boolean =
+        !dedicatedOnDeviceDisabled &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+            SpeechRecognizer.isOnDeviceRecognitionAvailable(activity)
+
     private fun createRecognizer(): SpeechRecognizer? {
         if (!isAvailable()) return null
-        return runCatching {
-            SpeechRecognizer.createOnDeviceSpeechRecognizer(activity).also {
-                it.setRecognitionListener(this)
+        val useDedicated = hasDedicatedOnDeviceRecognizer()
+        val created = runCatching {
+            if (useDedicated && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                SpeechRecognizer.createOnDeviceSpeechRecognizer(activity)
+            } else {
+                SpeechRecognizer.createSpeechRecognizer(activity)
             }
-        }.getOrNull()?.also { recognizer = it }
+        }.getOrNull() ?: return null
+
+        usingDedicatedOnDevice = useDedicated
+        created.setRecognitionListener(this)
+        recognizer = created
+        return created
+    }
+
+    private fun resetRecognizer() {
+        runCatching { recognizer?.destroy() }
+        recognizer = null
+        usingDedicatedOnDevice = false
     }
 
     override fun onReadyForSpeech(params: Bundle?) {
+        cancellationInFlight = false
         listener.onReady()
     }
 
@@ -101,17 +135,47 @@ class OnDeviceSpeechInput(
     override fun onError(error: Int) {
         active = false
         listener.onRms(0f)
-        val recoverable = error in setOf(
-            SpeechRecognizer.ERROR_NO_MATCH,
-            SpeechRecognizer.ERROR_SPEECH_TIMEOUT,
-            SpeechRecognizer.ERROR_RECOGNIZER_BUSY,
-            SpeechRecognizer.ERROR_CLIENT
+        if (destroyed) return
+
+        // SpeechRecognizer.cancel() commonly reports ERROR_CLIENT. That is an
+        // expected acknowledgement of our own pause, not a microphone failure.
+        if (cancellationInFlight) {
+            cancellationInFlight = false
+            return
+        }
+
+        val shouldFallBackToSystemRecognizer = usingDedicatedOnDevice && error in setOf(
+            SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED,
+            SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE,
+            SpeechRecognizer.ERROR_SERVER_DISCONNECTED,
+            SpeechRecognizer.ERROR_SERVER,
+            SpeechRecognizer.ERROR_NETWORK,
+            SpeechRecognizer.ERROR_NETWORK_TIMEOUT
         )
+        if (shouldFallBackToSystemRecognizer) {
+            dedicatedOnDeviceDisabled = true
+            resetRecognizer()
+            listener.onError(error, recoverable = true)
+            return
+        }
+
+        if (error in setOf(
+                SpeechRecognizer.ERROR_CLIENT,
+                SpeechRecognizer.ERROR_RECOGNIZER_BUSY,
+                SpeechRecognizer.ERROR_SERVER_DISCONNECTED,
+                SpeechRecognizer.ERROR_SERVER
+            )
+        ) {
+            resetRecognizer()
+        }
+
+        val recoverable = error != SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS
         listener.onError(error, recoverable)
     }
 
     override fun onResults(results: Bundle?) {
         active = false
+        cancellationInFlight = false
         listener.onRms(0f)
         val text = results
             ?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
