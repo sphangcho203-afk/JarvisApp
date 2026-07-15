@@ -19,7 +19,7 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 
 class MainActivity : Activity() {
-    private lateinit var hud: AdvancedCivilizationHudView
+    private lateinit var hud: HelixHudView
     private lateinit var brain: JarvisBrain
     private lateinit var voiceLoop: VoiceLoop
     private lateinit var countdown: JarvisCountdownController
@@ -43,7 +43,7 @@ class MainActivity : Activity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         enterImmersiveMode()
 
-        hud = AdvancedCivilizationHudView(this)
+        hud = HelixHudView(this)
         brain = JarvisBrain(this)
         soundEngine = JarvisSoundEngine()
         countdown = JarvisCountdownController(
@@ -60,10 +60,12 @@ class MainActivity : Activity() {
         )
 
         setContentView(hud)
+        hud.setCloudConfigured(brain.isCloudConfigured())
         if (intent?.getBooleanExtra(JarvisWakeService.EXTRA_WAKE_DETECTED, false) == true) {
             hud.pushEvent("WAKE PHRASE -> DETECTED // LOCAL SUMMON")
         }
-        hud.pushEvent("PHASE 10 -> LOCAL DEVICE AGENT")
+        hud.pushEvent("PHASE 11 -> HELIX WEBGL COGNITIVE INTERFACE")
+        hud.pushEvent("HELIX WEBGL -> REACT THREE FIBER / BLOOM / NATIVE BRIDGE")
         hud.pushEvent("ON-DEVICE SPEECH -> API-KEY-FREE COMMAND FALLBACK")
         hud.pushEvent("ANDROID TEXT TO SPEECH -> REMOVED")
         hud.pushEvent("MICROPHONE -> RAW PCM / ON-DEVICE HANDOFF")
@@ -75,7 +77,7 @@ class MainActivity : Activity() {
 
         hud.postDelayed({ soundEngine.boot() }, 350L)
 
-        hud.setOnClickListener {
+        hud.setCoreTapListener {
             when {
                 brainBusy.get() -> abortActiveRequest("USER CANCELLED ACTIVE REQUEST")
                 hasMicPermission() -> {
@@ -108,6 +110,7 @@ class MainActivity : Activity() {
         JarvisWakeService.pause(this)
         enterImmersiveMode()
         if (::brain.isInitialized) {
+            hud.setCloudConfigured(brain.isCloudConfigured())
             hud.pushEvent(
                 if (brain.isCloudConfigured()) {
                     "CORTEX MESH -> READY // ${brain.configuredModel()}"
@@ -641,6 +644,7 @@ class MainActivity : Activity() {
         if (::voiceLoop.isInitialized) voiceLoop.destroy()
         if (::countdown.isInitialized) countdown.destroy()
         if (::soundEngine.isInitialized) soundEngine.release()
+        if (::hud.isInitialized) hud.release()
         super.onDestroy()
     }
 
