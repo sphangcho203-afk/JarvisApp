@@ -31,6 +31,7 @@ class DeviceCommandRouter(
     private val appLauncher = AppLauncher(appContext)
     private val webNavigator = WebNavigator(appContext)
     private val telemetry = DeviceTelemetry(appContext)
+    private val localAppAgent = LocalAppAgent(appContext, onDeferredResult)
     private val audioManager = appContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
     private val cameraManager = appContext.getSystemService(Context.CAMERA_SERVICE) as CameraManager
 
@@ -41,9 +42,13 @@ class DeviceCommandRouter(
 
     fun executeDetailed(command: String): DeviceActionResult? {
         val started = SystemClock.elapsedRealtime()
-        val normalized = normalizeNaturalCommand(command)
-        if (normalized.isBlank()) return null
+        val raw = command.trim()
+        if (raw.isBlank()) return null
 
+        localAppAgent.handle(raw, started)?.let { return it }
+
+        val normalized = normalizeNaturalCommand(raw)
+        if (normalized.isBlank()) return null
         systemControlCommand(normalized, started)?.let { return it }
 
         val spoken = executeNormalized(normalized) ?: return null
@@ -99,7 +104,7 @@ class DeviceCommandRouter(
             command == "what can you control" ||
             command == "what can you do on my phone"
         if (!matches) return null
-        return "Android action fabric online. I can launch installed apps, browse and search, report time, date, battery and network state, control flashlight, media, volume, brightness and rotation, operate timers, and use the optional System Control bridge for allow-listed Quick Settings tiles."
+        return "Android action fabric online. I can launch apps, browse, report device telemetry, control media and settings, compose Gmail drafts, send confirmed Gmail or WhatsApp messages, read the current screen on demand, and use the optional local wake listener."
     }
 
     private fun timeCommand(command: String): String? {

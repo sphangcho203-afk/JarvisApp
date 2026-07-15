@@ -4,11 +4,17 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.WRITE_SETTINGS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <queries>
         <intent>
             <action android:name="android.speech.RecognitionService" />
         </intent>
+
+        <package android:name="com.google.android.gm" />
+        <package android:name="com.whatsapp" />
 
         <!-- Discover installed launchable apps -->
         <intent>
@@ -51,6 +57,23 @@
                 android:name="android.accessibilityservice"
                 android:resource="@xml/jarvis_system_control_service" />
         </service>
+        <service
+            android:name="com.jarvis.core.device.JarvisAppAutomationService"
+            android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
+            android:exported="true"
+            android:label="@string/app_automation_service_label">
+            <intent-filter>
+                <action android:name="android.accessibilityservice.AccessibilityService" />
+            </intent-filter>
+            <meta-data
+                android:name="android.accessibilityservice"
+                android:resource="@xml/jarvis_app_automation_service" />
+        </service>
+        <service
+            android:name=".JarvisWakeService"
+            android:exported="false"
+            android:foregroundServiceType="microphone"
+            android:stopWithTask="false" />
         <activity
             android:name=".CloudConfigActivity"
             android:exported="false"

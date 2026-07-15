@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.net.Uri
 import android.os.SystemClock
+import com.seongja.jarvis.JarvisWakeService
 import java.util.Locale
 
 /**
@@ -33,6 +34,9 @@ class LocalAppAgent(
         if (command.isBlank()) return null
         val lower = command.lowercase(Locale.US)
 
+        if (lower in WAKE_STATUS_COMMANDS) return wakeStatusResult(startedAtMs)
+        if (lower in ENABLE_WAKE_COMMANDS) return enableWakeResult(startedAtMs)
+        if (lower in DISABLE_WAKE_COMMANDS) return disableWakeResult(startedAtMs)
         if (lower in STATUS_COMMANDS) return statusResult(startedAtMs)
         if (lower in ENABLE_COMMANDS) return enableResult(startedAtMs)
         if (lower in SCREEN_COMMANDS) return screenResult(startedAtMs)
@@ -262,6 +266,65 @@ class LocalAppAgent(
         )
     }
 
+    private fun wakeStatusResult(startedAtMs: Long): DeviceActionResult {
+        val capable = JarvisWakeService.canRun(appContext)
+        val running = JarvisWakeService.isRunning()
+        return result(
+            actionId = "wake_listener_status",
+            target = "wake up jarvis",
+            status = when {
+                running -> DeviceActionStatus.SUCCESS
+                capable -> DeviceActionStatus.USER_CONFIRMATION_REQUIRED
+                else -> DeviceActionStatus.FAILED
+            },
+            spoken = when {
+                running -> "The local wake listener is active."
+                capable -> "The local wake listener is available but stopped. Say enable wake listener."
+                else -> "Android on-device speech recognition is unavailable or microphone permission is missing."
+            },
+            startedAtMs = startedAtMs,
+            trace = listOf(
+                "local_wake_listener",
+                "capable=$capable",
+                "running=$running"
+            )
+        )
+    }
+
+    private fun enableWakeResult(startedAtMs: Long): DeviceActionResult {
+        val started = JarvisWakeService.start(appContext)
+        return result(
+            actionId = "wake_listener_enable",
+            target = "wake up jarvis",
+            status = if (started) DeviceActionStatus.SUCCESS else DeviceActionStatus.FAILED,
+            spoken = if (started) {
+                "Local wake listener enabled. A visible microphone notification will remain active."
+            } else {
+                "The wake listener could not start. Android requires microphone permission and an on-device recognizer."
+            },
+            startedAtMs = startedAtMs,
+            trace = listOf(
+                "local_wake_listener",
+                if (started) "foreground_service_started" else "start_failed"
+            )
+        )
+    }
+
+    private fun disableWakeResult(startedAtMs: Long): DeviceActionResult {
+        val stopped = JarvisWakeService.stop(appContext)
+        return result(
+            actionId = "wake_listener_disable",
+            target = "wake up jarvis",
+            status = if (stopped) DeviceActionStatus.SUCCESS else DeviceActionStatus.FAILED,
+            spoken = if (stopped) "Local wake listener stopped." else "The wake listener could not be stopped.",
+            startedAtMs = startedAtMs,
+            trace = listOf(
+                "local_wake_listener",
+                if (stopped) "service_stop_requested" else "stop_failed"
+            )
+        )
+    }
+
     private fun statusResult(startedAtMs: Long): DeviceActionResult {
         val enabled = AppAutomationAccess.isEnabled(appContext)
         val connected = JarvisAppAutomationService.isConnected()
@@ -463,6 +526,22 @@ class LocalAppAgent(
             "(?i)^(?:send|message|whatsapp)\\s+[\\\"“']?(.+?)[\\\"”']?\\s+to\\s+(.+?)$"
         )
 
+        private val WAKE_STATUS_COMMANDS = setOf(
+            "wake listener status",
+            "wake word status",
+            "is wake up jarvis enabled"
+        )
+        private val ENABLE_WAKE_COMMANDS = setOf(
+            "enable wake listener",
+            "enable wake word",
+            "start wake listener",
+            "always listen for wake up jarvis"
+        )
+        private val DISABLE_WAKE_COMMANDS = setOf(
+            "disable wake listener",
+            "disable wake word",
+            "stop wake listener"
+        )
         private val STATUS_COMMANDS = setOf(
             "app automation status",
             "automation status",

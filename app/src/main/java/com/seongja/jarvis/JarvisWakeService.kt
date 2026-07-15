@@ -8,6 +8,7 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.IBinder
@@ -15,7 +16,6 @@ import android.os.Looper
 import android.speech.RecognitionListener
 import android.speech.RecognizerIntent
 import android.speech.SpeechRecognizer
-import androidx.annotation.RequiresPermission
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -68,7 +68,9 @@ class JarvisWakeService : Service(), RecognitionListener {
             stopSelf()
             return
         }
-        if (!SpeechRecognizer.isOnDeviceRecognitionAvailable(this)) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S ||
+            !SpeechRecognizer.isOnDeviceRecognitionAvailable(this)
+        ) {
             stopSelf()
             return
         }
@@ -77,7 +79,6 @@ class JarvisWakeService : Service(), RecognitionListener {
         }
     }
 
-    @RequiresPermission(Manifest.permission.RECORD_AUDIO)
     private fun startListeningSoon(delayMs: Long) {
         if (destroyed) return
         handler.removeCallbacks(START_TOKEN)
@@ -88,7 +89,6 @@ class JarvisWakeService : Service(), RecognitionListener {
         )
     }
 
-    @RequiresPermission(Manifest.permission.RECORD_AUDIO)
     private fun startListening() {
         if (destroyed || listening) return
         val engine = recognizer ?: return
@@ -232,7 +232,8 @@ class JarvisWakeService : Service(), RecognitionListener {
         fun isRunning(): Boolean = running.get()
 
         fun canRun(context: Context): Boolean =
-            context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.S &&
+                context.checkSelfPermission(Manifest.permission.RECORD_AUDIO) ==
                 PackageManager.PERMISSION_GRANTED &&
                 SpeechRecognizer.isOnDeviceRecognitionAvailable(context)
 

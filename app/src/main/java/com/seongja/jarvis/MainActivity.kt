@@ -305,10 +305,8 @@ class MainActivity : Activity() {
     }
 
     private fun openCloudSetupIfRequired() {
-        if (!brain.isCloudConfigured() && !setupOpenedThisSession && !isFinishing) {
-            setupOpenedThisSession = true
-            hud.pushEvent("CORTEX MESH -> OPENING SECURE REGISTRY")
-            startActivity(Intent(this, CloudConfigActivity::class.java))
+        if (!brain.isCloudConfigured()) {
+            hud.pushEvent("LOCAL AGENT -> READY // CLOUD CORTEX OPTIONAL")
         }
     }
 
