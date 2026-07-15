@@ -10,7 +10,7 @@ on:
       - main
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: jarvis-android-${{ github.workflow }}-${{ github.ref }}
@@ -27,192 +27,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
-          fetch-depth: 0
-
-      - name: Wire native command fallback and API setup
-        if: github.event_name == 'pull_request' && github.head_ref == 'fix/voice-proofing-and-command-fallback'
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 <<'PY'
-          from pathlib import Path
-
-          main_path = Path('app/src/main/java/com/seongja/jarvis/MainActivity.kt')
-          main = main_path.read_text(encoding='utf-8')
-
-          old_core = '''        hud.setCoreTapListener {
-              when {
-                  brainBusy.get() -> abortActiveRequest("USER CANCELLED ACTIVE REQUEST")
-                  hasMicPermission() -> {
-                      hud.pushEvent("USER -> VOICE ARRAY RECALIBRATION")
-                      voiceLoop.manualRestart()
-                  }
-                  else -> {
-                      hud.pushEvent("AUTH -> REQUESTING MICROPHONE")
-                      requestMicPermission()
-                  }
-              }
-          }
-          '''
-          new_core = '''        hud.setCoreTapListener {
-              when {
-                  brainBusy.get() -> abortActiveRequest("USER CANCELLED ACTIVE REQUEST")
-                  !brain.isCloudConfigured() -> openCloudSetup("CORE TAP")
-                  hasMicPermission() -> {
-                      hud.pushEvent("USER -> VOICE ARRAY RECALIBRATION")
-                      voiceLoop.manualRestart()
-                  }
-                  else -> {
-                      hud.pushEvent("AUTH -> REQUESTING MICROPHONE")
-                      requestMicPermission()
-                  }
-              }
-          }
-
-          hud.setTextCommandListener { command ->
-              hud.pushEvent("TEXT COMMAND -> ${command.take(62)}")
-              handleSpeech(command)
-          }
-          '''
-          if old_core in main:
-              main = main.replace(old_core, new_core, 1)
-          elif 'hud.setTextCommandListener' not in main:
-              raise SystemExit('MainActivity core listener block was not found')
-
-          old_setup = '''    private fun openCloudSetupIfRequired() {
-              if (!brain.isCloudConfigured()) {
-                  hud.pushEvent("LOCAL AGENT -> READY // CLOUD CORTEX OPTIONAL")
-              }
-          }
-          '''
-          new_setup = '''    private fun openCloudSetupIfRequired() {
-              if (!brain.isCloudConfigured() && !setupOpenedThisSession && !isFinishing) {
-                  setupOpenedThisSession = true
-                  openCloudSetup("FIRST LAUNCH")
-              }
-          }
-
-          private fun openCloudSetup(source: String) {
-              if (brain.isCloudConfigured() || isFinishing) return
-              hud.pushEvent("CORTEX MESH CONFIG -> OPEN // $source")
-              voiceLoop.stop()
-              startActivity(Intent(this, CloudConfigActivity::class.java))
-          }
-          '''
-          if old_setup in main:
-              main = main.replace(old_setup, new_setup, 1)
-          elif 'private fun openCloudSetup(source: String)' not in main:
-              raise SystemExit('MainActivity cloud setup block was not found')
-
-          main = main.replace(
-              'hud.pushEvent("TAP -> RECALIBRATE VOICE ARRAY")',
-              'hud.pushEvent("INPUT FALLBACK -> TYPE COMMAND / API SETUP BUTTON")',
-          )
-          main_path.write_text(main, encoding='utf-8')
-
-          hud_path = Path('app/src/main/java/com/seongja/jarvis/HelixHudView.kt')
-          hud = hud_path.read_text(encoding='utf-8')
-          hud = hud.replace(
-              '    private var coreTapListener: (() -> Unit)? = null\n',
-              '    private var coreTapListener: (() -> Unit)? = null\n    private var textCommandListener: ((String) -> Unit)? = null\n',
-              1,
-          )
-          hud = hud.replace('JarvisHelix/0.9.13', 'JarvisHelix/0.9.15')
-
-          old_setter = '''    fun setCoreTapListener(listener: () -> Unit) {
-              coreTapListener = listener
-          }
-          '''
-          new_setter = '''    fun setCoreTapListener(listener: () -> Unit) {
-              coreTapListener = listener
-          }
-
-          fun setTextCommandListener(listener: (String) -> Unit) {
-              textCommandListener = listener
-          }
-          '''
-          if old_setter in hud:
-              hud = hud.replace(old_setter, new_setter, 1)
-          elif 'fun setTextCommandListener' not in hud:
-              raise SystemExit('HelixHudView core setter was not found')
-
-          hud = hud.replace(
-              '        coreTapListener = null\n        pendingPayloads.clear()',
-              '        coreTapListener = null\n        textCommandListener = null\n        pendingPayloads.clear()',
-              1,
-          )
-
-          old_source = '''        when {
-              "ON-DEVICE" in upper -> voiceSource = "ON-DEVICE"
-              "PREMIUM" in upper || "PCM STREAM" in upper -> voiceSource = "PREMIUM PCM"
-          }
-          '''
-          new_source = '''        when {
-              "ANDROID SPEECH SERVICE" in upper -> voiceSource = "ANDROID SPEECH"
-              "ANDROID ON-DEVICE" in upper || "ON-DEVICE" in upper -> voiceSource = "ON-DEVICE"
-              "PREMIUM" in upper || "PCM STREAM" in upper -> voiceSource = "PREMIUM PCM"
-          }
-          '''
-          if old_source in hud:
-              hud = hud.replace(old_source, new_source, 1)
-
-          old_bridge_tail = '''        @JavascriptInterface
-          fun onCoreTap() {
-              post {
-                  if (released) return@post
-                  performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-                  coreTapListener?.invoke()
-              }
-          }
-      }
-
-      companion object {
-          '''
-          new_bridge_tail = '''        @JavascriptInterface
-          fun onCoreTap() {
-              post {
-                  if (released) return@post
-                  performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-                  coreTapListener?.invoke()
-              }
-          }
-
-          @JavascriptInterface
-          fun onTextCommand(text: String) {
-              val clean = text.replace(Regex("\\s+"), " ").trim().take(MAX_TEXT_CHARS)
-              if (clean.isBlank()) return
-              post {
-                  if (released) return@post
-                  performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-                  textCommandListener?.invoke(clean)
-              }
-          }
-      }
-
-      companion object {
-          '''
-          if old_bridge_tail in hud:
-              hud = hud.replace(old_bridge_tail, new_bridge_tail, 1)
-          elif 'fun onTextCommand(text: String)' not in hud:
-              raise SystemExit('HelixHudView bridge tail was not found')
-
-          hud_path.write_text(hud, encoding='utf-8')
-          PY
-
-          grep -q 'hud.setTextCommandListener' app/src/main/java/com/seongja/jarvis/MainActivity.kt
-          grep -q 'openCloudSetup("FIRST LAUNCH")' app/src/main/java/com/seongja/jarvis/MainActivity.kt
-          grep -q 'fun onTextCommand(text: String)' app/src/main/java/com/seongja/jarvis/HelixHudView.kt
-          grep -q 'JarvisHelix/0.9.15' app/src/main/java/com/seongja/jarvis/HelixHudView.kt
-
-          if ! git diff --quiet; then
-            git config user.name 'Jarvis Repair Bot'
-            git config user.email 'actions@users.noreply.github.com'
-            git add app/src/main/java/com/seongja/jarvis/MainActivity.kt app/src/main/java/com/seongja/jarvis/HelixHudView.kt
-            git commit -m 'Wire typed commands and automatic API setup'
-            git push origin HEAD:fix/voice-proofing-and-command-fallback
-          fi
 
       - name: Set up Node 22
         uses: actions/setup-node@v7
@@ -247,30 +61,57 @@ jobs:
               throw new Error(`Missing or empty built asset: ${file}`)
             }
           }
+          console.log(`Verified ${files.length} Helix asset references`)
           NODE
 
           rm -rf app/src/main/assets/helix
           mkdir -p app/src/main/assets/helix
           cp -R helix-ui/dist/. app/src/main/assets/helix/
+          test -s app/src/main/assets/helix/index.html
+          test -n "$(find app/src/main/assets/helix/assets -name '*.js' -type f -print -quit)"
+          test -n "$(find app/src/main/assets/helix/assets -name '*.css' -type f -print -quit)"
 
-      - name: Smoke-test Helix runtime in Chrome
+      - name: Smoke-test Helix controls in Chrome
         shell: bash
         run: |
           set -euo pipefail
           CHROME="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
           test -n "$CHROME"
+
           python3 -m http.server 4173 --directory helix-ui/dist > helix-server.log 2>&1 &
           SERVER_PID=$!
           trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+
+          READY=0
           for _ in $(seq 1 30); do
-            curl -fsS http://127.0.0.1:4173/ > /dev/null && break
+            if curl -fsS http://127.0.0.1:4173/ > /dev/null; then
+              READY=1
+              break
+            fi
             sleep 0.5
           done
-          "$CHROME" --headless=new --no-sandbox --disable-dev-shm-usage --use-gl=swiftshader --enable-webgl --virtual-time-budget=7000 --window-size=1280,720 --screenshot=helix-smoke.png --dump-dom http://127.0.0.1:4173/ > helix-dom.html
+          test "$READY" = 1
+
+          "$CHROME" \
+            --headless=new \
+            --no-sandbox \
+            --disable-dev-shm-usage \
+            --use-gl=swiftshader \
+            --enable-webgl \
+            --virtual-time-budget=7000 \
+            --window-size=1280,720 \
+            --screenshot=helix-smoke.png \
+            --dump-dom \
+            http://127.0.0.1:4173/ > helix-dom.html
+
           grep -q 'JARVIS // HELIX' helix-dom.html
+          grep -q 'BUILD 0.9.15' helix-dom.html
           grep -q 'API SETUP' helix-dom.html
           grep -q 'TYPE COMMAND' helix-dom.html
-          ! grep -q 'RENDER FALLBACK ONLINE' helix-dom.html
+          if grep -q 'RENDER FALLBACK ONLINE' helix-dom.html; then
+            echo 'Helix entered the render fallback during the browser smoke test.' >&2
+            exit 1
+          fi
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -294,19 +135,28 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          gradle :app:lintDebug :app:testDebugUnitTest :app:assembleDebug --stacktrace --warning-mode all --no-daemon 2>&1 | tee android-build.log
+          gradle \
+            :app:lintDebug \
+            :app:testDebugUnitTest \
+            :app:assembleDebug \
+            --stacktrace \
+            --warning-mode all \
+            --no-daemon 2>&1 | tee android-build.log
 
-      - name: Verify APK package and embedded controls
+      - name: Verify APK package, bridge, permissions, and Helix assets
         shell: bash
         run: |
           set -euo pipefail
           APK="$(find app/build/outputs/apk/debug -name '*.apk' -type f | head -n 1)"
+          test -n "$APK"
           BUILD_TOOLS="$ANDROID_HOME/build-tools/35.0.0"
+
           "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" 2>&1 | tee apk-signature.log
           "$BUILD_TOOLS/zipalign" -c -v 4 "$APK" 2>&1 | tee apk-zipalign.log
           "$BUILD_TOOLS/aapt" dump badging "$APK" | tee apk-badging.log
           "$BUILD_TOOLS/aapt" dump permissions "$APK" | tee apk-permissions.log
           unzip -l "$APK" | tee apk-contents.log
+
           grep -q "package: name='com.seongja.jarvis'" apk-badging.log
           grep -q "versionName='0.9.15-voice-proofing'" apk-badging.log
           grep -q "sdkVersion:'28'" apk-badging.log
@@ -314,11 +164,19 @@ jobs:
           grep -q "android.permission.RECORD_AUDIO" apk-permissions.log
           grep -q 'classes.dex' apk-contents.log
           grep -q 'assets/helix/index.html' apk-contents.log
+          grep -q 'assets/helix/assets/.*\.js' apk-contents.log
+          grep -q 'assets/helix/assets/.*\.css' apk-contents.log
+
           rm -rf apk-helix-check
           mkdir -p apk-helix-check
           unzip -q "$APK" 'assets/helix/*' -d apk-helix-check
           grep -R -q 'API SETUP' apk-helix-check/assets/helix/assets
           grep -R -q 'TYPE COMMAND' apk-helix-check/assets/helix/assets
+
+          grep -q 'JarvisApplication' app/src/main/AndroidManifest.xml
+          grep -q 'JarvisCommandBridge' app/src/main/java/com/seongja/jarvis/JarvisApplication.kt
+          grep -q 'onSpeechDetected' app/src/main/java/com/seongja/jarvis/OnDeviceSpeechInput.kt
+          grep -q 'AWAITING REAL SPEECH' app/src/main/java/com/seongja/jarvis/VoiceLoop.kt
 
       - name: Upload validation logs
         if: always()
@@ -337,6 +195,7 @@ jobs:
             apk-permissions.log
             apk-contents.log
             app/build/reports/lint-results-debug.html
+            app/build/reports/tests/testDebugUnitTest/
           if-no-files-found: warn
           retention-days: 14
 
