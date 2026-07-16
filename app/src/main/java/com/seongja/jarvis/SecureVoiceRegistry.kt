@@ -4,6 +4,7 @@ import android.content.Context
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
+import org.json.JSONArray
 import org.json.JSONObject
 import java.nio.charset.StandardCharsets
 import java.security.KeyStore
@@ -12,10 +13,12 @@ import javax.crypto.KeyGenerator
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
 
-/** Stores the Cartesia key locally under Android Keystore AES-GCM encryption. */
+/** Stores the Cartesia voice mesh locally under Android Keystore AES-GCM encryption. */
 class SecureVoiceRegistry(context: Context) {
-    private val appContext = context.applicationContext
-    private val prefs = appContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+    private val prefs = context.applicationContext.getSharedPreferences(
+        PREFS_NAME,
+        Context.MODE_PRIVATE
+    )
 
     @Synchronized
     fun load(): CartesiaVoiceSettings {
@@ -23,9 +26,14 @@ class SecureVoiceRegistry(context: Context) {
         if (raw.isBlank()) return CartesiaVoiceSettings()
         return runCatching {
             val root = JSONObject(raw)
+            val backups = root.optJSONArray("backupApiKeys").toStringList()
+            val cooldowns = root.optJSONArray("keyCooldownUntilMs").toLongList()
             CartesiaVoiceSettings(
                 apiKey = root.optString("apiKey"),
+                backupApiKeys = backups,
                 enabled = root.optBoolean("enabled", true),
+                activeKeyIndex = root.optInt("activeKeyIndex", 0),
+                keyCooldownUntilMs = cooldowns,
                 successes = root.optInt("successes", 0),
                 failures = root.optInt("failures", 0),
                 lastLatencyMs = root.optLong("lastLatencyMs", 0L),
@@ -37,23 +45,50 @@ class SecureVoiceRegistry(context: Context) {
 
     @Synchronized
     fun save(settings: CartesiaVoiceSettings) {
+        val normalized = settings.copy(
+            apiKey = settings.apiKey.trim(),
+            backupApiKeys = settings.backupApiKeys
+                .map(String::trim)
+                .filter(String::isNotBlank)
+                .distinct()
+                .take(CartesiaVoiceSettings.MAX_KEYS - 1),
+            activeKeyIndex = settings.activeKeyIndex.coerceAtLeast(0),
+            lastError = settings.lastError.take(240)
+        )
         val encoded = JSONObject().apply {
-            put("apiKey", settings.apiKey.trim())
-            put("enabled", settings.enabled)
-            put("successes", settings.successes)
-            put("failures", settings.failures)
-            put("lastLatencyMs", settings.lastLatencyMs)
-            put("lastStatusCode", settings.lastStatusCode)
-            put("lastError", settings.lastError.take(240))
+            put("apiKey", normalized.apiKey)
+            put("backupApiKeys", JSONArray(normalized.backupApiKeys))
+            put("enabled", normalized.enabled)
+            put("activeKeyIndex", normalized.activeKeyIndex)
+            put("keyCooldownUntilMs", JSONArray(normalized.keyCooldownUntilMs))
+            put("successes", normalized.successes)
+            put("failures", normalized.failures)
+            put("lastLatencyMs", normalized.lastLatencyMs)
+            put("lastStatusCode", normalized.lastStatusCode)
+            put("lastError", normalized.lastError)
         }.toString()
         prefs.edit().putString(KEY_SETTINGS, encrypt(encoded)).apply()
     }
 
     @Synchronized
-    fun recordSuccess(latencyMs: Long, statusCode: Int = 101) {
+    fun selectActiveKey(nowMs: Long = System.currentTimeMillis()): Pair<Int, String>? {
         val current = load()
+        val selected = current.activeKey(nowMs) ?: return null
+        if (selected.first != current.activeKeyIndex) {
+            save(current.copy(activeKeyIndex = selected.first))
+        }
+        return selected
+    }
+
+    @Synchronized
+    fun recordSuccess(keyIndex: Int, latencyMs: Long, statusCode: Int = 101) {
+        val current = load()
+        val cooldowns = current.normalizedCooldowns().toMutableList()
+        if (keyIndex in cooldowns.indices) cooldowns[keyIndex] = 0L
         save(
             current.copy(
+                activeKeyIndex = keyIndex,
+                keyCooldownUntilMs = cooldowns,
                 successes = current.successes + 1,
                 lastLatencyMs = latencyMs,
                 lastStatusCode = statusCode,
@@ -63,20 +98,77 @@ class SecureVoiceRegistry(context: Context) {
     }
 
     @Synchronized
-    fun recordFailure(message: String, statusCode: Int = 0) {
+    fun recordFailure(
+        keyIndex: Int,
+        message: String,
+        statusCode: Int = 0,
+        rotate: Boolean = true
+    ): Pair<Int, String>? {
         val current = load()
+        val keys = current.configuredKeys()
+        val cooldowns = current.normalizedCooldowns().toMutableList()
+        if (keyIndex in cooldowns.indices) {
+            cooldowns[keyIndex] = System.currentTimeMillis() + cooldownFor(statusCode, message)
+        }
+        val next = if (rotate && keys.isNotEmpty()) {
+            keys.indices
+                .map { (keyIndex + 1 + it) % keys.size }
+                .firstOrNull { candidate -> cooldowns.getOrElse(candidate) { 0L } <= System.currentTimeMillis() }
+        } else {
+            null
+        }
         save(
             current.copy(
+                activeKeyIndex = next ?: current.activeKeyIndex,
+                keyCooldownUntilMs = cooldowns,
                 failures = current.failures + 1,
                 lastStatusCode = statusCode,
-                lastError = redact(message, current.apiKey)
+                lastError = redact(message, keys)
             )
         )
+        return next?.let { it to keys[it] }
     }
 
     @Synchronized
     fun clear() {
         prefs.edit().clear().apply()
+    }
+
+    private fun cooldownFor(statusCode: Int, message: String): Long {
+        val lower = message.lowercase()
+        return when {
+            statusCode == 401 || statusCode == 403 -> 24 * 60 * 60_000L
+            statusCode == 402 || statusCode == 429 ||
+                "credit" in lower || "quota" in lower || "rate limit" in lower -> 30 * 60_000L
+            statusCode >= 500 -> 90_000L
+            else -> 30_000L
+        }
+    }
+
+    private fun redact(value: String, apiKeys: List<String>): String {
+        var clean = value
+        apiKeys.filter(String::isNotBlank).forEach { key -> clean = clean.replace(key, "[redacted]") }
+        return clean
+            .replace(Regex("(?i)x-api-key\\s*[:=]\\s*[^\\s,;]+"), "x-api-key=[redacted]")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .take(240)
+    }
+
+    private fun JSONArray?.toStringList(): List<String> {
+        if (this == null) return emptyList()
+        return buildList {
+            for (index in 0 until length()) {
+                optString(index).trim().takeIf(String::isNotBlank)?.let(::add)
+            }
+        }
+    }
+
+    private fun JSONArray?.toLongList(): List<Long> {
+        if (this == null) return emptyList()
+        return buildList {
+            for (index in 0 until length()) add(optLong(index, 0L))
+        }
     }
 
     private fun encrypt(value: String): String {
@@ -126,13 +218,6 @@ class SecureVoiceRegistry(context: Context) {
         )
         return generator.generateKey()
     }
-
-    private fun redact(value: String, apiKey: String): String = value
-        .replace(apiKey, "[redacted]", ignoreCase = false)
-        .replace(Regex("(?i)x-api-key\\s*[:=]\\s*[^\\s,;]+"), "x-api-key=[redacted]")
-        .replace(Regex("\\s+"), " ")
-        .trim()
-        .take(240)
 
     companion object {
         private const val PREFS_NAME = "jarvis_voice_mesh_encrypted"
