@@ -36,13 +36,11 @@
         <package android:name="com.google.android.gm" />
         <package android:name="com.whatsapp" />
 
-        <!-- Discover installed launchable apps -->
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
 
-        <!-- Open HTTPS websites -->
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" />
@@ -71,6 +69,12 @@
             android:name=".CloudConfigActivity"
             android:exported="false"
             android:label="Jarvis Cortex Mesh"
+            android:theme="@style/Theme.Jarvis" />
+
+        <activity
+            android:name=".WeatherSetupActivity"
+            android:exported="false"
+            android:label="Jarvis Weather Core"
             android:theme="@style/Theme.Jarvis" />
 
         <activity
