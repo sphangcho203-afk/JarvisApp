@@ -17,7 +17,7 @@ jobs:
       TARGET_RUN_ID: "29541011151"
       TARGET_SOURCE_SHA: "c3e58cba119dde8ca74693cc19b44bbbf2dc10f1"
       GH_TOKEN: ${{ github.token }}
-      RELAY_REVISION: "2"
+      RELAY_REVISION: "3"
     steps:
       - name: Checkout publisher
         uses: actions/checkout@v7
@@ -34,17 +34,21 @@ jobs:
           gh run view "$TARGET_RUN_ID" --repo "$GITHUB_REPOSITORY" --json status,conclusion,event,headSha,jobs \
             > "/tmp/friday-diagnostics/${TARGET_SOURCE_SHA}.run.json"
 
-      - name: Publish diagnostic ledger
+      - name: Publish isolated diagnostic ledger
         shell: bash
         run: |
           set -euo pipefail
           git config user.name "FRIDAY Diagnostic Core"
           git config user.email "actions@users.noreply.github.com"
-          git fetch origin ci-status:refs/remotes/origin/ci-status
-          git checkout -B ci-status-work refs/remotes/origin/ci-status
+          if git fetch origin ci-diagnostics:refs/remotes/origin/ci-diagnostics 2>/dev/null; then
+            git checkout -B ci-diagnostics-work refs/remotes/origin/ci-diagnostics
+          else
+            git checkout --orphan ci-diagnostics-work
+            git rm -rf . >/dev/null 2>&1 || true
+          fi
           mkdir -p diagnostics
           cp "/tmp/friday-diagnostics/${TARGET_SOURCE_SHA}.failed.log" "diagnostics/${TARGET_SOURCE_SHA}.failed.log"
           cp "/tmp/friday-diagnostics/${TARGET_SOURCE_SHA}.run.json" "diagnostics/${TARGET_SOURCE_SHA}.run.json"
           git add diagnostics
           git commit -m "Relay FRIDAY diagnostics ${TARGET_SOURCE_SHA:0:12}" || true
-          git push origin HEAD:ci-status
+          git push origin HEAD:ci-diagnostics
