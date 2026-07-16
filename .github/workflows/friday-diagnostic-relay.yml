@@ -17,6 +17,7 @@ jobs:
       TARGET_RUN_ID: "29541011151"
       TARGET_SOURCE_SHA: "c3e58cba119dde8ca74693cc19b44bbbf2dc10f1"
       GH_TOKEN: ${{ github.token }}
+      RELAY_REVISION: "2"
     steps:
       - name: Checkout publisher
         uses: actions/checkout@v7
