@@ -20,7 +20,7 @@ declare global {
 }
 
 const EMPTY_AUDIO: AudioMetrics = { rms: 0, peak: 0, bass: 0, mid: 0, treble: 0 }
-const INITIAL_TELEMETRY: NativeTelemetry = { time: '--:--:--', battery: 0, network: 'SYNCING', heapMb: 0, device: 'ANDROID', voiceSource: 'LOCAL', cloudConfigured: false }
+const INITIAL_TELEMETRY: NativeTelemetry = { time: '--:--:--', battery: 0, network: 'SYNCING', heapMb: 0, device: 'ANDROID', voiceSource: 'VOICE OFFLINE', cloudConfigured: false }
 const INITIAL_WEATHER: WeatherTelemetry = { configured: false, status: 'NOT CONFIGURED', fresh: false, location: '', tempC: 0, feelsLikeC: 0, condition: '', conditionCode: 0, icon: '◌', isDay: true, windKph: 0, windDirection: '', gustKph: 0, humidity: 0, cloudPercent: 0, precipMm: 0, rainChance: 0, todayMinC: 0, todayMaxC: 0, updatedAtMs: 0, alert: '' }
 const INITIAL_COUNTDOWN: CountdownState = { active: false, label: 'MISSION TIMER', remainingMs: 0, totalMs: 0, progress: 0 }
 
@@ -32,16 +32,16 @@ export function useNativeBridge() {
   const weatherSignature = useRef('')
   const [mode, setMode] = useState<HelixState>('IDLE')
   const [metrics, setMetrics] = useState<AudioMetrics>({ ...EMPTY_AUDIO })
-  const [transcript, setTranscript] = useState('Listening for you, Sir.')
-  const [response, setResponse] = useState('Jarvis is standing by, Sir.')
+  const [transcript, setTranscript] = useState('Listening for you, Boss.')
+  const [response, setResponse] = useState('FRIDAY is standing by, Boss.')
   const [telemetry, setTelemetry] = useState(INITIAL_TELEMETRY)
   const [weather, setWeather] = useState(INITIAL_WEATHER)
   const [countdown, setCountdown] = useState(INITIAL_COUNTDOWN)
   const [bridgeReady, setBridgeReady] = useState(false)
   const [logs, setLogs] = useState<TerminalLog[]>([
     { id: 1, time: '00:00:01', channel: 'CORE', text: 'HELIX lattice initialized.' },
-    { id: 2, time: '00:00:02', channel: 'SYS', text: 'Android command fabric awaiting verified permissions.' },
-    { id: 3, time: '00:00:03', channel: 'VOICE', text: 'Jarvis voice array armed.' },
+    { id: 2, time: '00:00:02', channel: 'SYS', text: 'Native command fabric awaiting verified permissions.' },
+    { id: 3, time: '00:00:03', channel: 'VOICE', text: 'FRIDAY voice array armed.' },
   ])
 
   const pushLog = (channel: TerminalLog['channel'], text: string) => {
@@ -70,7 +70,7 @@ export function useNativeBridge() {
     window.jarvisHelix = {
       receive(payload) {
         switch (payload.type) {
-          case 'ready': setBridgeReady(true); pushLog('SYS', 'Native Android bridge synchronized.'); break
+          case 'ready': setBridgeReady(true); pushLog('SYS', 'Native command bridge synchronized.'); break
           case 'state': if (payload.mode) setMode(payload.mode); break
           case 'audio': {
             const rms = Math.max(0, Math.min(1, payload.rms ?? 0))
@@ -80,7 +80,7 @@ export function useNativeBridge() {
             setMetrics(next)
             break
           }
-          case 'transcript': setTranscript(payload.text?.trim() || 'Listening for you, Sir.'); break
+          case 'transcript': setTranscript(payload.text?.trim() || 'Listening for you, Boss.'); break
           case 'response':
             setResponse(payload.display?.trim() || payload.spoken?.trim() || 'Response received.')
             if (payload.intent) pushLog('CORE', `${payload.intent.toUpperCase()} // ${Math.round((payload.confidence ?? 0) * 100)}%`)
@@ -101,16 +101,6 @@ export function useNativeBridge() {
     }
   }, [])
 
-  const openSetup = () => {
-    if (!telemetry.cloudConfigured) {
-      window.JarvisCommandBridge?.openApiSetup()
-    } else if (!weather.configured) {
-      window.JarvisCommandBridge?.openWeatherSetup()
-    } else {
-      window.JarvisCommandBridge?.openPermissionCenter()
-    }
-  }
-
   return {
     mode,
     metricsRef,
@@ -123,19 +113,11 @@ export function useNativeBridge() {
     bridgeReady,
     logs,
     clearLogs: () => setLogs([]),
-    setupLabel: !telemetry.cloudConfigured ? 'API SETUP' : !weather.configured ? 'WEATHER' : 'ANDROID',
-    openSetup,
     refreshWeather: () => {
       window.JarvisCommandBridge?.refreshWeather()
       window.setTimeout(readWeather, 900)
     },
-    tapCore: () => {
-      if (!telemetry.cloudConfigured && window.JarvisCommandBridge) {
-        window.JarvisCommandBridge.openApiSetup()
-      } else {
-        window.JarvisAndroid?.onCoreTap()
-      }
-    },
+    tapCore: () => window.JarvisAndroid?.onCoreTap(),
   }
 }
 
