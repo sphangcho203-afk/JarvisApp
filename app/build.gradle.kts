@@ -11,8 +11,8 @@ android {
         applicationId = "com.seongja.jarvis"
         minSdk = 28
         targetSdk = 35
-        versionCode = 31
-        versionName = "0.9.21-friday-polish"
+        versionCode = 32
+        versionName = "0.9.22-ops-core"
     }
 
     buildTypes {
