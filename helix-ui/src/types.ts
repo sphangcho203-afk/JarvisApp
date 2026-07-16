@@ -32,6 +32,30 @@ export interface NativeTelemetry {
   cloudConfigured: boolean
 }
 
+export interface WeatherTelemetry {
+  configured: boolean
+  status: string
+  fresh: boolean
+  location: string
+  tempC: number
+  feelsLikeC: number
+  condition: string
+  conditionCode: number
+  icon: string
+  isDay: boolean
+  windKph: number
+  windDirection: string
+  gustKph: number
+  humidity: number
+  cloudPercent: number
+  precipMm: number
+  rainChance: number
+  todayMinC: number
+  todayMaxC: number
+  updatedAtMs: number
+  alert: string
+}
+
 export interface CountdownState {
   active: boolean
   label: string
