@@ -1,0 +1,49 @@
+name: FRIDAY Diagnostic Relay
+
+on:
+  push:
+    paths:
+      - .github/workflows/friday-diagnostic-relay.yml
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  relay:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      TARGET_RUN_ID: "29541011151"
+      TARGET_SOURCE_SHA: "c3e58cba119dde8ca74693cc19b44bbbf2dc10f1"
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout publisher
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Capture failed build log
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/friday-diagnostics
+          gh run view "$TARGET_RUN_ID" --repo "$GITHUB_REPOSITORY" --log-failed \
+            > "/tmp/friday-diagnostics/${TARGET_SOURCE_SHA}.failed.log" 2>&1 || true
+          gh run view "$TARGET_RUN_ID" --repo "$GITHUB_REPOSITORY" --json status,conclusion,event,headSha,jobs \
+            > "/tmp/friday-diagnostics/${TARGET_SOURCE_SHA}.run.json"
+
+      - name: Publish diagnostic ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "FRIDAY Diagnostic Core"
+          git config user.email "actions@users.noreply.github.com"
+          git fetch origin ci-status:refs/remotes/origin/ci-status
+          git checkout -B ci-status-work refs/remotes/origin/ci-status
+          mkdir -p diagnostics
+          cp "/tmp/friday-diagnostics/${TARGET_SOURCE_SHA}.failed.log" "diagnostics/${TARGET_SOURCE_SHA}.failed.log"
+          cp "/tmp/friday-diagnostics/${TARGET_SOURCE_SHA}.run.json" "diagnostics/${TARGET_SOURCE_SHA}.run.json"
+          git add diagnostics
+          git commit -m "Relay FRIDAY diagnostics ${TARGET_SOURCE_SHA:0:12}" || true
+          git push origin HEAD:ci-status
