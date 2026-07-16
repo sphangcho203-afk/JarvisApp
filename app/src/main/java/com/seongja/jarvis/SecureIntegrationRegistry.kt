@@ -63,7 +63,6 @@ data class IntegrationSettings(
     }
 }
 
-/** Android-Keystore encrypted storage for optional provider credentials. */
 class SecureIntegrationRegistry(context: Context) {
     private val prefs = context.applicationContext.getSharedPreferences(
         PREFS_NAME,
@@ -182,7 +181,9 @@ class SecureIntegrationRegistry(context: Context) {
 
     private fun redact(value: String, secret: String): String = value
         .replace(secret, "[redacted]", ignoreCase = false)
-        .replace(Regex("(?i)(key|token|authorization)\\s*[:=]\\s*[^\\s,;]+"), "$1=[redacted]")
+        .replace(Regex("(?i)(key|token|authorization)\\s*[:=]\\s*[^\\s,;]+")) {
+            "${it.groupValues[1]}=[redacted]"
+        }
         .replace(Regex("\\s+"), " ")
         .trim()
         .take(240)
