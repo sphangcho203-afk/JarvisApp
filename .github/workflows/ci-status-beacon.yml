@@ -1,0 +1,70 @@
+name: FRIDAY Build Status Beacon
+
+on:
+  workflow_run:
+    workflows:
+      - Build FRIDAY APK
+    types:
+      - completed
+
+permissions:
+  contents: write
+
+concurrency:
+  group: friday-ci-status-beacon
+  cancel-in-progress: false
+
+jobs:
+  publish-status:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout status publisher
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Publish machine-readable build result
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+          SOURCE_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          BUILD_RESULT: ${{ github.event.workflow_run.conclusion }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+          EVENT_NAME: ${{ github.event.workflow_run.event }}
+        run: |
+          set -euo pipefail
+          test -n "$SOURCE_SHA"
+          test -n "$BUILD_RESULT"
+
+          git config user.name "FRIDAY Build Core"
+          git config user.email "actions@users.noreply.github.com"
+
+          if git fetch origin ci-status:refs/remotes/origin/ci-status 2>/dev/null; then
+            git checkout -B ci-status-work refs/remotes/origin/ci-status
+          else
+            git checkout --orphan ci-status-work
+            git rm -rf . >/dev/null 2>&1 || true
+          fi
+
+          mkdir -p status
+          cat > "status/${SOURCE_SHA}.json" <<EOF
+          {
+            "system": "F.R.I.D.A.Y. APK FACTORY",
+            "version": "0.9.22-ops-core",
+            "source_sha": "${SOURCE_SHA}",
+            "source_branch": "${SOURCE_BRANCH}",
+            "event": "${EVENT_NAME}",
+            "conclusion": "${BUILD_RESULT}",
+            "run_id": "${RUN_ID}",
+            "run_number": "${RUN_NUMBER}",
+            "artifact": "FRIDAY-Helix-0.9.22-Operations-Core-apk",
+            "release_tag": "v0.9.22-ops-core"
+          }
+          EOF
+
+          cp "status/${SOURCE_SHA}.json" status/latest.json
+          git add status
+          git commit -m "Record FRIDAY build ${SOURCE_SHA:0:12} ${BUILD_RESULT}" || true
+          git push origin HEAD:ci-status
