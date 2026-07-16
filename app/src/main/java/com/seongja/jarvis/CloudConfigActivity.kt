@@ -2,10 +2,12 @@ package com.seongja.jarvis
 
 import android.app.Activity
 import android.graphics.Color
+import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
 import android.text.InputType
 import android.view.Gravity
+import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
 import android.widget.CheckBox
@@ -16,705 +18,619 @@ import android.widget.TextView
 import android.widget.Toast
 import java.util.Locale
 
+/** Secure owner-only configuration console for every cloud and data route. */
 class CloudConfigActivity : Activity() {
     private data class ProfileFields(
         val model: EditText,
-        val apiKey: EditText,
+        val key: EditText,
         val enabled: CheckBox,
-        val health: TextView
+        val status: TextView
     )
 
     private data class SearchFields(
-        val apiKey: EditText,
+        val key: EditText,
         val enabled: CheckBox,
-        val health: TextView
+        val status: TextView
     )
 
-    private data class VoiceFields(
-        val apiKey: EditText,
-        val enabled: CheckBox,
-        val health: TextView
-    )
-
-    private lateinit var store: SecureCortexRegistry
+    private lateinit var cortexStore: SecureCortexRegistry
     private lateinit var searchStore: SecureSearchGridRegistry
     private lateinit var voiceStore: SecureVoiceRegistry
-    private lateinit var systemPromptInput: EditText
+    private lateinit var integrationStore: SecureIntegrationRegistry
+    private lateinit var systemPrompt: EditText
     private lateinit var globalStatus: TextView
     private val profileFields = linkedMapOf<String, ProfileFields>()
     private val searchFields = linkedMapOf<SearchGridProvider, SearchFields>()
-    private lateinit var voiceFields: VoiceFields
+    private val cartesiaKeys = mutableListOf<EditText>()
+    private lateinit var cartesiaEnabled: CheckBox
+    private lateinit var cartesiaStatus: TextView
+    private lateinit var deepSeekKey: EditText
+    private lateinit var deepSeekModel: EditText
+    private lateinit var deepSeekEnabled: CheckBox
+    private lateinit var deepSeekStatus: TextView
+    private lateinit var youtubeKey: EditText
+    private lateinit var youtubeEnabled: CheckBox
+    private lateinit var youtubeStatus: TextView
+    private lateinit var gmailKey: EditText
+    private lateinit var gmailOAuthClient: EditText
+    private lateinit var gmailEnabled: CheckBox
+    private lateinit var gmailStatus: TextView
     private var voiceTestClient: CartesiaSonicClient? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        store = SecureCortexRegistry(this)
+        cortexStore = SecureCortexRegistry(this)
         searchStore = SecureSearchGridRegistry(this)
         voiceStore = SecureVoiceRegistry(this)
+        integrationStore = SecureIntegrationRegistry(this)
         setContentView(buildUi())
-        populate(store.load(), searchStore.load(), voiceStore.load())
+        populate()
     }
 
     private fun buildUi(): ScrollView {
-        val padding = dp(18)
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(padding, padding, padding, padding)
-            setBackgroundColor(Color.rgb(7, 12, 20))
+            setPadding(dp(16), dp(18), dp(16), dp(28))
+            setBackgroundColor(BG)
         }
-
-        root.addView(TextView(this).apply {
-            text = "F.R.I.D.A.Y. // CORTEX + SEARCH GRID"
-            textSize = 24f
-            setTextColor(Color.rgb(64, 255, 226))
+        root.addView(label("F.R.I.D.A.Y. // OPERATIONS CONSOLE", 23f, CYAN, true).apply {
             gravity = Gravity.CENTER_HORIZONTAL
-            setPadding(0, 0, 0, dp(8))
-        })
+            letterSpacing = .12f
+        }, matchWidth(bottom = 5))
+        root.addView(label("ENCRYPTED PROVIDER MESH // OWNER ACCESS", 11f, SOFT, true).apply {
+            gravity = Gravity.CENTER_HORIZONTAL
+            letterSpacing = .18f
+        }, matchWidth(bottom = 14))
+        root.addView(label(
+            "Keys remain inside Android Keystore encrypted storage. HELIX receives health labels only, never credentials. Gmail mailbox access requires OAuth consent; a project API key alone cannot read messages.",
+            12f,
+            MUTED
+        ), matchWidth(bottom = 16))
 
-        root.addView(TextView(this).apply {
-            text = "Ten encrypted reasoning nodes plus dedicated Tavily and Exa retrieval engines. FRIDAY searches, deduplicates evidence, cross-checks sources, and sends the evidence packet to the healthiest cortex node for synthesis."
-            textSize = 14f
-            setTextColor(Color.LTGRAY)
-            setPadding(0, 0, 0, dp(12))
-        })
-
-        root.addView(TextView(this).apply {
-            text = "Keys are encrypted with Android Keystore and never enter GitHub, logs, conversation memory, or source displays. Endpoints are fixed to official HTTPS provider gateways."
-            textSize = 13f
-            setTextColor(Color.rgb(145, 205, 255))
-            setPadding(0, 0, 0, dp(16))
-        })
-
-        systemPromptInput = EditText(this).apply {
-            hint = "System prompt"
-            minLines = 5
-            gravity = Gravity.TOP
-            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.GRAY)
-            setPadding(dp(14), dp(12), dp(14), dp(12))
-            background = panelBackground(
-                Color.rgb(16, 28, 40),
-                Color.rgb(42, 112, 124)
-            )
-        }
-        root.addView(systemPromptInput, matchWidth(bottom = 16))
-
-        root.addView(sectionTitle("CORTEX MESH // 6 GEMINI + 4 GROQ"))
+        root.addView(sectionTitle("COGNITIVE CORE // GEMINI + GROQ"))
+        systemPrompt = textInput("System directive", secret = false, lines = 5)
+        root.addView(systemPrompt, matchWidth(bottom = 12))
         CortexDefaults.profiles().forEach { profile ->
-            root.addView(buildProfilePanel(profile), matchWidth(bottom = 14))
+            root.addView(cortexPanel(profile), matchWidth(bottom = 10))
         }
+        root.addView(actionButton("SAVE + TEST CORTEX MESH") {
+            if (saveAll(false)) testCortexMesh()
+        }, matchWidth(bottom = 18))
 
         root.addView(sectionTitle("VOICE CORE // CARTESIA SONIC-3"))
-        root.addView(buildCartesiaPanel(), matchWidth(bottom = 16))
+        root.addView(label(
+            "P1 is primary. B1, B2, and B3 engage automatically before audio begins when credits, quota, authentication, or network health invalidate the active route.",
+            12f,
+            MUTED
+        ), matchWidth(bottom = 8))
+        root.addView(cartesiaPanel(), matchWidth(bottom = 18))
 
-        root.addView(sectionTitle("SEARCH GRID // TAVILY + EXA"))
-        root.addView(TextView(this).apply {
-            text = "Tavily is optimized for current web discovery and news. Exa provides semantic retrieval and deep-page evidence. Either provider can operate alone; when both are configured, Jarvis merges and deduplicates their results."
-            textSize = 13f
-            setTextColor(Color.LTGRAY)
-            setPadding(0, 0, 0, dp(12))
-        })
+        root.addView(sectionTitle("LIVE RESEARCH // TAVILY + EXA"))
         SearchGridProvider.entries.forEach { provider ->
-            root.addView(buildSearchPanel(provider), matchWidth(bottom = 14))
+            root.addView(searchPanel(provider), matchWidth(bottom = 10))
         }
+        root.addView(actionButton("SAVE + TEST SEARCH GRID") {
+            if (saveAll(false)) testSearchGrid()
+        }, matchWidth(bottom = 18))
 
-        globalStatus = TextView(this).apply {
-            text = "SYSTEM STATUS // NOT TESTED"
-            textSize = 14f
-            setTextColor(Color.rgb(147, 210, 255))
-            setPadding(0, dp(8), 0, dp(12))
+        root.addView(sectionTitle("SECONDARY CORTEX // DEEPSEEK"))
+        root.addView(deepSeekPanel(), matchWidth(bottom = 18))
+
+        root.addView(sectionTitle("YOUTUBE DATA API V3"))
+        root.addView(youtubePanel(), matchWidth(bottom = 18))
+
+        root.addView(sectionTitle("GMAIL PROJECT + OAUTH"))
+        root.addView(gmailPanel(), matchWidth(bottom = 18))
+
+        globalStatus = label("SYSTEM GRID // INITIALIZING", 12f, SOFT, true).apply {
+            setPadding(dp(12), dp(12), dp(12), dp(12))
+            background = panelBackground(PANEL, BLUE)
         }
-        root.addView(globalStatus)
-
-        root.addView(Button(this).apply {
-            text = "SAVE CORTEX + SEARCH + VOICE"
-            setOnClickListener { saveAll(showToast = true) }
-        }, matchWidth(bottom = 8))
-
-        root.addView(Button(this).apply {
-            text = "SAVE AND TEST ALL CORTEX NODES"
-            setOnClickListener {
-                if (saveAll(showToast = false)) testAllProfiles()
-            }
-        }, matchWidth(bottom = 8))
-
-        root.addView(Button(this).apply {
-            text = "SAVE AND TEST SEARCH GRID"
-            setOnClickListener {
-                if (saveAll(showToast = false)) testAllSearchProviders()
-            }
-        }, matchWidth(bottom = 8))
-
-        root.addView(Button(this).apply {
-            text = "RESET CORTEX MESH"
-            setOnClickListener {
-                store.clear()
-                populate(store.load(), searchStore.load(), voiceStore.load())
-                globalStatus.text = "CORTEX MESH // RESET"
-                Toast.makeText(
-                    this@CloudConfigActivity,
-                    "Cortex mesh reset.",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
-        }, matchWidth(bottom = 8))
-
-        root.addView(Button(this).apply {
-            text = "RESET SEARCH GRID"
-            setOnClickListener {
-                searchStore.clear()
-                populate(store.load(), searchStore.load(), voiceStore.load())
-                globalStatus.text = "SEARCH GRID // RESET"
-                Toast.makeText(
-                    this@CloudConfigActivity,
-                    "Search Grid reset.",
-                    Toast.LENGTH_SHORT
-                ).show()
-            }
-        }, matchWidth(bottom = 8))
-
-        root.addView(Button(this).apply {
-            text = "RESET VOICE CORE"
-            setOnClickListener {
-                voiceTestClient?.destroy()
-                voiceTestClient = null
-                voiceStore.clear()
-                populate(store.load(), searchStore.load(), voiceStore.load())
-                globalStatus.text = "VOICE CORE // RESET"
-                Toast.makeText(this@CloudConfigActivity, "Cartesia voice reset.", Toast.LENGTH_SHORT).show()
-            }
-        }, matchWidth(bottom = 8))
-
-        root.addView(Button(this).apply {
-            text = "RETURN TO FRIDAY"
-            setOnClickListener { finish() }
-        }, matchWidth(bottom = 24))
-
+        root.addView(globalStatus, matchWidth(bottom = 10))
+        root.addView(actionButton("SAVE COMPLETE OPERATIONS GRID") { saveAll(true) }, matchWidth(bottom = 8))
+        root.addView(actionButton("REFRESH VERIFIED HEALTH") { populate() }, matchWidth(bottom = 8))
+        root.addView(actionButton("RETURN TO F.R.I.D.A.Y.") { finish() }, matchWidth(bottom = 10))
         return ScrollView(this).apply { addView(root) }
     }
 
-    private fun sectionTitle(value: String): TextView = TextView(this).apply {
-        text = value
-        textSize = 18f
-        setTextColor(Color.rgb(96, 238, 215))
-        setPadding(0, dp(8), 0, dp(10))
-    }
-
-    private fun buildProfilePanel(profile: CortexProfile): LinearLayout {
-        val panel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(12), dp(14), dp(12))
-            background = panelBackground(
-                fill = Color.rgb(12, 23, 35),
-                stroke = if (profile.provider == CortexProvider.GEMINI) {
-                    Color.rgb(43, 204, 187)
-                } else {
-                    Color.rgb(166, 73, 202)
-                }
-            )
-        }
-
-        panel.addView(TextView(this).apply {
-            text = "${profile.label} // ${profile.provider.displayName.uppercase(Locale.US)}"
-            textSize = 17f
-            setTextColor(
-                if (profile.provider == CortexProvider.GEMINI) {
-                    Color.rgb(66, 255, 226)
-                } else {
-                    Color.rgb(230, 112, 255)
-                }
-            )
-        })
-
-        panel.addView(TextView(this).apply {
-            text = profile.provider.endpoint
-            textSize = 10f
-            setTextColor(Color.GRAY)
-            setPadding(0, dp(3), 0, dp(8))
-        })
-
-        val model = EditText(this).apply {
-            hint = "Model ID from ${profile.provider.displayName} console"
-            inputType = InputType.TYPE_CLASS_TEXT
-            setTextColor(Color.WHITE)
-            setHintTextColor(Color.GRAY)
-            background = panelBackground(
-                Color.rgb(18, 34, 49),
-                Color.rgb(40, 78, 94)
-            )
-            setPadding(dp(12), dp(10), dp(12), dp(10))
-        }
-        panel.addView(model, matchWidth(bottom = 8))
-
-        val apiKey = passwordInput("Encrypted API key")
-        panel.addView(apiKey, matchWidth(bottom = 6))
-
-        val enabled = CheckBox(this).apply {
-            text = "Node enabled"
-            setTextColor(Color.LTGRAY)
-            isChecked = true
-        }
-        panel.addView(enabled)
-
-        val health = TextView(this).apply {
-            text = "STATUS // NOT CONFIGURED"
-            textSize = 12f
-            setTextColor(Color.rgb(147, 210, 255))
-            setPadding(0, dp(5), 0, dp(5))
-        }
-        panel.addView(health)
-
-        panel.addView(Button(this).apply {
-            text = "SAVE + TEST ${profile.label}"
-            setOnClickListener {
-                if (saveAll(showToast = false)) testProfile(profile.id)
-            }
+    private fun cortexPanel(profile: CortexProfile): View {
+        val accent = if (profile.provider == CortexProvider.GEMINI) CYAN else VIOLET
+        val body = panel(accent)
+        body.addView(label(
+            "${profile.label} // ${profile.provider.displayName.uppercase(Locale.US)}",
+            15f,
+            accent,
+            true
+        ))
+        body.addView(label(profile.provider.routeLabel, 9f, MUTED), matchWidth(bottom = 6))
+        val model = textInput("Model ID", secret = false)
+        val key = textInput("Encrypted API key", secret = true)
+        val enabled = check("Node enabled")
+        val status = statusLabel()
+        body.addView(model, matchWidth(bottom = 6))
+        body.addView(key, matchWidth(bottom = 4))
+        body.addView(enabled)
+        body.addView(status, matchWidth(bottom = 4))
+        body.addView(actionButton("TEST ${profile.label}") {
+            if (saveAll(false)) testProfile(profile.id)
         }, matchWidth())
-
-        profileFields[profile.id] = ProfileFields(model, apiKey, enabled, health)
-        return panel
+        profileFields[profile.id] = ProfileFields(model, key, enabled, status)
+        return body
     }
 
-    private fun buildCartesiaPanel(): LinearLayout {
-        val accent = Color.rgb(75, 196, 255)
-        val panel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(12), dp(14), dp(12))
-            background = panelBackground(Color.rgb(11, 25, 38), accent)
-        }
-        panel.addView(TextView(this).apply {
-            text = "CARTESIA // SONIC-3 // GEMMA EN-GB"
-            textSize = 17f
-            setTextColor(accent)
-        })
-        panel.addView(TextView(this).apply {
-            text = "${CartesiaVoiceSettings.WEBSOCKET_ENDPOINT} // PCM16 44100HZ // SPEED ${CartesiaVoiceSettings.SPEED}"
-            textSize = 10f
-            setTextColor(Color.GRAY)
-            setPadding(0, dp(3), 0, dp(8))
-        })
-        val apiKey = passwordInput("Encrypted Cartesia API key")
-        panel.addView(apiKey, matchWidth(bottom = 6))
-        val enabled = CheckBox(this).apply {
-            text = "Cartesia voice enabled"
-            setTextColor(Color.LTGRAY)
-            isChecked = true
-        }
-        panel.addView(enabled)
-        val health = TextView(this).apply {
-            text = "STATUS // NOT CONFIGURED"
-            textSize = 12f
-            setTextColor(Color.rgb(147, 210, 255))
-            setPadding(0, dp(5), 0, dp(5))
-        }
-        panel.addView(health)
-        panel.addView(Button(this).apply {
-            text = "SAVE + TEST CARTESIA VOICE"
-            setOnClickListener {
-                if (saveAll(showToast = false)) testCartesiaVoice()
+    private fun cartesiaPanel(): View {
+        val body = panel(BLUE)
+        body.addView(label("CARTESIA // SONIC-3 // GEMMA EN-GB", 15f, BLUE, true))
+        listOf("P1 // PRIMARY KEY", "B1 // BACKUP KEY", "B2 // BACKUP KEY", "B3 // BACKUP KEY")
+            .forEachIndexed { index, title ->
+                body.addView(label(title, 9f, if (index == 0) CYAN else SOFT, true))
+                val field = textInput("Encrypted Cartesia ${if (index == 0) "primary" else "backup $index"} key", true)
+                cartesiaKeys += field
+                body.addView(field, matchWidth(bottom = 6))
             }
+        cartesiaEnabled = check("Cartesia voice mesh enabled")
+        cartesiaStatus = statusLabel()
+        body.addView(cartesiaEnabled)
+        body.addView(cartesiaStatus, matchWidth(bottom = 4))
+        body.addView(actionButton("SAVE + TEST VOICE FAILOVER MESH") {
+            if (saveAll(false)) testCartesia()
         }, matchWidth())
-        voiceFields = VoiceFields(apiKey, enabled, health)
-        return panel
+        return body
     }
 
-    private fun buildSearchPanel(provider: SearchGridProvider): LinearLayout {
-        val accent = when (provider) {
-            SearchGridProvider.TAVILY -> Color.rgb(56, 220, 180)
-            SearchGridProvider.EXA -> Color.rgb(255, 166, 66)
-        }
-        val panel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(12), dp(14), dp(12))
-            background = panelBackground(Color.rgb(13, 24, 35), accent)
-        }
-
-        panel.addView(TextView(this).apply {
-            text = "${provider.displayName.uppercase(Locale.US)} // EVIDENCE ENGINE"
-            textSize = 17f
-            setTextColor(accent)
-        })
-
-        panel.addView(TextView(this).apply {
-            text = provider.endpoint
-            textSize = 10f
-            setTextColor(Color.GRAY)
-            setPadding(0, dp(3), 0, dp(8))
-        })
-
-        val apiKey = passwordInput("Encrypted ${provider.displayName} API key")
-        panel.addView(apiKey, matchWidth(bottom = 6))
-
-        val enabled = CheckBox(this).apply {
-            text = "Provider enabled"
-            setTextColor(Color.LTGRAY)
-            isChecked = true
-        }
-        panel.addView(enabled)
-
-        val health = TextView(this).apply {
-            text = "STATUS // NOT CONFIGURED"
-            textSize = 12f
-            setTextColor(Color.rgb(147, 210, 255))
-            setPadding(0, dp(5), 0, dp(5))
-        }
-        panel.addView(health)
-
-        panel.addView(Button(this).apply {
-            text = "SAVE + TEST ${provider.displayName.uppercase(Locale.US)}"
-            setOnClickListener {
-                if (saveAll(showToast = false)) testSearchProvider(provider)
-            }
+    private fun searchPanel(provider: SearchGridProvider): View {
+        val accent = if (provider == SearchGridProvider.TAVILY) GREEN else ORANGE
+        val body = panel(accent)
+        body.addView(label("${provider.displayName.uppercase()} // EVIDENCE ENGINE", 15f, accent, true))
+        body.addView(label(provider.endpoint, 9f, MUTED), matchWidth(bottom = 6))
+        val key = textInput("Encrypted ${provider.displayName} API key", true)
+        val enabled = check("Provider enabled")
+        val status = statusLabel()
+        body.addView(key, matchWidth(bottom = 4))
+        body.addView(enabled)
+        body.addView(status, matchWidth(bottom = 4))
+        body.addView(actionButton("TEST ${provider.displayName.uppercase()}") {
+            if (saveAll(false)) testSearchProvider(provider)
         }, matchWidth())
-
-        searchFields[provider] = SearchFields(apiKey, enabled, health)
-        return panel
+        searchFields[provider] = SearchFields(key, enabled, status)
+        return body
     }
 
-    private fun passwordInput(hintText: String): EditText = EditText(this).apply {
-        hint = hintText
-        inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_PASSWORD
-        setTextColor(Color.WHITE)
-        setHintTextColor(Color.GRAY)
-        background = panelBackground(
-            Color.rgb(18, 34, 49),
-            Color.rgb(40, 78, 94)
-        )
-        setPadding(dp(12), dp(10), dp(12), dp(10))
+    private fun deepSeekPanel(): View {
+        val body = panel(VIOLET)
+        deepSeekModel = textInput("Model ID", false)
+        deepSeekKey = textInput("Encrypted DeepSeek API key", true)
+        deepSeekEnabled = check("DeepSeek fallback enabled")
+        deepSeekStatus = statusLabel()
+        body.addView(label("DEEPSEEK // RESILIENT FALLBACK CORTEX", 15f, VIOLET, true))
+        body.addView(label(DeepSeekClient.ENDPOINT, 9f, MUTED), matchWidth(bottom = 6))
+        body.addView(deepSeekModel, matchWidth(bottom = 6))
+        body.addView(deepSeekKey, matchWidth(bottom = 4))
+        body.addView(deepSeekEnabled)
+        body.addView(deepSeekStatus, matchWidth(bottom = 4))
+        body.addView(actionButton("SAVE + TEST DEEPSEEK") {
+            if (saveAll(false)) testDeepSeek()
+        }, matchWidth())
+        return body
     }
 
-    private fun populate(
-        cortexRegistry: CortexRegistry,
-        searchRegistry: SearchGridRegistry,
-        voiceSettings: CartesiaVoiceSettings
-    ) {
-        systemPromptInput.setText(cortexRegistry.systemPrompt)
-        val byId = cortexRegistry.profiles.associateBy { it.id }
+    private fun youtubePanel(): View {
+        val body = panel(RED)
+        youtubeKey = textInput("Encrypted YouTube API key", true)
+        youtubeEnabled = check("YouTube public-data intelligence enabled")
+        youtubeStatus = statusLabel()
+        body.addView(label("YOUTUBE // VERIFIED PUBLIC SEARCH", 15f, RED, true))
+        body.addView(label(
+            "Search, channel, title, video ID, publication data, and India trending. Private account data is not accessed.",
+            11f,
+            MUTED
+        ), matchWidth(bottom = 6))
+        body.addView(youtubeKey, matchWidth(bottom = 4))
+        body.addView(youtubeEnabled)
+        body.addView(youtubeStatus, matchWidth(bottom = 4))
+        body.addView(actionButton("SAVE + TEST YOUTUBE DATA") {
+            if (saveAll(false)) testYouTube()
+        }, matchWidth())
+        return body
+    }
+
+    private fun gmailPanel(): View {
+        val body = panel(GREEN)
+        gmailKey = textInput("Google Cloud project API key", true)
+        gmailOAuthClient = textInput("Android OAuth client ID", false)
+        gmailEnabled = check("Gmail integration enabled")
+        gmailStatus = statusLabel()
+        body.addView(label("GMAIL // OAUTH-GATED PRIVATE DATA", 15f, GREEN, true))
+        body.addView(label(
+            "The project key identifies the Google Cloud project. Reading, searching, sending, or changing Gmail requires an OAuth client and explicit Google account consent.",
+            11f,
+            MUTED
+        ), matchWidth(bottom = 6))
+        body.addView(gmailKey, matchWidth(bottom = 6))
+        body.addView(gmailOAuthClient, matchWidth(bottom = 4))
+        body.addView(gmailEnabled)
+        body.addView(gmailStatus)
+        return body
+    }
+
+    private fun populate() {
+        val cortex = cortexStore.load()
+        val byId = cortex.profiles.associateBy { it.id }
+        systemPrompt.setText(cortex.systemPrompt)
         CortexDefaults.profiles().forEach { default ->
             val profile = byId[default.id] ?: default
-            val fields = profileFields[default.id] ?: return@forEach
-            fields.model.setText(profile.model)
-            fields.apiKey.setText(profile.apiKey)
-            fields.enabled.isChecked = profile.enabled
-            fields.health.text =
-                "STATUS // ${profile.healthLabel()} // SUCCESS ${profile.successes} // FAIL ${profile.failures}"
+            profileFields[default.id]?.let { fields ->
+                fields.model.setText(profile.model)
+                fields.key.setText(profile.apiKey)
+                fields.enabled.isChecked = profile.enabled
+                fields.status.text = "STATUS // ${profile.healthLabel()} // OK ${profile.successes} // FAIL ${profile.failures}"
+            }
         }
 
-        val byProvider = searchRegistry.credentials.associateBy { it.provider }
+        val search = searchStore.load()
+        val searchByProvider = search.credentials.associateBy { it.provider }
         SearchGridProvider.entries.forEach { provider ->
-            val credential = byProvider[provider] ?: SearchGridCredential(provider)
-            val fields = searchFields[provider] ?: return@forEach
-            fields.apiKey.setText(credential.apiKey)
-            fields.enabled.isChecked = credential.enabled
-            fields.health.text =
-                "STATUS // ${credential.healthLabel()} // SUCCESS ${credential.successes} // FAIL ${credential.failures}"
+            val credential = searchByProvider[provider] ?: SearchGridCredential(provider)
+            searchFields[provider]?.let { fields ->
+                fields.key.setText(credential.apiKey)
+                fields.enabled.isChecked = credential.enabled
+                fields.status.text = "STATUS // ${credential.healthLabel()} // OK ${credential.successes} // FAIL ${credential.failures}"
+            }
         }
 
-        voiceFields.apiKey.setText(voiceSettings.apiKey)
-        voiceFields.enabled.isChecked = voiceSettings.enabled
-        voiceFields.health.text =
-            "STATUS // ${voiceSettings.healthLabel()} // SUCCESS ${voiceSettings.successes} // FAIL ${voiceSettings.failures}"
+        val voice = voiceStore.load()
+        val allKeys = listOf(voice.apiKey) + voice.backupApiKeys
+        cartesiaKeys.forEachIndexed { index, field -> field.setText(allKeys.getOrElse(index) { "" }) }
+        cartesiaEnabled.isChecked = voice.enabled
+        cartesiaStatus.text = "STATUS // ${voice.healthLabel()} // OK ${voice.successes} // FAIL ${voice.failures}"
 
-        globalStatus.text = systemSummary(cortexRegistry, searchRegistry, voiceSettings)
+        val integrations = integrationStore.load()
+        deepSeekKey.setText(integrations.deepSeekApiKey)
+        deepSeekModel.setText(integrations.deepSeekModel)
+        deepSeekEnabled.isChecked = integrations.deepSeekEnabled
+        deepSeekStatus.text = "STATUS // ${integrations.deepSeekHealthLabel()} // OK ${integrations.deepSeekSuccesses} // FAIL ${integrations.deepSeekFailures}"
+        youtubeKey.setText(integrations.youtubeApiKey)
+        youtubeEnabled.isChecked = integrations.youtubeEnabled
+        youtubeStatus.text = "STATUS // ${integrations.youtubeHealthLabel()} // OK ${integrations.youtubeSuccesses} // FAIL ${integrations.youtubeFailures}"
+        gmailKey.setText(integrations.gmailApiKey)
+        gmailOAuthClient.setText(integrations.gmailOAuthClientId)
+        gmailEnabled.isChecked = integrations.gmailEnabled
+        gmailStatus.text = "STATUS // ${integrations.gmailHealthLabel()}"
+        globalStatus.text = systemSummary(cortex, search, voice, integrations)
     }
 
-    private fun saveAll(showToast: Boolean): Boolean {
-        val cortexSaved = saveRegistry(showToast = false)
-        val searchSaved = saveSearchGrid(showToast = false)
-        val voiceSaved = saveVoice(showToast = false)
-        val success = cortexSaved && searchSaved && voiceSaved
-        if (showToast) {
-            Toast.makeText(
-                this,
-                if (success) {
-                    "Cortex, Search Grid, and Cartesia voice saved securely."
-                } else {
-                    "Secure configuration could not be fully saved."
-                },
-                if (success) Toast.LENGTH_SHORT else Toast.LENGTH_LONG
-            ).show()
-        }
-        return success
-    }
-
-    private fun saveRegistry(showToast: Boolean): Boolean {
-        val current = store.load().profiles.associateBy { it.id }
-        val updatedProfiles = CortexDefaults.profiles().map { default ->
-            val previous = current[default.id] ?: default
+    private fun saveAll(showToast: Boolean): Boolean = runCatching {
+        val previousCortex = cortexStore.load()
+        val previousById = previousCortex.profiles.associateBy { it.id }
+        val profiles = CortexDefaults.profiles().map { default ->
+            val previous = previousById[default.id] ?: default
             val fields = profileFields[default.id] ?: return@map previous
-            val model = fields.model.text.toString().trim()
-            val key = fields.apiKey.text.toString().trim()
+            val newModel = fields.model.text.toString().trim()
+            val newKey = fields.key.text.toString().trim()
             previous.copy(
-                model = model,
-                apiKey = key,
+                model = newModel,
+                apiKey = newKey,
                 enabled = fields.enabled.isChecked,
-                lastError = if (previous.model != model || previous.apiKey != key) {
-                    ""
-                } else {
-                    previous.lastError
-                },
-                cooldownUntilMs = if (previous.apiKey != key) 0L else previous.cooldownUntilMs
+                cooldownUntilMs = if (newKey != previous.apiKey || newModel != previous.model) 0L else previous.cooldownUntilMs,
+                lastError = if (newKey != previous.apiKey || newModel != previous.model) "" else previous.lastError
             )
         }
-
-        val registry = CortexRegistry(
-            profiles = updatedProfiles,
-            systemPrompt = systemPromptInput.text.toString().trim()
-                .ifBlank { CortexRegistry.DEFAULT_SYSTEM_PROMPT }
-        )
-
-        return runCatching {
-            store.save(registry)
-            globalStatus.text = systemSummary(store.load(), searchStore.load(), voiceStore.load())
-            if (showToast) {
-                Toast.makeText(this, "Cortex mesh saved securely.", Toast.LENGTH_SHORT).show()
-            }
-            true
-        }.getOrElse {
-            globalStatus.text = "CORTEX MESH // SECURE STORAGE ERROR"
-            false
-        }
-    }
-
-    private fun saveSearchGrid(showToast: Boolean): Boolean {
-        val current = searchStore.load().credentials.associateBy { it.provider }
-        val updated = SearchGridProvider.entries.map { provider ->
-            val previous = current[provider] ?: SearchGridCredential(provider)
-            val fields = searchFields[provider] ?: return@map previous
-            val key = fields.apiKey.text.toString().trim()
-            previous.copy(
-                apiKey = key,
-                enabled = fields.enabled.isChecked,
-                lastError = if (previous.apiKey != key) "" else previous.lastError,
-                cooldownUntilMs = if (previous.apiKey != key) 0L else previous.cooldownUntilMs
+        cortexStore.save(
+            CortexRegistry(
+                profiles = profiles,
+                systemPrompt = systemPrompt.text.toString().trim().ifBlank { CortexRegistry.DEFAULT_SYSTEM_PROMPT }
             )
-        }
-
-        return runCatching {
-            searchStore.save(SearchGridRegistry(updated))
-            globalStatus.text = systemSummary(store.load(), searchStore.load(), voiceStore.load())
-            if (showToast) {
-                Toast.makeText(this, "Search Grid saved securely.", Toast.LENGTH_SHORT).show()
-            }
-            true
-        }.getOrElse {
-            globalStatus.text = "SEARCH GRID // SECURE STORAGE ERROR"
-            false
-        }
-    }
-
-    private fun saveVoice(showToast: Boolean): Boolean {
-        val previous = voiceStore.load()
-        val key = voiceFields.apiKey.text.toString().trim()
-        val updated = previous.copy(
-            apiKey = key,
-            enabled = voiceFields.enabled.isChecked,
-            lastError = if (previous.apiKey != key) "" else previous.lastError,
-            lastStatusCode = if (previous.apiKey != key) 0 else previous.lastStatusCode
         )
-        return runCatching {
-            voiceStore.save(updated)
-            if (showToast) Toast.makeText(this, "Cartesia voice saved securely.", Toast.LENGTH_SHORT).show()
-            true
-        }.getOrElse {
-            globalStatus.text = "VOICE CORE // SECURE STORAGE ERROR"
-            false
-        }
-    }
 
-    private fun testCartesiaVoice() {
-        voiceTestClient?.destroy()
-        voiceFields.health.text = "STATUS // CONNECTING CARTESIA..."
-        lateinit var testClient: CartesiaSonicClient
-        testClient = CartesiaSonicClient(this, object : CartesiaSonicClient.Listener {
-            private var sent = false
-            override fun onReady(label: String) {
-                runOnUiThread {
-                    voiceFields.health.text = "STATUS // ONLINE // $label"
-                    if (!sent) {
-                        sent = true
-                        testClient.push("Cartesia Sonic voice core online, Boss.")
-                        testClient.finish()
-                    }
+        val previousSearch = searchStore.load().credentials.associateBy { it.provider }
+        searchStore.save(
+            SearchGridRegistry(
+                SearchGridProvider.entries.map { provider ->
+                    val previous = previousSearch[provider] ?: SearchGridCredential(provider)
+                    val fields = searchFields[provider] ?: return@map previous
+                    val newKey = fields.key.text.toString().trim()
+                    previous.copy(
+                        apiKey = newKey,
+                        enabled = fields.enabled.isChecked,
+                        cooldownUntilMs = if (newKey != previous.apiKey) 0L else previous.cooldownUntilMs,
+                        lastError = if (newKey != previous.apiKey) "" else previous.lastError
+                    )
                 }
-            }
-            override fun onAudioStarted(label: String) {
-                runOnUiThread { voiceFields.health.text = "STATUS // SPEAKING // $label" }
-            }
-            override fun onCompleted() {
-                runOnUiThread {
-                    voiceFields.health.text = "STATUS // ONLINE // TEST COMPLETE"
-                    voiceTestClient?.destroy()
-                    voiceTestClient = null
-                    populate(store.load(), searchStore.load(), voiceStore.load())
-                }
-            }
-            override fun onDiagnostic(message: String) = Unit
-            override fun onError(message: String) {
-                runOnUiThread {
-                    voiceFields.health.text = "STATUS // FAILED // ${message.take(180)}"
-                    voiceTestClient?.destroy()
-                    voiceTestClient = null
-                    populate(store.load(), searchStore.load(), voiceStore.load())
-                }
-            }
-        })
-        voiceTestClient = testClient
-        if (!testClient.begin()) {
-            voiceFields.health.text = "STATUS // ENTER A CARTESIA API KEY"
-            voiceTestClient = null
-        }
+            )
+        )
+
+        val previousVoice = voiceStore.load()
+        val primary = cartesiaKeys.getOrNull(0)?.text?.toString()?.trim().orEmpty()
+        val backups = cartesiaKeys.drop(1).map { it.text.toString().trim() }.filter(String::isNotBlank)
+        val voiceChanged = primary != previousVoice.apiKey || backups != previousVoice.backupApiKeys
+        voiceStore.save(
+            previousVoice.copy(
+                apiKey = primary,
+                backupApiKeys = backups,
+                enabled = cartesiaEnabled.isChecked,
+                activeKeyIndex = if (voiceChanged) 0 else previousVoice.activeKeyIndex,
+                keyCooldownUntilMs = if (voiceChanged) emptyList() else previousVoice.keyCooldownUntilMs,
+                lastStatusCode = if (voiceChanged) 0 else previousVoice.lastStatusCode,
+                lastError = if (voiceChanged) "" else previousVoice.lastError
+            )
+        )
+
+        val previousIntegration = integrationStore.load()
+        val nextDeepSeekKey = deepSeekKey.text.toString().trim()
+        val nextDeepSeekModel = deepSeekModel.text.toString().trim().ifBlank { "deepseek-chat" }
+        val nextYouTubeKey = youtubeKey.text.toString().trim()
+        integrationStore.save(
+            previousIntegration.copy(
+                deepSeekApiKey = nextDeepSeekKey,
+                deepSeekModel = nextDeepSeekModel,
+                deepSeekEnabled = deepSeekEnabled.isChecked,
+                deepSeekLastStatusCode = if (nextDeepSeekKey != previousIntegration.deepSeekApiKey || nextDeepSeekModel != previousIntegration.deepSeekModel) 0 else previousIntegration.deepSeekLastStatusCode,
+                deepSeekLastError = if (nextDeepSeekKey != previousIntegration.deepSeekApiKey || nextDeepSeekModel != previousIntegration.deepSeekModel) "" else previousIntegration.deepSeekLastError,
+                youtubeApiKey = nextYouTubeKey,
+                youtubeEnabled = youtubeEnabled.isChecked,
+                youtubeLastStatusCode = if (nextYouTubeKey != previousIntegration.youtubeApiKey) 0 else previousIntegration.youtubeLastStatusCode,
+                youtubeLastError = if (nextYouTubeKey != previousIntegration.youtubeApiKey) "" else previousIntegration.youtubeLastError,
+                gmailApiKey = gmailKey.text.toString().trim(),
+                gmailOAuthClientId = gmailOAuthClient.text.toString().trim(),
+                gmailEnabled = gmailEnabled.isChecked
+            )
+        )
+        populate()
+        if (showToast) Toast.makeText(this, "Operations grid encrypted and saved.", Toast.LENGTH_SHORT).show()
+        true
+    }.getOrElse { error ->
+        globalStatus.text = "SECURE SAVE FAILURE // ${error.message ?: error.javaClass.simpleName}"
+        if (showToast) Toast.makeText(this, "Secure save failed.", Toast.LENGTH_LONG).show()
+        false
     }
 
     private fun testProfile(profileId: String) {
         val fields = profileFields[profileId] ?: return
-        fields.health.text = "STATUS // TESTING..."
+        fields.status.text = "STATUS // TESTING VERIFIED ROUTE..."
         Thread {
-            val result = runCatching { CortexMeshClient(store).testProfile(profileId) }
+            val result = runCatching { CortexMeshClient(cortexStore).testProfile(profileId) }
             runOnUiThread {
                 result.onSuccess {
-                    fields.health.text =
-                        "STATUS // ONLINE // ${it.provider.displayName.uppercase(Locale.US)} // HTTP ${it.statusCode} // ${it.elapsedMs}ms"
+                    fields.status.text = "STATUS // ONLINE // HTTP ${it.statusCode} // ${it.elapsedMs}ms"
                 }.onFailure {
-                    fields.health.text =
-                        "STATUS // FAILED // ${it.message ?: it.javaClass.simpleName}"
+                    fields.status.text = "STATUS // FAILED // ${it.message ?: it.javaClass.simpleName}"
                 }
-                globalStatus.text = systemSummary(store.load(), searchStore.load(), voiceStore.load())
+                refreshSummary()
             }
+        }.start()
+    }
+
+    private fun testCortexMesh() {
+        val configured = cortexStore.load().configuredProfiles()
+        if (configured.isEmpty()) {
+            globalStatus.text = "CORTEX MESH // NO CONFIGURED NODES"
+            return
+        }
+        Thread {
+            var online = 0
+            configured.forEachIndexed { index, profile ->
+                runOnUiThread { globalStatus.text = "CORTEX TEST // ${index + 1}/${configured.size} // ONLINE $online" }
+                if (runCatching { CortexMeshClient(cortexStore).testProfile(profile.id) }.isSuccess) online++
+            }
+            runOnUiThread { populate(); globalStatus.text = "CORTEX TEST COMPLETE // ONLINE $online/${configured.size}" }
         }.start()
     }
 
     private fun testSearchProvider(provider: SearchGridProvider) {
         val fields = searchFields[provider] ?: return
-        fields.health.text = "STATUS // TESTING..."
+        fields.status.text = "STATUS // TESTING LIVE EVIDENCE..."
         Thread {
-            val result = runCatching {
-                SearchGridResearchClient(searchStore, store).testProvider(provider)
-            }
+            val result = runCatching { SearchGridResearchClient(searchStore, cortexStore).testProvider(provider) }
             runOnUiThread {
                 result.onSuccess {
-                    fields.health.text =
-                        "STATUS // ONLINE // HTTP ${it.statusCode} // ${it.elapsedMs}ms // RESULTS ${it.resultCount}"
+                    fields.status.text = "STATUS // ONLINE // HTTP ${it.statusCode} // ${it.elapsedMs}ms // RESULTS ${it.resultCount}"
                 }.onFailure {
-                    fields.health.text =
-                        "STATUS // FAILED // ${it.message ?: it.javaClass.simpleName}"
+                    fields.status.text = "STATUS // FAILED // ${it.message ?: it.javaClass.simpleName}"
                 }
-                populate(store.load(), searchStore.load(), voiceStore.load())
+                refreshSummary()
             }
         }.start()
     }
 
-    private fun testAllProfiles() {
-        val configured = store.load().configuredProfiles()
-        if (configured.isEmpty()) {
-            globalStatus.text = "CORTEX MESH // ENTER AT LEAST ONE MODEL AND KEY"
-            return
-        }
-
-        globalStatus.text = "CORTEX MESH // TESTING ${configured.size} NODES..."
-        Thread {
-            var online = 0
-            configured.forEachIndexed { index, profile ->
-                runOnUiThread {
-                    profileFields[profile.id]?.health?.text =
-                        "STATUS // TESTING ${index + 1}/${configured.size}..."
-                }
-                val result = runCatching { CortexMeshClient(store).testProfile(profile.id) }
-                if (result.isSuccess) online++
-                runOnUiThread {
-                    val fields = profileFields[profile.id]
-                    result.onSuccess {
-                        fields?.health?.text =
-                            "STATUS // ONLINE // HTTP ${it.statusCode} // ${it.elapsedMs}ms"
-                    }.onFailure {
-                        fields?.health?.text =
-                            "STATUS // FAILED // ${it.message ?: it.javaClass.simpleName}"
-                    }
-                    globalStatus.text =
-                        "CORTEX MESH // TESTED ${index + 1}/${configured.size} // ONLINE $online"
-                }
-            }
-            runOnUiThread {
-                populate(store.load(), searchStore.load(), voiceStore.load())
-                globalStatus.text =
-                    "CORTEX MESH // TEST COMPLETE // ONLINE $online/${configured.size}"
-            }
-        }.start()
-    }
-
-    private fun testAllSearchProviders() {
+    private fun testSearchGrid() {
         val configured = searchStore.load().configuredCredentials()
         if (configured.isEmpty()) {
-            globalStatus.text = "SEARCH GRID // ENTER A TAVILY OR EXA KEY"
+            globalStatus.text = "SEARCH GRID // NO CONFIGURED EVIDENCE PROVIDER"
             return
         }
-
-        globalStatus.text = "SEARCH GRID // TESTING ${configured.size} PROVIDERS..."
         Thread {
-            val client = SearchGridResearchClient(searchStore, store)
             var online = 0
+            val client = SearchGridResearchClient(searchStore, cortexStore)
             configured.forEachIndexed { index, credential ->
-                runOnUiThread {
-                    searchFields[credential.provider]?.health?.text =
-                        "STATUS // TESTING ${index + 1}/${configured.size}..."
-                }
-                val result = runCatching { client.testProvider(credential.provider) }
-                if (result.isSuccess) online++
-                runOnUiThread {
-                    val fields = searchFields[credential.provider]
-                    result.onSuccess {
-                        fields?.health?.text =
-                            "STATUS // ONLINE // HTTP ${it.statusCode} // ${it.elapsedMs}ms // RESULTS ${it.resultCount}"
-                    }.onFailure {
-                        fields?.health?.text =
-                            "STATUS // FAILED // ${it.message ?: it.javaClass.simpleName}"
-                    }
-                    globalStatus.text =
-                        "SEARCH GRID // TESTED ${index + 1}/${configured.size} // ONLINE $online"
+                runOnUiThread { globalStatus.text = "SEARCH TEST // ${index + 1}/${configured.size} // ONLINE $online" }
+                if (runCatching { client.testProvider(credential.provider) }.isSuccess) online++
+            }
+            runOnUiThread { populate(); globalStatus.text = "SEARCH TEST COMPLETE // ONLINE $online/${configured.size}" }
+        }.start()
+    }
+
+    private fun testCartesia() {
+        voiceTestClient?.destroy()
+        cartesiaStatus.text = "STATUS // ACQUIRING VOICE ROUTE..."
+        lateinit var testClient: CartesiaSonicClient
+        testClient = CartesiaSonicClient(this, object : CartesiaSonicClient.Listener {
+            private var sent = false
+            override fun onReady(label: String) = runOnUiThread {
+                cartesiaStatus.text = "STATUS // $label // ONLINE"
+                if (!sent) {
+                    sent = true
+                    testClient.push("F.R.I.D.A.Y. voice failover mesh operational, Boss.")
+                    testClient.finish()
                 }
             }
+            override fun onAudioStarted(label: String) = runOnUiThread {
+                cartesiaStatus.text = "STATUS // SPEAKING // $label"
+            }
+            override fun onCompleted() = runOnUiThread {
+                voiceTestClient?.destroy(); voiceTestClient = null; populate()
+            }
+            override fun onDiagnostic(message: String) = runOnUiThread { cartesiaStatus.text = message }
+            override fun onError(message: String) = runOnUiThread {
+                cartesiaStatus.text = "STATUS // FAILED // ${message.take(180)}"
+                voiceTestClient?.destroy(); voiceTestClient = null; refreshSummary()
+            }
+        })
+        voiceTestClient = testClient
+        if (!testClient.begin()) {
+            cartesiaStatus.text = "STATUS // NO AVAILABLE CARTESIA KEY"
+            voiceTestClient = null
+        }
+    }
+
+    private fun testDeepSeek() {
+        deepSeekStatus.text = "STATUS // TESTING DEEPSEEK..."
+        Thread {
+            val result = runCatching { DeepSeekClient(integrationStore).test() }
             runOnUiThread {
-                populate(store.load(), searchStore.load(), voiceStore.load())
-                globalStatus.text =
-                    "SEARCH GRID // TEST COMPLETE // ONLINE $online/${configured.size}"
+                result.onSuccess {
+                    deepSeekStatus.text = "STATUS // ONLINE // ${it.model} // HTTP ${it.statusCode} // ${it.elapsedMs}ms"
+                }.onFailure {
+                    deepSeekStatus.text = "STATUS // FAILED // ${it.message ?: it.javaClass.simpleName}"
+                }
+                refreshSummary()
             }
         }.start()
+    }
+
+    private fun testYouTube() {
+        youtubeStatus.text = "STATUS // TESTING YOUTUBE DATA..."
+        Thread {
+            val result = runCatching { YouTubeDataClient(integrationStore).test() }
+            runOnUiThread {
+                result.onSuccess {
+                    youtubeStatus.text = "STATUS // ONLINE // HTTP ${it.statusCode} // ${it.elapsedMs}ms // RESULTS ${it.videos.size}"
+                }.onFailure {
+                    youtubeStatus.text = "STATUS // FAILED // ${it.message ?: it.javaClass.simpleName}"
+                }
+                refreshSummary()
+            }
+        }.start()
+    }
+
+    private fun refreshSummary() {
+        globalStatus.text = systemSummary(
+            cortexStore.load(),
+            searchStore.load(),
+            voiceStore.load(),
+            integrationStore.load()
+        )
     }
 
     private fun systemSummary(
-        cortexRegistry: CortexRegistry,
-        searchRegistry: SearchGridRegistry,
-        voiceSettings: CartesiaVoiceSettings
+        cortex: CortexRegistry,
+        search: SearchGridRegistry,
+        voice: CartesiaVoiceSettings,
+        integrations: IntegrationSettings
     ): String {
-        val cortexConfigured = cortexRegistry.configuredProfiles()
-        val cortexOnline = cortexConfigured.count {
-            it.lastStatusCode in 200..299 && !it.isCoolingDown()
+        val cortexConfigured = cortex.configuredProfiles()
+        val cortexOnline = cortexConfigured.count { it.lastStatusCode in 200..299 && !it.isCoolingDown() }
+        val searchConfigured = search.configuredCredentials()
+        val searchOnline = searchConfigured.count { it.lastStatusCode in 200..299 && !it.isCoolingDown() }
+        return buildString {
+            appendLine("CORTEX // ${cortexConfigured.size}/10 CONFIGURED // $cortexOnline VERIFIED ONLINE")
+            appendLine("RESEARCH // ${searchConfigured.size}/2 CONFIGURED // $searchOnline VERIFIED ONLINE")
+            appendLine("VOICE // ${voice.configuredKeys().size}/4 KEYS // ${voice.healthLabel()}")
+            appendLine("DEEPSEEK // ${integrations.deepSeekHealthLabel()}")
+            appendLine("YOUTUBE // ${integrations.youtubeHealthLabel()}")
+            append("GMAIL // ${integrations.gmailHealthLabel()}")
         }
-        val cortexCooling = cortexConfigured.count { it.isCoolingDown() }
-        val searchConfigured = searchRegistry.configuredCredentials()
-        val searchOnline = searchConfigured.count {
-            it.lastStatusCode in 200..299 && !it.isCoolingDown()
-        }
-        val searchCooling = searchConfigured.count { it.isCoolingDown() }
-        return "CORTEX ${cortexConfigured.size}/10 // ONLINE $cortexOnline // COOLDOWN $cortexCooling\n" +
-            "SEARCH GRID ${searchConfigured.size}/2 // ONLINE $searchOnline // COOLDOWN $searchCooling"
     }
 
-    private fun panelBackground(fill: Int, stroke: Int): GradientDrawable =
-        GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            cornerRadius = dp(8).toFloat()
-            setColor(fill)
-            setStroke(dp(1), stroke)
+    private fun panel(accent: Int): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(12), dp(12), dp(12), dp(12))
+        background = panelBackground(PANEL, accent)
+    }
+
+    private fun sectionTitle(text: String): TextView = label(text, 16f, CYAN, true).apply {
+        letterSpacing = .08f
+        setPadding(0, dp(8), 0, dp(8))
+    }
+
+    private fun label(text: String, size: Float, color: Int, bold: Boolean = false): TextView =
+        TextView(this).apply {
+            this.text = text
+            textSize = size
+            setTextColor(color)
+            typeface = Typeface.create(Typeface.MONOSPACE, if (bold) Typeface.BOLD else Typeface.NORMAL)
+            setLineSpacing(0f, 1.15f)
         }
 
-    private fun matchWidth(bottom: Int = 0): LinearLayout.LayoutParams =
-        LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { setMargins(0, 0, 0, dp(bottom)) }
+    private fun statusLabel(): TextView = label("STATUS // NOT CONFIGURED", 10f, SOFT, true).apply {
+        setPadding(0, dp(6), 0, dp(6))
+    }
 
-    private fun dp(value: Int): Int =
-        (value * resources.displayMetrics.density).toInt()
+    private fun check(text: String): CheckBox = CheckBox(this).apply {
+        this.text = text
+        setTextColor(SOFT)
+        typeface = Typeface.MONOSPACE
+        isChecked = true
+    }
+
+    private fun textInput(hint: String, secret: Boolean, lines: Int = 1): EditText = EditText(this).apply {
+        this.hint = hint
+        minLines = lines
+        gravity = if (lines > 1) Gravity.TOP else Gravity.CENTER_VERTICAL
+        inputType = InputType.TYPE_CLASS_TEXT or when {
+            secret -> InputType.TYPE_TEXT_VARIATION_PASSWORD
+            lines > 1 -> InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            else -> 0
+        }
+        setTextColor(Color.WHITE)
+        setHintTextColor(MUTED)
+        typeface = Typeface.MONOSPACE
+        textSize = 12f
+        setPadding(dp(10), dp(9), dp(10), dp(9))
+        background = panelBackground(INPUT, BORDER)
+    }
+
+    private fun actionButton(text: String, action: () -> Unit): Button = Button(this).apply {
+        this.text = text
+        textSize = 10f
+        letterSpacing = .08f
+        setTextColor(Color.WHITE)
+        typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+        background = panelBackground(Color.rgb(12, 34, 54), BLUE)
+        setOnClickListener { action() }
+    }
+
+    private fun panelBackground(fill: Int, stroke: Int): GradientDrawable = GradientDrawable().apply {
+        shape = GradientDrawable.RECTANGLE
+        cornerRadius = dp(2).toFloat()
+        setColor(fill)
+        setStroke(dp(1), stroke)
+    }
+
+    private fun matchWidth(bottom: Int = 0): LinearLayout.LayoutParams =
+        LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+            bottomMargin = dp(bottom)
+        }
+
+    private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
+
+    override fun onDestroy() {
+        voiceTestClient?.destroy()
+        voiceTestClient = null
+        super.onDestroy()
+    }
+
+    companion object {
+        private val BG = Color.rgb(2, 7, 13)
+        private val PANEL = Color.rgb(6, 17, 28)
+        private val INPUT = Color.rgb(8, 24, 38)
+        private val BORDER = Color.rgb(35, 75, 104)
+        private val CYAN = Color.rgb(65, 220, 255)
+        private val BLUE = Color.rgb(40, 126, 255)
+        private val GREEN = Color.rgb(67, 229, 170)
+        private val ORANGE = Color.rgb(255, 166, 74)
+        private val VIOLET = Color.rgb(192, 108, 255)
+        private val RED = Color.rgb(255, 92, 112)
+        private val SOFT = Color.rgb(180, 216, 236)
+        private val MUTED = Color.rgb(99, 132, 154)
+    }
 }

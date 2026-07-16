@@ -9,8 +9,11 @@ class JarvisBrain(context: Context) {
     private val memory = MemoryVault(appContext)
     private val router = ActionRouter(appContext)
     private val registryStore = SecureCortexRegistry(appContext)
+    private val integrationStore = SecureIntegrationRegistry(appContext)
     private val cortexMesh = CortexMeshClient(registryStore)
     private val webResearch = HybridWebResearchClient(registryStore)
+    private val deepSeek = DeepSeekClient(integrationStore)
+    private val youtube = YouTubeDataClient(integrationStore)
     private val keyguard =
         appContext.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
 
@@ -19,15 +22,17 @@ class JarvisBrain(context: Context) {
     }
 
     fun isCloudConfigured(): Boolean =
-        registryStore.load().configuredProfiles().isNotEmpty()
+        registryStore.load().configuredProfiles().isNotEmpty() || deepSeek.isConfigured()
 
     fun configuredModel(): String {
-        val registry = registryStore.load()
-        val configured = registry.configuredProfiles()
-        val online = configured.count {
-            it.lastStatusCode in 200..299 && !it.isCoolingDown()
+        val configured = registryStore.load().configuredProfiles()
+        val online = configured.count { it.lastStatusCode in 200..299 && !it.isCoolingDown() }
+        return buildString {
+            append("${configured.size} mesh nodes // $online online")
+            append(" // DeepSeek ${if (deepSeek.isConfigured()) "ready" else "offline"}")
+            append(" // web ${if (webResearch.isConfigured()) "ready" else "offline"}")
+            append(" // YouTube ${if (youtube.isConfigured()) "ready" else "offline"}")
         }
-        return "${configured.size} nodes // $online online // web ${if (webResearch.isConfigured()) "ready" else "offline"}"
     }
 
     fun interceptLocalDialogue(rawInput: String): BrainResponse? {
@@ -71,8 +76,8 @@ class JarvisBrain(context: Context) {
 
         if (lower in setOf("who are you", "tell me about yourself", "what are you")) {
             return localResponse(
-                spoken = "I am FRIDAY, your private personal intelligence, Sir. You built me to know your world, protect your privacy, remember what matters, research what you ask, and act across this phone. I am here for you, not the public.",
-                display = "F.R.I.D.A.Y. // SEONGJA'S PRIVATE INTELLIGENCE\nBUILT BY YOU // FOR YOU\nVOICE // MEMORY // RESEARCH // VERIFIED ANDROID ACTIONS",
+                spoken = "I am FRIDAY, your private personal intelligence, Sir. You built me to know your world, protect your privacy, remember what matters, research what you ask, and act across this phone.",
+                display = "F.R.I.D.A.Y. // SEONGJA'S PRIVATE INTELLIGENCE\nVOICE // MEMORY // LIVE RESEARCH // VERIFIED ANDROID ACTIONS\nOPERATIONS CORE // 0.9.22",
                 intent = "dialogue/self_identity"
             )
         }
@@ -81,12 +86,12 @@ class JarvisBrain(context: Context) {
             val operator = memory.callsign()
             return localResponse(
                 spoken = "My creator and primary operator is $operator. You designed me as a private Android intelligence system with voice, research, contextual memory, and verified device-control capabilities.",
-                display = "CREATOR // $operator\nROLE // PRIMARY OPERATOR AND SYSTEM ARCHITECT\nIDENTITY CORE // ${OwnerIdentityCore.VERSION}\nKNOWLEDGE BOUNDARY // RETRIEVED, USER-PROVIDED, AND SECURELY STORED INFORMATION",
+                display = "CREATOR // $operator\nROLE // PRIMARY OPERATOR AND SYSTEM ARCHITECT\nIDENTITY CORE // ${OwnerIdentityCore.VERSION}",
                 intent = "dialogue/creator"
             )
         }
 
-        if (lower in setOf("thank you", "thanks", "thanks jarvis", "thank you jarvis")) {
+        if (lower in setOf("thank you", "thanks", "thanks friday", "thank you friday", "thanks jarvis", "thank you jarvis")) {
             return localResponse(
                 spoken = "Always, Sir.",
                 display = "ACKNOWLEDGED // ALWAYS AT YOUR SERVICE",
@@ -94,7 +99,7 @@ class JarvisBrain(context: Context) {
             )
         }
 
-        if (lower in setOf("how are you", "how are you jarvis", "system check jarvis")) {
+        if (lower in setOf("how are you", "how are you friday", "system check friday", "how are you jarvis", "system check jarvis")) {
             return localResponse(
                 spoken = "Operational and ready, Sir.",
                 display = "SYSTEM STATE // OPERATIONAL\nIDENTITY // ${OwnerIdentityCore.VERSION}\nCORTEX // ${configuredModel()}\nMEMORY // ${memory.summary()}",
@@ -113,6 +118,10 @@ class JarvisBrain(context: Context) {
         localMemoryCommand(input)?.let { return it }
         localMeshCommand(input)?.let { return it }
 
+        YouTubeDataClient.commandFor(input)?.let { command ->
+            return youtubeResponse(command, onCortexToken)
+        }
+
         memory.detectStableConflict(input)?.let { conflict ->
             return localResponse(
                 spoken = "Sir, that conflicts with a stable memory. I currently remember: ${conflict.previous}. To replace it, say: correct memory to ${conflict.proposed}.",
@@ -127,175 +136,266 @@ class JarvisBrain(context: Context) {
             )
         }
 
-        if (!isCloudConfigured()) return configurationRequiredResponse()
         if (WebResearchIntent.shouldUseWeb(input)) {
-            return runCatching { webResearchResponse(input, onCortexToken) }
-                .getOrElse { webResearchFallback(input, it, onCortexToken) }
+            return liveResearchResponse(input, onCortexToken)
         }
-        return cortexResponse(input, onCortexToken)
+        if (!isCloudConfigured()) return configurationRequiredResponse()
+        return resilientCortexResponse(input, onCortexToken)
     }
 
-    private fun cortexResponse(
-        input: String,
-        onCortexToken: ((String) -> Unit)?
+    private fun youtubeResponse(
+        command: YouTubeCommand,
+        onToken: ((String) -> Unit)?
     ): BrainResponse {
-        val result = cortexMesh.ask(
-            input,
-            memory.promptContext(input),
-            onCortexToken
-        )
+        if (!youtube.isConfigured()) {
+            return integrationRequiredResponse(
+                spoken = "YouTube Data API v3 is not configured, Sir. Say configure APIs and add the project key.",
+                display = "YOUTUBE DATA // CONFIGURATION REQUIRED\nSAY // CONFIGURE APIS",
+                intent = "youtube/config_required"
+            )
+        }
+        JarvisOperationBus.publish("YOUTUBE DATA SEARCH", "QUERYING VERIFIED PUBLIC VIDEO DATA", .16f)
+        onToken?.invoke("Searching YouTube data, Sir. ")
+        return runCatching {
+            JarvisOperationBus.publish("YOUTUBE DATA SEARCH", "FILTERING PUBLIC RESULTS // SAFE SEARCH ACTIVE", .54f)
+            val result = youtube.execute(command)
+            JarvisOperationBus.publish("YOUTUBE DATA VERIFIED", "${result.videos.size} RESULTS // ${result.elapsedMs}MS", .92f)
+            onToken?.invoke(result.spoken())
+            BrainResponse(
+                spoken = result.spoken(),
+                display = result.display(),
+                intent = "youtube_data/verified_results",
+                confidence = if (result.videos.isNotEmpty()) .98f else .72f,
+                mode = BrainMode.ONLINE,
+                trace = listOf(
+                    "route=youtube_data_v3",
+                    "results=${result.videos.size}",
+                    "http=${result.statusCode}",
+                    "latency=${result.elapsedMs}ms",
+                    "safe_search=strict",
+                    "region=IN"
+                ),
+                memory = memory.summary(),
+                thoughts = listOf("Only public YouTube metadata was requested."),
+                entities = result.videos.take(5).map { "video=${it.videoId}" },
+                decision = "return_verified_youtube_metadata",
+                action = BrainAction()
+            )
+        }.getOrElse { error ->
+            val message = "YouTube data search failed: ${error.message ?: error.javaClass.simpleName}."
+            JarvisOperationBus.publish("YOUTUBE DATA ERROR", message, 1f, false)
+            onToken?.invoke(message)
+            BrainResponse(
+                spoken = message,
+                display = "YOUTUBE DATA ERROR\n${message.take(360)}",
+                intent = "youtube_data/error",
+                confidence = 0f,
+                mode = BrainMode.ALERT,
+                trace = listOf("route=youtube_data_v3", "status=failed"),
+                memory = memory.summary(),
+                decision = "report_youtube_failure",
+                action = BrainAction()
+            )
+        }.also { JarvisOperationBus.clear("YOUTUBE DATA CYCLE COMPLETE") }
+    }
+
+    private fun liveResearchResponse(
+        input: String,
+        onToken: ((String) -> Unit)?
+    ): BrainResponse {
+        if (!webResearch.isConfigured()) {
+            return knowledgeFallback(
+                input = input,
+                reason = "No live research provider is configured.",
+                onToken = onToken
+            )
+        }
+        JarvisOperationBus.publish("LIVE WEB SEARCH", "DISCOVERING CURRENT SOURCES", .08f)
+        onToken?.invoke("Searching the web, Sir. ")
+        return runCatching {
+            JarvisOperationBus.publish("LIVE WEB SEARCH", "QUERYING TAVILY // EXA // GROUNDED FALLBACKS", .28f)
+            val hybrid = webResearch.research(input, memory.promptContext(input), onToken)
+            val result = hybrid.research
+            JarvisOperationBus.publish("EVIDENCE SYNTHESIS", "CROSS-CHECKING ${result.sources.size} SOURCES", .78f)
+            BrainResponse(
+                spoken = result.spokenSummary,
+                display = result.displayText(),
+                intent = if (WebResearchIntent.isWorldBrief(input)) "web_research/world_brief" else "web_research/grounded_answer",
+                confidence = when {
+                    result.sources.size >= 4 -> .98f
+                    result.sources.size >= 2 -> .95f
+                    else -> .84f
+                },
+                mode = BrainMode.ONLINE,
+                trace = listOf(
+                    "route=hybrid_live_web_research",
+                    "provider=${hybrid.provider}",
+                    "attempts=${hybrid.attempts.joinToString(">")}",
+                    "node=${result.profileLabel}",
+                    "model=${result.model}",
+                    "queries=${result.searchQueries.size}",
+                    "sources=${result.sources.size}",
+                    "http=${result.statusCode}",
+                    "latency=${result.elapsedMs}ms"
+                ),
+                memory = memory.summary(),
+                thoughts = listOf(
+                    "Private contacts were excluded from cloud context.",
+                    "The detailed answer and sources are displayed on screen."
+                ),
+                entities = buildList {
+                    add("source=hybrid_web_research")
+                    add("provider=${hybrid.provider}")
+                    result.sources.take(4).forEachIndexed { index, source ->
+                        add("source_${index + 1}=${source.title.take(80)}")
+                    }
+                },
+                decision = "owner_bound_grounded_web_research",
+                action = BrainAction()
+            )
+        }.getOrElse { error ->
+            knowledgeFallback(input, error.message ?: error.javaClass.simpleName, onToken)
+        }.also { JarvisOperationBus.clear("RESEARCH CYCLE COMPLETE") }
+    }
+
+    private fun resilientCortexResponse(
+        input: String,
+        onToken: ((String) -> Unit)?
+    ): BrainResponse {
+        JarvisOperationBus.publish("COGNITIVE ROUTING", "SCORING AVAILABLE REASONING NODES", .18f)
+        val meshConfigured = registryStore.load().configuredProfiles().isNotEmpty()
+        if (meshConfigured) {
+            val mesh = runCatching { cortexResponse(input, onToken) }
+            mesh.onSuccess {
+                JarvisOperationBus.clear("CORTEX RESPONSE VERIFIED")
+                return it
+            }
+            val error = mesh.exceptionOrNull()
+            if (error?.message?.contains("after speech began", ignoreCase = true) == true) throw error
+            JarvisOperationBus.publish("CORTEX FAILOVER", "PRIMARY MESH DEGRADED // EVALUATING DEEPSEEK", .52f)
+        }
+        if (deepSeek.isConfigured()) {
+            return deepSeekResponse(input, onToken).also { JarvisOperationBus.clear("DEEPSEEK RESPONSE VERIFIED") }
+        }
+        JarvisOperationBus.clear("NO COGNITIVE ROUTE COMPLETED")
+        return configurationRequiredResponse()
+    }
+
+    private fun cortexResponse(input: String, onToken: ((String) -> Unit)?): BrainResponse {
+        val result = cortexMesh.ask(input, memory.promptContext(input), onToken)
         val reply = OwnerIdentityCore.normalizeOperatorReference(result.reply)
         return BrainResponse(
             spoken = reply,
             display = reply,
             intent = "cortex_mesh/response",
-            confidence = 0.97f,
+            confidence = .97f,
             mode = BrainMode.ONLINE,
             trace = listOf(
-                "identity=${OwnerIdentityCore.VERSION}",
                 "task=${result.task.name.lowercase(Locale.US)}",
                 "mesh_route=${result.profileLabel}",
                 "provider=${result.provider.displayName}",
                 "model=${result.model}",
                 "attempts=${result.attempts.joinToString(">")}",
                 "http=${result.statusCode}",
-                "latency=${result.elapsedMs}ms",
-                "memory=contextual_recall"
+                "latency=${result.elapsedMs}ms"
             ),
             memory = memory.summary(),
-            thoughts = listOf(
-                "The immutable owner identity core was applied before editable provider preferences.",
-                "Relevant encrypted memories were retrieved locally.",
-                "${result.profileLabel} was selected by task fit, reliability, latency, freshness, and stability."
-            ),
-            entities = listOf(
-                "identity_core=${OwnerIdentityCore.VERSION}",
-                "source=cortex_mesh",
-                "node=${result.profileLabel}",
-                "provider=${result.provider.displayName}",
-                "model=${result.model}"
-            ),
+            thoughts = listOf("Relevant encrypted memories were retrieved locally."),
+            entities = listOf("source=cortex_mesh", "node=${result.profileLabel}", "model=${result.model}"),
             decision = "owner_bound_mesh_response",
             action = BrainAction()
         )
     }
 
-    private fun webResearchResponse(
-        input: String,
-        onCortexToken: ((String) -> Unit)?
-    ): BrainResponse {
-        val hybrid = webResearch.research(
-            input,
-            memory.promptContext(input),
-            onCortexToken
-        )
-        val result = hybrid.research
+    private fun deepSeekResponse(input: String, onToken: ((String) -> Unit)?): BrainResponse {
+        JarvisOperationBus.publish("DEEPSEEK CORTEX", "REQUESTING RESILIENT REASONING ROUTE", .68f)
+        val result = deepSeek.ask(input, memory.promptContext(input), onToken)
+        val reply = OwnerIdentityCore.normalizeOperatorReference(result.reply)
         return BrainResponse(
-            spoken = result.spokenSummary,
-            display = result.displayText(),
-            intent = if (WebResearchIntent.isWorldBrief(input)) {
-                "web_research/world_brief"
-            } else {
-                "web_research/grounded_answer"
-            },
-            confidence = when {
-                result.sources.size >= 4 -> 0.98f
-                result.sources.size >= 2 -> 0.95f
-                else -> 0.84f
-            },
+            spoken = reply,
+            display = reply,
+            intent = "deepseek/response",
+            confidence = .94f,
             mode = BrainMode.ONLINE,
             trace = listOf(
-                "identity=${OwnerIdentityCore.VERSION}",
-                "route=hybrid_live_web_research",
-                "provider=${hybrid.provider}",
-                "attempts=${hybrid.attempts.joinToString(">")}",
-                "node=${result.profileLabel}",
+                "route=deepseek_fallback",
                 "model=${result.model}",
-                "queries=${result.searchQueries.size}",
-                "sources=${result.sources.size}",
                 "http=${result.statusCode}",
                 "latency=${result.elapsedMs}ms"
             ),
             memory = memory.summary(),
-            thoughts = listOf(
-                "The owner identity core remained active during research synthesis.",
-                "Private contacts were excluded from cloud context.",
-                "The detailed answer and sources are displayed on screen."
-            ),
-            entities = buildList {
-                add("identity_core=${OwnerIdentityCore.VERSION}")
-                add("source=hybrid_web_research")
-                add("provider=${hybrid.provider}")
-                add("sources=${result.sources.size}")
-                result.sources.take(4).forEachIndexed { index, source ->
-                    add("source_${index + 1}=${source.title.take(80)}")
-                }
-            },
-            decision = "owner_bound_grounded_web_research",
+            thoughts = listOf("DeepSeek was selected as the resilient secondary cortex."),
+            entities = listOf("source=deepseek", "model=${result.model}"),
+            decision = "owner_bound_deepseek_response",
             action = BrainAction()
         )
     }
 
-    private fun webResearchFallback(
+    private fun knowledgeFallback(
         input: String,
-        error: Throwable,
-        onCortexToken: ((String) -> Unit)?
+        reason: String,
+        onToken: ((String) -> Unit)?
     ): BrainResponse {
-        val reason = error.message ?: error.javaClass.simpleName
-        val fallbackPrompt = buildString {
+        JarvisOperationBus.publish("WEB ROUTE DEGRADED", "LIVE VERIFICATION FAILED // KNOWLEDGE FALLBACK", .66f)
+        val prompt = buildString {
             appendLine(input)
             appendLine()
             appendLine("Live web routes were unavailable: $reason")
             appendLine(JarvisDirective.SUMMARIZATION)
-            appendLine("Answer from existing knowledge only. State clearly that freshness cannot be verified. Do not pretend web research occurred.")
+            appendLine("Answer from existing knowledge only. State clearly that freshness cannot be verified.")
         }
-        val result = cortexMesh.ask(fallbackPrompt, memory.promptContext(input), onCortexToken)
-        val cleanReply = OwnerIdentityCore.normalizeOperatorReference(result.reply)
-        return BrainResponse(
-            spoken = "Live information could not be verified. Here is a knowledge-based summary, which may not be current. $cleanReply",
-            display = "LIVE WEB VERIFICATION UNAVAILABLE\n${reason.take(360)}\n\nKNOWLEDGE-BASED FALLBACK\n$cleanReply",
-            intent = "web_research/fallback",
-            confidence = 0.55f,
-            mode = BrainMode.ALERT,
-            trace = listOf(
-                "identity=${OwnerIdentityCore.VERSION}",
-                "route=hybrid_web_research",
-                "live_routes=failed",
-                "fallback=cortex_mesh",
-                "node=${result.profileLabel}",
-                "model=${result.model}"
-            ),
-            memory = memory.summary(),
-            thoughts = listOf(
-                "The owner identity core remained active.",
-                "A cortex answer was returned with an explicit freshness warning."
-            ),
-            entities = listOf(
-                "identity_core=${OwnerIdentityCore.VERSION}",
-                "source=cortex_mesh_fallback",
-                "web_grounding=unavailable"
-            ),
-            decision = "owner_bound_research_fallback",
-            action = BrainAction()
+        val fallback = runCatching {
+            if (registryStore.load().configuredProfiles().isNotEmpty()) {
+                val result = cortexMesh.ask(prompt, memory.promptContext(input), onToken)
+                OwnerIdentityCore.normalizeOperatorReference(result.reply) to "cortex_mesh"
+            } else {
+                val result = deepSeek.ask(prompt, memory.promptContext(input), onToken)
+                OwnerIdentityCore.normalizeOperatorReference(result.reply) to "deepseek"
+            }
+        }
+        return fallback.fold(
+            onSuccess = { (reply, route) ->
+                BrainResponse(
+                    spoken = "Live information could not be verified. This summary may not be current. $reply",
+                    display = "LIVE WEB VERIFICATION UNAVAILABLE\n${reason.take(360)}\n\nKNOWLEDGE-BASED FALLBACK\n$reply",
+                    intent = "web_research/fallback",
+                    confidence = .55f,
+                    mode = BrainMode.ALERT,
+                    trace = listOf("live_routes=failed", "fallback=$route"),
+                    memory = memory.summary(),
+                    decision = "owner_bound_research_fallback",
+                    action = BrainAction()
+                )
+            },
+            onFailure = { fallbackError ->
+                val spoken = "Live web verification and fallback reasoning are unavailable, Sir. ${fallbackError.message ?: fallbackError.javaClass.simpleName}."
+                onToken?.invoke(spoken)
+                BrainResponse(
+                    spoken = spoken,
+                    display = "RESEARCH GRID UNAVAILABLE\nLIVE ROUTE // FAILED\nFALLBACK // FAILED\n${reason.take(240)}",
+                    intent = "web_research/unavailable",
+                    confidence = 0f,
+                    mode = BrainMode.ALERT,
+                    trace = listOf("live_routes=failed", "fallback=failed"),
+                    memory = memory.summary(),
+                    decision = "report_research_unavailable",
+                    action = BrainAction()
+                )
+            }
         )
     }
 
     fun execute(action: BrainAction): Boolean = router.execute(action)
-
     fun memorySnapshot(): String = memory.summary()
-
     fun contextSnapshot(): List<String> = memory.history().take(12)
 
     private fun localMemoryCommand(input: String): BrainResponse? {
         val lower = normalizedDialogue(input)
-
         val ownerUpdate = memory.captureOwnerDetails(input)
         if (ownerUpdate.changed) {
             val items = buildList {
                 if (ownerUpdate.emailStored) add("email")
-                if (ownerUpdate.phoneCount > 0) {
-                    add("${ownerUpdate.phoneCount} phone number${if (ownerUpdate.phoneCount == 1) "" else "s"}")
-                }
+                if (ownerUpdate.phoneCount > 0) add("${ownerUpdate.phoneCount} phone number${if (ownerUpdate.phoneCount == 1) "" else "s"}")
                 if (ownerUpdate.recoverySet) add("recovery contact")
             }
             return localResponse(
@@ -309,16 +409,8 @@ class JarvisBrain(context: Context) {
             val value = payloadAfterPrefix(input, prefix)
             val stored = memory.addCorrection(value)
             return localResponse(
-                spoken = if (stored.isBlank()) {
-                    "State the corrected memory after the command, Sir."
-                } else {
-                    "Correction confirmed. The new memory now overrides older conflicting information, Sir."
-                },
-                display = if (stored.isBlank()) {
-                    "MEMORY CORRECTION // VALUE REQUIRED"
-                } else {
-                    "MEMORY CORRECTION STORED\n$stored\nPRIORITY // OVERRIDES OLDER CONFLICTS"
-                },
+                spoken = if (stored.isBlank()) "State the corrected memory after the command, Sir." else "Correction confirmed. The new memory now overrides older conflicting information, Sir.",
+                display = if (stored.isBlank()) "MEMORY CORRECTION // VALUE REQUIRED" else "MEMORY CORRECTION STORED\n$stored\nPRIORITY // OVERRIDES OLDER CONFLICTS",
                 intent = "memory/correction"
             )
         }
@@ -358,11 +450,7 @@ class JarvisBrain(context: Context) {
             )
         }
 
-        if (
-            lower.contains("what do you know about me") ||
-            lower.contains("what have you learned about me") ||
-            lower.contains("tell me what you remember about me")
-        ) {
+        if (lower.contains("what do you know about me") || lower.contains("what have you learned about me") || lower.contains("tell me what you remember about me")) {
             return localResponse(
                 spoken = "I have assembled your stored profile, corrections, and relevant learned preferences, Sir. Sensitive contacts remain protected.",
                 display = memory.expanded(includeSensitive = false),
@@ -407,80 +495,71 @@ class JarvisBrain(context: Context) {
     private fun localMeshCommand(input: String): BrainResponse? {
         val lower = normalizedDialogue(input)
         if (lower !in STATUS_COMMANDS) return null
-
-        val registry = registryStore.load()
-        val configured = registry.configuredProfiles()
-        val online = configured.count {
-            it.lastStatusCode in 200..299 && !it.isCoolingDown()
-        }
+        val configured = registryStore.load().configuredProfiles()
+        val online = configured.count { it.lastStatusCode in 200..299 && !it.isCoolingDown() }
         val cooling = configured.count { it.isCoolingDown() }
         val searchProviders = webResearch.configuredSearchProviders()
+        val integrations = integrationStore.load()
+        val voice = SecureVoiceRegistry(appContext).load()
         val summary = buildString {
             appendLine(OwnerIdentityCore.statusLine(memory.summary()))
             appendLine("CORTEX MESH // CONFIGURED ${configured.size}/10 // ONLINE $online // COOLDOWN $cooling")
+            appendLine("DEEPSEEK // ${integrations.deepSeekHealthLabel()}")
             appendLine("WORLD INTELLIGENCE // ${if (webResearch.isConfigured()) "HYBRID READY" else "NEEDS A RESEARCH ROUTE"}")
             appendLine("SEARCH GRID // ${searchProviders.joinToString(" + ") { it.displayName }.ifBlank { "NOT CONFIGURED" }}")
+            appendLine("YOUTUBE DATA // ${integrations.youtubeHealthLabel()}")
+            appendLine("GMAIL // ${integrations.gmailHealthLabel()}")
+            appendLine("VOICE MESH // ${voice.healthLabel()}")
             appendLine("PERSISTENT MEMORY // ${memory.summary()}")
-            configured.forEach {
-                appendLine("${it.label} // ${it.provider.displayName} // ${it.healthLabel()}")
-            }
+            configured.forEach { appendLine("${it.label} // ${it.provider.displayName} // ${it.healthLabel()}") }
         }.trim()
         return localResponse(
-            spoken = "The owner identity core is active. The cortex mesh has ${configured.size} configured nodes, with $online currently online. Research and contextual memory are ${if (webResearch.isConfigured()) "ready" else "partially configured"}, Sir.",
+            spoken = "The operations core is active. The cortex mesh has ${configured.size} configured nodes, with $online currently online. Voice has ${voice.configuredKeys().size} encrypted routes, Sir.",
             display = summary,
             intent = "system/owner_bound_status"
         )
     }
 
-    private fun configurationRequiredResponse(): BrainResponse = BrainResponse(
-        spoken = "The owner identity core and encrypted local memory are active, but the cortex mesh is not configured. Say configure APIs to add a Gemini or Groq node, Sir.",
-        display = "${OwnerIdentityCore.VERSION} // ACTIVE\nCORTEX MESH CONFIGURATION REQUIRED\nSAY // CONFIGURE APIS",
-        intent = "cortex_config_required",
-        confidence = 1f,
-        mode = BrainMode.ALERT,
-        trace = listOf(
-            "identity=${OwnerIdentityCore.VERSION}",
-            "mesh_config_missing",
-            "local_owner_memory=active"
-        ),
-        memory = memory.summary(),
-        thoughts = listOf(
-            "The owner-bound local identity and memory layers remain operational."
-        ),
-        entities = listOf("identity_core=active", "mesh=not_configured"),
-        decision = "request_cortex_configuration",
-        action = BrainAction()
+    private fun configurationRequiredResponse(): BrainResponse = integrationRequiredResponse(
+        spoken = "The owner identity core and encrypted local memory are active, but no reasoning route is configured. Say configure APIs to add Gemini, Groq, or DeepSeek, Sir.",
+        display = "${OwnerIdentityCore.VERSION} // ACTIVE\nCOGNITIVE ROUTE CONFIGURATION REQUIRED\nSAY // CONFIGURE APIS",
+        intent = "cortex_config_required"
     )
 
-    private fun localResponse(
-        spoken: String,
-        display: String,
-        intent: String
-    ): BrainResponse = BrainResponse(
-        spoken = spoken,
-        display = display,
-        intent = intent,
-        confidence = 1f,
-        mode = BrainMode.ONLINE,
-        trace = listOf(
-            "identity=${OwnerIdentityCore.VERSION}",
-            "android_dialogue_layer",
-            "encrypted_local_state"
-        ),
-        memory = memory.summary(),
-        thoughts = listOf("The owner-bound deterministic layer produced this response locally."),
-        entities = listOf("identity_core=${OwnerIdentityCore.VERSION}"),
-        decision = intent,
-        action = BrainAction()
-    )
+    private fun integrationRequiredResponse(spoken: String, display: String, intent: String): BrainResponse =
+        BrainResponse(
+            spoken = spoken,
+            display = display,
+            intent = intent,
+            confidence = 1f,
+            mode = BrainMode.ALERT,
+            trace = listOf("identity=${OwnerIdentityCore.VERSION}", "configuration_missing"),
+            memory = memory.summary(),
+            thoughts = listOf("The owner-bound local identity and memory layers remain operational."),
+            entities = listOf("identity_core=active"),
+            decision = "request_secure_configuration",
+            action = BrainAction()
+        )
+
+    private fun localResponse(spoken: String, display: String, intent: String): BrainResponse =
+        BrainResponse(
+            spoken = spoken,
+            display = display,
+            intent = intent,
+            confidence = 1f,
+            mode = BrainMode.ONLINE,
+            trace = listOf("identity=${OwnerIdentityCore.VERSION}", "android_dialogue_layer", "encrypted_local_state"),
+            memory = memory.summary(),
+            thoughts = listOf("The owner-bound deterministic layer produced this response locally."),
+            entities = listOf("identity_core=${OwnerIdentityCore.VERSION}"),
+            decision = intent,
+            action = BrainAction()
+        )
 
     private fun payloadAfterPrefix(input: String, lowerPrefix: String): String {
-        val lowerInput = input.lowercase(Locale.getDefault())
-        val index = lowerInput.indexOf(lowerPrefix)
+        val index = input.lowercase(Locale.getDefault()).indexOf(lowerPrefix)
         if (index < 0) return ""
-        return input.substring(index + lowerPrefix.length)
-            .trim()
-            .trimEnd('.', '?', '!')
+        return input.substring(index + lowerPrefix.length).trim().trimEnd('.', '?', '!')
     }
 
     private fun normalizedDialogue(value: String): String = value
@@ -490,9 +569,7 @@ class JarvisBrain(context: Context) {
         .trim()
 
     private fun asksAboutCreator(lower: String): Boolean =
-        lower.contains("creator") && listOf(
-            "who", "what", "tell", "speak", "know", "describe"
-        ).any(lower::contains)
+        lower.contains("creator") && listOf("who", "what", "tell", "speak", "know", "describe").any(lower::contains)
 
     private fun isOwnerInquiry(lower: String): Boolean =
         lower.contains("who owns this phone") ||
@@ -504,32 +581,16 @@ class JarvisBrain(context: Context) {
 
     companion object {
         private val WAKE_PHRASES = setOf(
-            "jarvis", "hey jarvis", "hello jarvis", "hi jarvis",
-            "wake up jarvis", "jarvis wake up", "jarvis are you there",
-            "are you there jarvis", "good morning jarvis",
-            "good afternoon jarvis", "good evening jarvis"
+            "friday", "hey friday", "hello friday", "hi friday", "wake up friday", "friday wake up", "friday are you there", "are you there friday",
+            "jarvis", "hey jarvis", "hello jarvis", "hi jarvis", "wake up jarvis", "jarvis wake up", "jarvis are you there", "are you there jarvis",
+            "good morning friday", "good afternoon friday", "good evening friday", "good morning jarvis", "good afternoon jarvis", "good evening jarvis"
         )
-
-        private val CORRECTION_PREFIXES = listOf(
-            "correct memory to ",
-            "replace memory with ",
-            "update memory to ",
-            "correction "
-        )
-
+        private val CORRECTION_PREFIXES = listOf("correct memory to ", "replace memory with ", "update memory to ", "correction ")
         private val PRIVATE_PROFILE_COMMANDS = setOf(
-            "show my private profile",
-            "show my owner profile",
-            "show my contact details",
-            "what is my email",
-            "what are my contact numbers",
-            "show private owner details"
+            "show my private profile", "show my owner profile", "show my contact details", "what is my email", "what are my contact numbers", "show private owner details"
         )
-
         private val STATUS_COMMANDS = setOf(
-            "cortex status", "api status", "cloud status", "provider status",
-            "mesh status", "web status", "research status",
-            "identity core status", "owner core status"
+            "cortex status", "api status", "cloud status", "provider status", "mesh status", "web status", "research status", "identity core status", "owner core status", "operations status", "system status"
         )
     }
 }

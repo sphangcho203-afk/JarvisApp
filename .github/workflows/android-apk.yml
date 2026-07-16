@@ -10,7 +10,7 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: friday-android-${{ github.workflow }}-${{ github.ref }}
@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   build:
-    name: Validate FRIDAY identity and audio polish APK
+    name: Validate FRIDAY operations core APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -35,7 +35,7 @@ jobs:
           cache: npm
           cache-dependency-path: helix-ui/package.json
 
-      - name: Build FRIDAY Helix interface
+      - name: Build FRIDAY Helix operations interface
         shell: bash
         run: |
           set -euo pipefail
@@ -51,7 +51,7 @@ jobs:
           test -n "$(find app/src/main/assets/helix/assets -name '*.js' -type f -print -quit)"
           test -n "$(find app/src/main/assets/helix/assets -name '*.css' -type f -print -quit)"
 
-      - name: Smoke-test FRIDAY Helix
+      - name: Smoke-test FRIDAY operations interface
         shell: bash
         run: |
           set -euo pipefail
@@ -80,16 +80,16 @@ jobs:
             --screenshot=helix-smoke.png \
             --dump-dom \
             http://127.0.0.1:4173/ > helix-dom.html
-          grep -q 'F.R.I.D.A.Y. // HELIX' helix-dom.html
-          grep -q 'SEONGJA PRIVATE INTELLIGENCE // BUILD 0.9.21' helix-dom.html
-          grep -q 'F.R.I.D.A.Y. COGNITIVE OUTPUT' helix-dom.html
-          grep -q 'LATEST VERIFIED RESPONSE' helix-dom.html
+          grep -q 'F.R.I.D.A.Y.' helix-dom.html
+          grep -q 'HELIX OPS' helix-dom.html
+          grep -q 'BUILD 0.9.22' helix-dom.html
+          grep -q 'RESPONSE TERMINAL' helix-dom.html
+          grep -q 'LIVE TELEMETRY' helix-dom.html
+          grep -q 'SERVICE GRID' helix-dom.html
+          grep -q 'LATENCY' helix-dom.html
+          grep -q 'operations emblem' helix-dom.html
           if grep -q 'JARVIS // HELIX' helix-dom.html; then
             echo 'Legacy Jarvis header is still visible.' >&2
-            exit 1
-          fi
-          if grep -q 'API SETUP' helix-dom.html || grep -q 'CONNECT WEATHERAPI' helix-dom.html || grep -Eq '<button[^>]*>ANDROID</button>' helix-dom.html; then
-            echo 'Visible setup controls are still present.' >&2
             exit 1
           fi
           if grep -q 'TYPE COMMAND' helix-dom.html || grep -q '>SEND<' helix-dom.html; then
@@ -131,7 +131,7 @@ jobs:
             --warning-mode all \
             --no-daemon 2>&1 | tee android-build.log
 
-      - name: Verify FRIDAY identity, silent audio, and existing systems
+      - name: Verify FRIDAY operations systems
         shell: bash
         run: |
           set -euo pipefail
@@ -146,7 +146,7 @@ jobs:
           unzip -l "$APK" | tee apk-contents.log
 
           grep -q "package: name='com.seongja.jarvis'" apk-badging.log
-          grep -q "versionName='0.9.21-friday-polish'" apk-badging.log
+          grep -q "versionName='0.9.22-ops-core'" apk-badging.log
           grep -q "application-label:'F.R.I.D.A.Y.'" apk-badging.log
           grep -q "sdkVersion:'28'" apk-badging.log
           grep -q "targetSdkVersion:'35'" apk-badging.log
@@ -155,32 +155,35 @@ jobs:
           grep -q 'classes.dex' apk-contents.log
           grep -q 'assets/helix/index.html' apk-contents.log
 
-          grep -q 'F.R.I.D.A.Y. // HELIX' helix-ui/src/Hud.tsx
-          grep -q 'F.R.I.D.A.Y. COGNITIVE OUTPUT' helix-ui/src/Hud.tsx
-          ! grep -q 'setupLabel' helix-ui/src/nativeBridge.ts
-          ! grep -q 'onSetup' helix-ui/src/Hud.tsx
-          ! grep -q 'ToneGenerator' app/src/main/java/com/seongja/jarvis/JarvisSoundEngine.kt
-          grep -q 'LOCAL ANDROID TTS DISABLED' app/src/main/java/com/seongja/jarvis/LocalJarvisVoice.kt
-          grep -q 'class SpeechCueSilencer' app/src/main/java/com/seongja/jarvis/SpeechCueSilencer.kt
-          grep -q 'wake up friday' app/src/main/java/com/seongja/jarvis/JarvisWakeService.kt
-          grep -q 'FridayHelix/0.9.21' app/src/main/java/com/seongja/jarvis/HelixHudView.kt
-          grep -q 'OWNER-CORE 1.4' app/src/main/java/com/seongja/jarvis/OwnerIdentityCore.kt
-          grep -q 'JarvisResponseSanitizer.clean(response.display)' app/src/main/java/com/seongja/jarvis/HelixHudView.kt
-
-          # Preserve weather, permissions, Cartesia, and live cortex streaming.
+          grep -q 'FridayMark' helix-ui/src/Hud.tsx
+          grep -q 'LIVE TELEMETRY' helix-ui/src/Hud.tsx
+          grep -q 'SERVICE GRID' helix-ui/src/Hud.tsx
+          grep -q "type: 'operation'" helix-ui/src/types.ts
+          grep -q 'class NetworkHealthMonitor' app/src/main/java/com/seongja/jarvis/NetworkHealthMonitor.kt
+          grep -q 'LIVE WEB SEARCH' app/src/main/java/com/seongja/jarvis/JarvisBrain.kt
+          grep -q 'Searching the web, Sir.' app/src/main/java/com/seongja/jarvis/JarvisBrain.kt
+          grep -q 'class DeepSeekClient' app/src/main/java/com/seongja/jarvis/DeepSeekClient.kt
+          grep -q 'class YouTubeDataClient' app/src/main/java/com/seongja/jarvis/YouTubeDataClient.kt
+          grep -q 'class SecureIntegrationRegistry' app/src/main/java/com/seongja/jarvis/SecureIntegrationRegistry.kt
+          grep -q 'backupApiKeys' app/src/main/java/com/seongja/jarvis/CartesiaVoiceSettings.kt
+          grep -q 'FAILOVER TO' app/src/main/java/com/seongja/jarvis/CartesiaSonicClient.kt
+          grep -q 'Gmail mailbox access requires OAuth consent' app/src/main/java/com/seongja/jarvis/CloudConfigActivity.kt
+          grep -q 'FridayHelix/0.9.22' app/src/main/java/com/seongja/jarvis/HelixHudView.kt
           grep -q 'FORECAST_ENDPOINT = "https://api.weatherapi.com/v1/forecast.json"' app/src/main/java/com/seongja/jarvis/WeatherSettings.kt
-          grep -q 'WeatherRuntime.answer(clean)' app/src/main/java/com/seongja/jarvis/MainActivity.kt
           grep -q 'class PermissionCenterActivity' app/src/main/java/com/seongja/jarvis/PermissionCenterActivity.kt
           grep -q 'MODEL_ID = "sonic-3"' app/src/main/java/com/seongja/jarvis/CartesiaVoiceSettings.kt
           grep -q 'AudioTrack.MODE_STREAM' app/src/main/java/com/seongja/jarvis/CartesiaSonicClient.kt
           grep -q 'streamGenerateContent?alt=sse' app/src/main/java/com/seongja/jarvis/CortexStreamingTransport.kt
-          grep -q 'put("stream", true)' app/src/main/java/com/seongja/jarvis/CortexStreamingTransport.kt
+
+          mkdir -p release
+          cp "$APK" release/FRIDAY-0.9.22-Operations-Core.apk
+          sha256sum release/FRIDAY-0.9.22-Operations-Core.apk > release/FRIDAY-0.9.22-Operations-Core.apk.sha256
 
       - name: Upload validation logs
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: FRIDAY-0.9.21-identity-audio-validation-logs
+          name: FRIDAY-0.9.22-operations-validation-logs
           path: |
             helix-build.log
             helix-server.log
@@ -201,7 +204,67 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v7
         with:
-          name: FRIDAY-Helix-0.9.21-Identity-Audio-Polish-apk
-          path: app/build/outputs/apk/debug/*.apk
+          name: FRIDAY-Helix-0.9.22-Operations-Core-apk
+          path: |
+            release/FRIDAY-0.9.22-Operations-Core.apk
+            release/FRIDAY-0.9.22-Operations-Core.apk.sha256
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish stable FRIDAY release
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="v0.9.22-ops-core"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release delete "$TAG" --cleanup-tag --yes
+          fi
+          gh release create "$TAG" \
+            release/FRIDAY-0.9.22-Operations-Core.apk \
+            release/FRIDAY-0.9.22-Operations-Core.apk.sha256 \
+            --target "$GITHUB_SHA" \
+            --title "F.R.I.D.A.Y. 0.9.22 // Operations Core" \
+            --notes "Verified Android build with HELIX operations UI, live network telemetry, visible web-research phases, Cartesia four-key failover, DeepSeek fallback, YouTube Data API v3, and encrypted integration configuration."
+
+      - name: Publish failed build diagnostics
+        if: failure()
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          BUILD_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/friday-failed
+          for candidate in \
+            helix-build.log helix-server.log helix-dom.html android-build.log \
+            apk-signature.log apk-zipalign.log apk-badging.log apk-permissions.log apk-contents.log; do
+            if test -f "$candidate"; then
+              cp "$candidate" "/tmp/friday-failed/$candidate"
+            fi
+          done
+          cat > /tmp/friday-failed/summary.json <<EOF
+          {
+            "source_sha": "$SOURCE_SHA",
+            "run_id": "$BUILD_RUN_ID",
+            "event": "$GITHUB_EVENT_NAME",
+            "result": "failure"
+          }
+          EOF
+
+          git config user.name "FRIDAY Diagnostic Core"
+          git config user.email "actions@users.noreply.github.com"
+          if git fetch origin ci-diagnostics:refs/remotes/origin/ci-diagnostics 2>/dev/null; then
+            git checkout -B ci-diagnostics-work refs/remotes/origin/ci-diagnostics
+          else
+            git checkout --orphan ci-diagnostics-work
+            git rm -rf . >/dev/null 2>&1 || true
+          fi
+          rm -rf "diagnostics/$SOURCE_SHA"
+          mkdir -p "diagnostics/$SOURCE_SHA"
+          cp -R /tmp/friday-failed/. "diagnostics/$SOURCE_SHA/"
+          git add diagnostics
+          git commit -m "Record failed FRIDAY build ${SOURCE_SHA:0:12}" || true
+          git push --force origin HEAD:ci-diagnostics

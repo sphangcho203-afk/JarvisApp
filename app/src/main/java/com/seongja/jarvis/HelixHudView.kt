@@ -11,12 +11,12 @@ import android.view.HapticFeedbackConstants
 import android.view.View
 import android.webkit.ConsoleMessage
 import android.webkit.JavascriptInterface
-import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
 import android.webkit.WebSettings
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import android.webkit.WebChromeClient
 import com.jarvis.core.device.DeviceTelemetry
 import org.json.JSONArray
 import org.json.JSONObject
@@ -25,30 +25,65 @@ import java.time.format.DateTimeFormatter
 import java.util.ArrayDeque
 import java.util.Locale
 
-/**
- * Android host for the embedded React / React Three Fiber HELIX interface.
- *
- * The WebGL layer renders presentation only. Android remains the source of
- * truth for microphone state, telemetry, actions, countdowns, and verified
- * results. No API keys or device secrets cross this JavaScript bridge.
- */
+/** Android source-of-truth host for the embedded HELIX operations interface. */
 @SuppressLint("SetJavaScriptEnabled")
 class HelixHudView(context: Context) : WebView(context) {
+    private data class ServiceSnapshot(
+        val cortexConfigured: Int = 0,
+        val cortexOnline: Int = 0,
+        val searchConfigured: Int = 0,
+        val searchOnline: Int = 0,
+        val cartesiaKeys: Int = 0,
+        val cartesiaRoute: String = "--",
+        val cartesiaStatus: String = "NOT CONFIGURED",
+        val deepSeekStatus: String = "NOT CONFIGURED",
+        val youtubeStatus: String = "NOT CONFIGURED",
+        val gmailStatus: String = "NOT CONFIGURED"
+    )
+
     private val appContext = context.applicationContext
     private val handler = Handler(Looper.getMainLooper())
     private val telemetry = DeviceTelemetry(appContext)
+    private val networkHealth = NetworkHealthMonitor(appContext)
+    private val cortexStore = SecureCortexRegistry(appContext)
+    private val searchStore = SecureSearchGridRegistry(appContext)
+    private val voiceStore = SecureVoiceRegistry(appContext)
+    private val integrationStore = SecureIntegrationRegistry(appContext)
     private val pendingPayloads = ArrayDeque<String>()
     private val timeFormatter = DateTimeFormatter.ofPattern("HH:mm:ss", Locale.US)
+    private val sessionStartedAt = SystemClock.elapsedRealtime()
 
     private var pageReady = false
     private var released = false
     private var telemetryRunning = false
     private var currentMode = "IDLE"
     private var cloudConfigured = false
-    private var voiceSource = "LOCAL"
+    private var voiceSource = "ON-DEVICE"
     private var coreTapListener: (() -> Unit)? = null
     private var lastAudioDispatchAt = 0L
     private var bridgeTimeout: Runnable? = null
+    private var lastServiceRefreshAt = 0L
+    private var serviceSnapshot = ServiceSnapshot()
+
+    private val operationListener: (JarvisOperationSignal) -> Unit = { signal ->
+        post {
+            if (!released) {
+                dispatch(
+                    JSONObject()
+                        .put("type", "operation")
+                        .put("stage", signal.stage)
+                        .put("detail", signal.detail)
+                        .put("progress", signal.progress.toDouble())
+                        .put("active", signal.active)
+                )
+                dispatchEvent(
+                    "${signal.stage} -> ${signal.detail}",
+                    if (signal.active) "CORE" else "SYS"
+                )
+                if (signal.active) updateMode("PROCESSING")
+            }
+        }
+    }
 
     private val telemetryTicker = object : Runnable {
         override fun run() {
@@ -80,36 +115,26 @@ class HelixHudView(context: Context) : WebView(context) {
             setSupportZoom(false)
             setGeolocationEnabled(false)
             databaseEnabled = false
-            userAgentString = "$userAgentString FridayHelix/0.9.21"
-            @Suppress("DEPRECATION")
-            saveFormData = false
-            @Suppress("DEPRECATION")
-            allowFileAccessFromFileURLs = true
-            @Suppress("DEPRECATION")
-            allowUniversalAccessFromFileURLs = false
+            userAgentString = "$userAgentString FridayHelix/0.9.22"
+            @Suppress("DEPRECATION") saveFormData = false
+            @Suppress("DEPRECATION") allowFileAccessFromFileURLs = true
+            @Suppress("DEPRECATION") allowUniversalAccessFromFileURLs = false
         }
 
         WebView.setWebContentsDebuggingEnabled(BuildConfig.DEBUG)
         addJavascriptInterface(AndroidBridge(), BRIDGE_NAME)
-
         webChromeClient = object : WebChromeClient() {
             override fun onConsoleMessage(consoleMessage: ConsoleMessage?): Boolean {
                 val message = consoleMessage?.message()?.trim().orEmpty()
-                if (
-                    message.isNotBlank() &&
-                    consoleMessage?.messageLevel() == ConsoleMessage.MessageLevel.ERROR
-                ) {
+                if (message.isNotBlank() && consoleMessage?.messageLevel() == ConsoleMessage.MessageLevel.ERROR) {
                     reportRuntimeError("HELIX JS -> ${message.take(MAX_EVENT_CHARS)}")
                 }
                 return true
             }
         }
-
         webViewClient = object : WebViewClient() {
-            override fun shouldOverrideUrlLoading(
-                view: WebView?,
-                request: WebResourceRequest?
-            ): Boolean = !isAllowedNavigation(request?.url?.toString())
+            override fun shouldOverrideUrlLoading(view: WebView?, request: WebResourceRequest?): Boolean =
+                !isAllowedNavigation(request?.url?.toString())
 
             @Suppress("DEPRECATION")
             override fun shouldOverrideUrlLoading(view: WebView?, url: String?): Boolean =
@@ -130,15 +155,16 @@ class HelixHudView(context: Context) : WebView(context) {
             ) {
                 super.onReceivedError(view, request, error)
                 if (request?.isForMainFrame == true) {
-                    val code = error?.errorCode ?: -1
-                    val description = error?.description?.toString().orEmpty()
                     showNativeFallback(
-                        "HELIX document failed to load ($code). ${description.take(120)}"
+                        "HELIX document failed to load (${error?.errorCode ?: -1}). " +
+                            error?.description?.toString().orEmpty().take(120)
                     )
                 }
             }
         }
 
+        JarvisOperationBus.addListener(operationListener)
+        networkHealth.start()
         startTelemetry()
         loadUrl(HELIX_ASSET_URL)
     }
@@ -156,13 +182,8 @@ class HelixHudView(context: Context) : WebView(context) {
         when (state) {
             VoiceLoop.State.LISTENING -> updateMode("LISTENING")
             VoiceLoop.State.PROCESSING -> updateMode("PROCESSING")
-            VoiceLoop.State.ERROR,
-            VoiceLoop.State.UNAVAILABLE -> updateMode("ERROR")
-            VoiceLoop.State.READY -> {
-                if (currentMode == "LISTENING" || currentMode == "PROCESSING") {
-                    updateMode("IDLE")
-                }
-            }
+            VoiceLoop.State.ERROR, VoiceLoop.State.UNAVAILABLE -> updateMode("ERROR")
+            VoiceLoop.State.READY -> if (currentMode == "LISTENING" || currentMode == "PROCESSING") updateMode("IDLE")
         }
     }
 
@@ -170,27 +191,15 @@ class HelixHudView(context: Context) : WebView(context) {
         val now = SystemClock.elapsedRealtime()
         if (now - lastAudioDispatchAt < AUDIO_DISPATCH_INTERVAL_MS) return
         lastAudioDispatchAt = now
-        dispatch(
-            JSONObject()
-                .put("type", "audio")
-                .put("rms", value.coerceIn(0f, 1f).toDouble())
-        )
+        dispatch(JSONObject().put("type", "audio").put("rms", value.coerceIn(0f, 1f).toDouble()))
     }
 
     fun setProcessing(processing: Boolean) {
-        if (processing) {
-            updateMode("PROCESSING")
-        } else if (currentMode == "PROCESSING") {
-            updateMode("IDLE")
-        }
+        if (processing) updateMode("PROCESSING") else if (currentMode == "PROCESSING") updateMode("IDLE")
     }
 
     fun setTranscript(value: String) {
-        dispatch(
-            JSONObject()
-                .put("type", "transcript")
-                .put("text", value.take(MAX_TEXT_CHARS))
-        )
+        dispatch(JSONObject().put("type", "transcript").put("text", value.take(MAX_TEXT_CHARS)))
     }
 
     internal fun setCountdown(snapshot: CountdownSnapshot) {
@@ -223,27 +232,36 @@ class HelixHudView(context: Context) : WebView(context) {
                 .put("entities", JSONArray(response.entities.takeLast(8)))
                 .put("decision", response.decision)
         )
+        dispatch(
+            JSONObject()
+                .put("type", "operation")
+                .put("stage", "RESPONSE VERIFIED")
+                .put("detail", response.intent.uppercase(Locale.US).take(120))
+                .put("progress", 1.0)
+                .put("active", false)
+        )
         updateMode(if (response.mode == BrainMode.ALERT) "ERROR" else "SPEAKING")
     }
 
     fun pushEvent(event: String) {
         val clean = event.take(MAX_EVENT_CHARS)
         val upper = clean.uppercase(Locale.US)
-
         when {
+            "CARTESIA" in upper -> {
+                val route = Regex("CARTESIA\\s+(P1|B1|B2|B3)").find(upper)?.groupValues?.getOrNull(1)
+                voiceSource = if (route == null) "CARTESIA" else "CARTESIA $route"
+            }
             "ON-DEVICE" in upper -> voiceSource = "ON-DEVICE"
             "PREMIUM" in upper || "PCM STREAM" in upper -> voiceSource = "PREMIUM PCM"
         }
         if ("CORTEX MESH -> READY" in upper) cloudConfigured = true
-
         when {
             "VOICE -> COMPLETE" in upper || "VOICE OUTPUT -> COMPLETE" in upper -> updateMode("IDLE")
             "VOICE OUTPUT ->" in upper || "VOICE -> STREAM" in upper || "VOICE -> SPEAKING" in upper -> updateMode("SPEAKING")
             "LISTENING" in upper || "MIC ->" in upper -> updateMode("LISTENING")
-            "ROUTING REQUEST" in upper || "PROCESSING" in upper || "SYNTHESIZING" in upper -> updateMode("PROCESSING")
+            "ROUTING REQUEST" in upper || "PROCESSING" in upper || "SYNTHESIZING" in upper || "SEARCH" in upper -> updateMode("PROCESSING")
             "ERROR" in upper || "FAILED" in upper || "DENIED" in upper -> updateMode("ERROR")
         }
-
         dispatchEvent(clean, eventChannel(upper))
         dispatchTelemetry()
     }
@@ -251,6 +269,8 @@ class HelixHudView(context: Context) : WebView(context) {
     fun release() {
         if (released) return
         released = true
+        JarvisOperationBus.removeListener(operationListener)
+        networkHealth.close()
         cancelBridgeTimeout()
         stopTelemetry()
         handler.removeCallbacksAndMessages(null)
@@ -290,6 +310,13 @@ class HelixHudView(context: Context) : WebView(context) {
         val heapMb = (runtime.totalMemory() - runtime.freeMemory()) / (1024L * 1024L)
         val battery = runCatching { telemetry.battery().percent }.getOrDefault(0)
         val network = runCatching { telemetry.network().label }.getOrDefault("UNKNOWN")
+        val health = networkHealth.snapshot()
+        val now = SystemClock.elapsedRealtime()
+        if (now - lastServiceRefreshAt >= SERVICE_REFRESH_INTERVAL_MS) {
+            lastServiceRefreshAt = now
+            serviceSnapshot = readServices()
+        }
+        val services = serviceSnapshot
         dispatch(
             JSONObject()
                 .put("type", "telemetry")
@@ -303,33 +330,60 @@ class HelixHudView(context: Context) : WebView(context) {
                         .put("device", Build.MODEL.take(34))
                         .put("voiceSource", voiceSource)
                         .put("cloudConfigured", cloudConfigured)
+                        .put("latencyMs", health.latencyMs)
+                        .put("jitterMs", health.jitterMs)
+                        .put("packetLossPercent", health.packetLossPercent)
+                        .put("downlinkMbps", health.downlinkMbps)
+                        .put("uplinkMbps", health.uplinkMbps)
+                        .put("networkQuality", health.quality)
+                        .put("uptimeSeconds", (now - sessionStartedAt).coerceAtLeast(0L) / 1_000L)
+                        .put("cortexConfigured", services.cortexConfigured)
+                        .put("cortexOnline", services.cortexOnline)
+                        .put("searchConfigured", services.searchConfigured)
+                        .put("searchOnline", services.searchOnline)
+                        .put("cartesiaKeys", services.cartesiaKeys)
+                        .put("cartesiaRoute", services.cartesiaRoute)
+                        .put("cartesiaStatus", services.cartesiaStatus)
+                        .put("deepSeekStatus", services.deepSeekStatus)
+                        .put("youtubeStatus", services.youtubeStatus)
+                        .put("gmailStatus", services.gmailStatus)
                 )
         )
     }
 
+    private fun readServices(): ServiceSnapshot = runCatching {
+        val cortex = cortexStore.load().configuredProfiles()
+        val search = searchStore.load().configuredCredentials()
+        val voice = voiceStore.load()
+        val integrations = integrationStore.load()
+        ServiceSnapshot(
+            cortexConfigured = cortex.size,
+            cortexOnline = cortex.count { it.lastStatusCode in 200..299 && !it.isCoolingDown() },
+            searchConfigured = search.size,
+            searchOnline = search.count { it.lastStatusCode in 200..299 && !it.isCoolingDown() },
+            cartesiaKeys = voice.configuredKeys().size,
+            cartesiaRoute = voice.routeLabel(),
+            cartesiaStatus = voice.healthLabel(),
+            deepSeekStatus = integrations.deepSeekHealthLabel(),
+            youtubeStatus = integrations.youtubeHealthLabel(),
+            gmailStatus = integrations.gmailHealthLabel()
+        )
+    }.getOrDefault(serviceSnapshot)
+
     private fun updateMode(mode: String) {
         if (mode == currentMode) return
         currentMode = mode
-        dispatch(
-            JSONObject()
-                .put("type", "state")
-                .put("mode", mode)
-        )
+        dispatch(JSONObject().put("type", "state").put("mode", mode))
     }
 
     private fun dispatchEvent(text: String, channel: String) {
-        dispatch(
-            JSONObject()
-                .put("type", "event")
-                .put("channel", channel)
-                .put("text", text)
-        )
+        dispatch(JSONObject().put("type", "event").put("channel", channel).put("text", text))
     }
 
     private fun eventChannel(upper: String): String = when {
-        "ERROR" in upper || "FAILED" in upper || "DENIED" in upper -> "WARN"
-        "VOICE" in upper || "MIC" in upper -> "VOICE"
-        "ACTION" in upper || "SYSTEM" in upper || "DEVICE" in upper -> "SYS"
+        "ERROR" in upper || "FAILED" in upper || "DENIED" in upper || "DEGRADED" in upper -> "WARN"
+        "VOICE" in upper || "MIC" in upper || "CARTESIA" in upper -> "VOICE"
+        "ACTION" in upper || "SYSTEM" in upper || "DEVICE" in upper || "WEATHER" in upper -> "SYS"
         else -> "CORE"
     }
 
@@ -343,29 +397,21 @@ class HelixHudView(context: Context) : WebView(context) {
                 pendingPayloads.addLast(encoded)
                 return@post
             }
-            evaluateJavascript(
-                "window.jarvisHelix&&window.jarvisHelix.receive(JSON.parse($encoded));",
-                null
-            )
+            evaluateJavascript("window.jarvisHelix&&window.jarvisHelix.receive(JSON.parse($encoded));", null)
         }
     }
 
     private fun flushPending() {
         while (pendingPayloads.isNotEmpty() && pageReady && !released) {
             val encoded = pendingPayloads.removeFirst()
-            evaluateJavascript(
-                "window.jarvisHelix&&window.jarvisHelix.receive(JSON.parse($encoded));",
-                null
-            )
+            evaluateJavascript("window.jarvisHelix&&window.jarvisHelix.receive(JSON.parse($encoded));", null)
         }
     }
 
     private fun armBridgeTimeout() {
         cancelBridgeTimeout()
         bridgeTimeout = Runnable {
-            if (!pageReady && !released) {
-                showNativeFallback("The HELIX native bridge did not initialize within 12 seconds.")
-            }
+            if (!pageReady && !released) showNativeFallback("The HELIX native bridge did not initialize within 12 seconds.")
         }.also { handler.postDelayed(it, BRIDGE_READY_TIMEOUT_MS) }
     }
 
@@ -376,9 +422,10 @@ class HelixHudView(context: Context) : WebView(context) {
 
     private fun reportRuntimeError(message: String) {
         post {
-            if (released) return@post
-            currentMode = "ERROR"
-            dispatchEvent(message.take(MAX_EVENT_CHARS), "WARN")
+            if (!released) {
+                currentMode = "ERROR"
+                dispatchEvent(message.take(MAX_EVENT_CHARS), "WARN")
+            }
         }
     }
 
@@ -389,13 +436,7 @@ class HelixHudView(context: Context) : WebView(context) {
             pageReady = false
             pendingPayloads.clear()
             currentMode = "ERROR"
-            loadDataWithBaseURL(
-                HELIX_ASSET_ROOT,
-                fallbackHtml(reason),
-                "text/html",
-                "UTF-8",
-                null
-            )
+            loadDataWithBaseURL(HELIX_ASSET_ROOT, fallbackHtml(reason), "text/html", "UTF-8", null)
         }
     }
 
@@ -407,35 +448,11 @@ class HelixHudView(context: Context) : WebView(context) {
             .replace("\"", "&quot;")
             .replace("'", "&#39;")
             .take(320)
-
         return """
-            <!doctype html>
-            <html lang="en">
-            <head>
-              <meta charset="utf-8">
-              <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
-              <style>
-                *{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;background:#02060a;color:#e9fbff;font-family:monospace}
-                body{display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 50% 35%,rgba(74,222,255,.14),transparent 34%),#02060a}
-                main{width:min(680px,100%);border:1px solid rgba(74,222,255,.35);padding:28px;text-align:center;box-shadow:inset 0 0 50px rgba(74,222,255,.05),0 0 35px rgba(74,222,255,.08)}
-                .eyebrow{color:#4adeff;font-size:11px;letter-spacing:.28em}.title{font-size:18px;letter-spacing:.15em;margin:18px 0 10px}.copy{color:rgba(255,255,255,.58);font-size:12px;line-height:1.8}
-                pre{white-space:pre-wrap;overflow-wrap:anywhere;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);color:rgba(255,255,255,.48);font-size:10px;padding:12px;margin:20px 0}
-                .actions{display:flex;flex-wrap:wrap;gap:10px;justify-content:center}button{font:10px monospace;letter-spacing:.16em;padding:11px 15px}button:first-child{border:0;background:#4adeff;color:#021018}button:last-child{border:1px solid rgba(74,222,255,.38);background:transparent;color:#4adeff}
-              </style>
-            </head>
-            <body>
-              <main>
-                <div class="eyebrow">F.R.I.D.A.Y. // HELIX</div>
-                <div class="title">NATIVE FALLBACK ONLINE</div>
-                <p class="copy">The visual document could not initialize. FRIDAY's native command core remains available.</p>
-                <pre>$safeReason</pre>
-                <div class="actions">
-                  <button onclick="location.href='index.html'">RETRY HELIX</button>
-                  <button onclick="window.JarvisAndroid&&window.JarvisAndroid.onCoreTap()">RECALIBRATE VOICE</button>
-                </div>
-              </main>
-            </body>
-            </html>
+            <!doctype html><html lang="en"><head><meta charset="utf-8">
+            <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+            <style>*{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;background:#02060a;color:#e9fbff;font-family:monospace}body{display:grid;place-items:center;padding:24px;background:radial-gradient(circle at 50% 35%,rgba(60,130,255,.16),transparent 34%),#02060a}main{width:min(680px,100%);border:1px solid rgba(62,135,255,.45);padding:28px;text-align:center;box-shadow:inset 0 0 50px rgba(62,135,255,.06),0 0 35px rgba(62,135,255,.09)}.eyebrow{color:#4f8cff;font-size:11px;letter-spacing:.28em}.title{font-size:18px;letter-spacing:.15em;margin:18px 0 10px}.copy{color:rgba(255,255,255,.58);font-size:12px;line-height:1.8}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:rgba(255,255,255,.035);border:1px solid rgba(255,255,255,.08);color:rgba(255,255,255,.48);font-size:10px;padding:12px;margin:20px 0}.actions{display:flex;gap:10px;justify-content:center}button{font:10px monospace;letter-spacing:.16em;padding:11px 15px}button:first-child{border:0;background:#4f8cff;color:#021018}button:last-child{border:1px solid rgba(79,140,255,.45);background:transparent;color:#72b4ff}</style></head>
+            <body><main><div class="eyebrow">F.R.I.D.A.Y. // HELIX OPS</div><div class="title">NATIVE FALLBACK ONLINE</div><p class="copy">The visual document could not initialize. FRIDAY's native command core remains operational.</p><pre>$safeReason</pre><div class="actions"><button onclick="location.href='index.html'">RETRY HELIX</button><button onclick="window.JarvisAndroid&&window.JarvisAndroid.onCoreTap()">RECALIBRATE VOICE</button></div></main></body></html>
         """.trimIndent()
     }
 
@@ -452,22 +469,22 @@ class HelixHudView(context: Context) : WebView(context) {
                 dispatch(JSONObject().put("type", "ready"))
                 flushPending()
                 dispatchTelemetry()
-                dispatchEvent("HELIX WEBGL -> NATIVE BRIDGE LOCKED", "SYS")
+                dispatchEvent("HELIX OPERATIONS BRIDGE -> SECURED", "SYS")
             }
         }
 
         @JavascriptInterface
         fun onHelixError(message: String) {
-            val clean = message.replace(Regex("\\s+"), " ").take(MAX_EVENT_CHARS)
-            reportRuntimeError("HELIX RENDER -> $clean")
+            reportRuntimeError("HELIX RENDER -> ${message.replace(Regex("\\s+"), " ").take(MAX_EVENT_CHARS)}")
         }
 
         @JavascriptInterface
         fun onCoreTap() {
             post {
-                if (released) return@post
-                performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
-                coreTapListener?.invoke()
+                if (!released) {
+                    performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                    coreTapListener?.invoke()
+                }
             }
         }
     }
@@ -477,9 +494,10 @@ class HelixHudView(context: Context) : WebView(context) {
         private const val HELIX_ASSET_ROOT = "file:///android_asset/helix/"
         private const val HELIX_ASSET_URL = "${HELIX_ASSET_ROOT}index.html"
         private const val TELEMETRY_INTERVAL_MS = 1_000L
+        private const val SERVICE_REFRESH_INTERVAL_MS = 5_000L
         private const val AUDIO_DISPATCH_INTERVAL_MS = 45L
         private const val BRIDGE_READY_TIMEOUT_MS = 12_000L
-        private const val MAX_PENDING_PAYLOADS = 96
+        private const val MAX_PENDING_PAYLOADS = 128
         private const val MAX_TEXT_CHARS = 12_000
         private const val MAX_EVENT_CHARS = 180
     }

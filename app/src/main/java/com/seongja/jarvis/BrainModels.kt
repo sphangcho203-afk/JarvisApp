@@ -70,9 +70,9 @@ data class BrainResponse(
     val mode: BrainMode,
     val trace: List<String>,
     val memory: String,
-    val thoughts: List<String>,
-    val entities: List<String>,
-    val decision: String,
+    val thoughts: List<String> = emptyList(),
+    val entities: List<String> = emptyList(),
+    val decision: String = "",
     val action: BrainAction = BrainAction()
 ) {
     init {
