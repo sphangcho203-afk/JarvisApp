@@ -10,7 +10,7 @@ on:
       - main
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: friday-android-${{ github.workflow }}-${{ github.ref }}
@@ -175,6 +175,10 @@ jobs:
           grep -q 'AudioTrack.MODE_STREAM' app/src/main/java/com/seongja/jarvis/CartesiaSonicClient.kt
           grep -q 'streamGenerateContent?alt=sse' app/src/main/java/com/seongja/jarvis/CortexStreamingTransport.kt
 
+          mkdir -p release
+          cp "$APK" release/FRIDAY-0.9.22-Operations-Core.apk
+          sha256sum release/FRIDAY-0.9.22-Operations-Core.apk > release/FRIDAY-0.9.22-Operations-Core.apk.sha256
+
       - name: Upload validation logs
         if: always()
         uses: actions/upload-artifact@v7
@@ -201,6 +205,26 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: FRIDAY-Helix-0.9.22-Operations-Core-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: |
+            release/FRIDAY-0.9.22-Operations-Core.apk
+            release/FRIDAY-0.9.22-Operations-Core.apk.sha256
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish stable FRIDAY release
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="v0.9.22-ops-core"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release delete "$TAG" --cleanup-tag --yes
+          fi
+          gh release create "$TAG" \
+            release/FRIDAY-0.9.22-Operations-Core.apk \
+            release/FRIDAY-0.9.22-Operations-Core.apk.sha256 \
+            --target "$GITHUB_SHA" \
+            --title "F.R.I.D.A.Y. 0.9.22 // Operations Core" \
+            --notes "Verified Android build with HELIX operations UI, live network telemetry, visible web-research phases, Cartesia four-key failover, DeepSeek fallback, YouTube Data API v3, and encrypted integration configuration."
