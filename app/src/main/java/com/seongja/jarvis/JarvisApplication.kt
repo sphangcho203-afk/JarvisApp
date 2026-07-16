@@ -12,31 +12,36 @@ import java.lang.ref.WeakReference
 import java.util.WeakHashMap
 
 /**
- * Process-level setup bridge for the HELIX WebView.
+ * Process-level setup and live-data bridge for the HELIX WebView.
  *
- * First launch opens API setup. Once the cortex is configured, Android
- * capability onboarding opens exactly once until the user finishes it.
+ * First launch flows through cortex/API setup, WeatherAPI setup, then Android
+ * permissions. Secrets never cross the JavaScript bridge; HELIX receives only
+ * a redacted weather snapshot.
  */
 class JarvisApplication : Application(), Application.ActivityLifecycleCallbacks {
 
     private val attachedWebViews = WeakHashMap<WebView, Boolean>()
     private var apiSetupOpenedThisProcess = false
+    private var weatherSetupOpenedThisProcess = false
     private var permissionSetupOpenedThisProcess = false
 
     override fun onCreate() {
         super.onCreate()
+        WeatherRuntime.initialize(this)
         registerActivityLifecycleCallbacks(this)
     }
 
     override fun onActivityResumed(activity: Activity) {
         if (activity !is MainActivity) return
         attachSetupBridge(activity)
-        val configured = runCatching { JarvisBrain(activity).isCloudConfigured() }
+        WeatherRuntime.refresh()
+        val cortexConfigured = runCatching { JarvisBrain(activity).isCloudConfigured() }
             .getOrDefault(false)
-        if (!configured) {
-            openInitialApiSetupIfRequired(activity)
-        } else {
-            openPermissionSetupIfRequired(activity)
+        when {
+            !cortexConfigured -> openInitialApiSetupIfRequired(activity)
+            !WeatherSetupActivity.isOnboardingComplete(activity) ->
+                openWeatherSetupIfRequired(activity)
+            else -> openPermissionSetupIfRequired(activity)
         }
     }
 
@@ -61,6 +66,16 @@ class JarvisApplication : Application(), Application.ActivityLifecycleCallbacks 
                 activity.startActivity(Intent(activity, CloudConfigActivity::class.java))
             }
         }, INITIAL_SETUP_DELAY_MS)
+    }
+
+    private fun openWeatherSetupIfRequired(activity: MainActivity) {
+        if (weatherSetupOpenedThisProcess || activity.isFinishing || activity.isDestroyed) return
+        weatherSetupOpenedThisProcess = true
+        activity.window.decorView.postDelayed({
+            if (!activity.isFinishing && !activity.isDestroyed) {
+                activity.startActivity(Intent(activity, WeatherSetupActivity::class.java))
+            }
+        }, WEATHER_SETUP_DELAY_MS)
     }
 
     private fun openPermissionSetupIfRequired(activity: MainActivity) {
@@ -110,6 +125,24 @@ class JarvisApplication : Application(), Application.ActivityLifecycleCallbacks 
                 }
             }
         }
+
+        @JavascriptInterface
+        fun openWeatherSetup() {
+            val activity = activityRef.get() ?: return
+            activity.runOnUiThread {
+                if (!activity.isFinishing && !activity.isDestroyed) {
+                    activity.startActivity(Intent(activity, WeatherSetupActivity::class.java))
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun getWeatherJson(): String = WeatherRuntime.bridgeJson()
+
+        @JavascriptInterface
+        fun refreshWeather() {
+            WeatherRuntime.refresh(force = true)
+        }
     }
 
     override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) = Unit
@@ -122,6 +155,7 @@ class JarvisApplication : Application(), Application.ActivityLifecycleCallbacks 
     companion object {
         private const val SETUP_BRIDGE_NAME = "JarvisCommandBridge"
         private const val INITIAL_SETUP_DELAY_MS = 650L
+        private const val WEATHER_SETUP_DELAY_MS = 550L
         private const val PERMISSION_SETUP_DELAY_MS = 550L
     }
 }
