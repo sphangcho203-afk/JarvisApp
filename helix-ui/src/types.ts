@@ -56,6 +56,11 @@ export interface OperationState {
   active: boolean
 }
 
+/** Explicit native-to-HELIX contract used for live operation phases. */
+export interface NativeOperationEnvelope extends OperationState {
+  type: 'operation'
+}
+
 export interface WeatherTelemetry {
   configured: boolean
   status: string
