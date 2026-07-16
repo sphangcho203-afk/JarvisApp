@@ -228,3 +228,43 @@ jobs:
             --target "$GITHUB_SHA" \
             --title "F.R.I.D.A.Y. 0.9.22 // Operations Core" \
             --notes "Verified Android build with HELIX operations UI, live network telemetry, visible web-research phases, Cartesia four-key failover, DeepSeek fallback, YouTube Data API v3, and encrypted integration configuration."
+
+      - name: Publish failed build diagnostics
+        if: failure()
+        shell: bash
+        env:
+          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          BUILD_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/friday-failed
+          for candidate in \
+            helix-build.log helix-server.log helix-dom.html android-build.log \
+            apk-signature.log apk-zipalign.log apk-badging.log apk-permissions.log apk-contents.log; do
+            if test -f "$candidate"; then
+              cp "$candidate" "/tmp/friday-failed/$candidate"
+            fi
+          done
+          cat > /tmp/friday-failed/summary.json <<EOF
+          {
+            "source_sha": "$SOURCE_SHA",
+            "run_id": "$BUILD_RUN_ID",
+            "event": "$GITHUB_EVENT_NAME",
+            "result": "failure"
+          }
+          EOF
+
+          git config user.name "FRIDAY Diagnostic Core"
+          git config user.email "actions@users.noreply.github.com"
+          if git fetch origin ci-diagnostics:refs/remotes/origin/ci-diagnostics 2>/dev/null; then
+            git checkout -B ci-diagnostics-work refs/remotes/origin/ci-diagnostics
+          else
+            git checkout --orphan ci-diagnostics-work
+            git rm -rf . >/dev/null 2>&1 || true
+          fi
+          rm -rf "diagnostics/$SOURCE_SHA"
+          mkdir -p "diagnostics/$SOURCE_SHA"
+          cp -R /tmp/friday-failed/. "diagnostics/$SOURCE_SHA/"
+          git add diagnostics
+          git commit -m "Record failed FRIDAY build ${SOURCE_SHA:0:12}" || true
+          git push --force origin HEAD:ci-diagnostics
