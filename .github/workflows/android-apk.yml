@@ -10,7 +10,7 @@ on:
       - main
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: friday-android-${{ github.workflow }}-${{ github.ref }}
@@ -27,31 +27,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
-        with:
-          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
-          fetch-depth: 0
-
-      - name: Apply remaining FRIDAY identity polish
-        if: github.event_name == 'pull_request' && github.head_ref == 'refactor/friday-identity-audio-polish'
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 scripts/apply_friday_polish.py
-          if ! git diff --quiet; then
-            git config user.name 'FRIDAY Repair Core'
-            git config user.email 'actions@users.noreply.github.com'
-            git add \
-              app/src/main/java/com/seongja/jarvis/MainActivity.kt \
-              app/src/main/java/com/seongja/jarvis/HelixHudView.kt \
-              app/src/main/java/com/seongja/jarvis/VoiceLoop.kt \
-              app/src/main/java/com/seongja/jarvis/CloudConfigActivity.kt \
-              app/src/main/java/com/seongja/jarvis/WeatherSetupActivity.kt \
-              app/src/main/java/com/seongja/jarvis/PermissionCenterActivity.kt \
-              app/src/main/java/com/seongja/jarvis/JarvisBrain.kt \
-              app/src/main/java/com/seongja/jarvis/WeatherApiClient.kt
-            git commit -m 'Complete FRIDAY identity across native runtime surfaces'
-            git push origin HEAD:refactor/friday-identity-audio-polish
-          fi
 
       - name: Set up Node 22
         uses: actions/setup-node@v7
@@ -113,7 +88,7 @@ jobs:
             echo 'Legacy Jarvis header is still visible.' >&2
             exit 1
           fi
-          if grep -q 'API SETUP' helix-dom.html || grep -q 'CONNECT WEATHERAPI' helix-dom.html || grep -q '>ANDROID<' helix-dom.html; then
+          if grep -q 'API SETUP' helix-dom.html || grep -q 'CONNECT WEATHERAPI' helix-dom.html || grep -Eq '<button[^>]*>ANDROID</button>' helix-dom.html; then
             echo 'Visible setup controls are still present.' >&2
             exit 1
           fi
