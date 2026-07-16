@@ -30,6 +30,30 @@ export interface NativeTelemetry {
   device: string
   voiceSource: string
   cloudConfigured: boolean
+  latencyMs: number
+  jitterMs: number
+  packetLossPercent: number
+  downlinkMbps: number
+  uplinkMbps: number
+  networkQuality: string
+  uptimeSeconds: number
+  cortexConfigured: number
+  cortexOnline: number
+  searchConfigured: number
+  searchOnline: number
+  cartesiaKeys: number
+  cartesiaRoute: string
+  cartesiaStatus: string
+  deepSeekStatus: string
+  youtubeStatus: string
+  gmailStatus: string
+}
+
+export interface OperationState {
+  stage: string
+  detail: string
+  progress: number
+  active: boolean
 }
 
 export interface WeatherTelemetry {
@@ -72,7 +96,7 @@ export interface TerminalLog {
 }
 
 export interface NativePayload {
-  type: 'ready' | 'state' | 'audio' | 'transcript' | 'response' | 'event' | 'telemetry' | 'countdown'
+  type: 'ready' | 'state' | 'audio' | 'transcript' | 'response' | 'event' | 'telemetry' | 'countdown' | 'operation'
   mode?: HelixState
   rms?: number
   text?: string
@@ -83,4 +107,8 @@ export interface NativePayload {
   channel?: LogChannel
   telemetry?: Partial<NativeTelemetry>
   countdown?: Partial<CountdownState>
+  stage?: string
+  detail?: string
+  progress?: number
+  active?: boolean
 }
