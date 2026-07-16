@@ -1,0 +1,12 @@
+{
+  "system": "F.R.I.D.A.Y. APK FACTORY",
+  "version": "0.9.22-ops-core",
+  "source_sha": "dc7113edf52c00a379c98514e4c65663d8a071e7",
+  "source_branch": "main",
+  "event": "push",
+  "conclusion": "success",
+  "run_id": "29540999048",
+  "run_number": "202",
+  "artifact": "FRIDAY-Helix-0.9.22-Operations-Core-apk",
+  "release_tag": "v0.9.22-ops-core"
+}
