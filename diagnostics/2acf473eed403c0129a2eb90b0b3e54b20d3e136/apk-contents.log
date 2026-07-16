@@ -1,0 +1,28 @@
+Archive:  app/build/outputs/apk/debug/app-debug.apk
+  Length      Date    Time    Name
+---------  ---------- -----   ----
+       56  1981-01-01 01:01   META-INF/com/android/build/gradle/app-metadata.properties
+  3480556  1981-01-01 01:01   classes.dex
+     2628  1981-01-01 01:01   classes2.dex
+   180720  1981-01-01 01:01   classes3.dex
+   824036  1981-01-01 01:01   classes4.dex
+    26251  1981-01-01 01:01   assets/helix/assets/index-BO_nNEqK.css
+  1285414  1981-01-01 01:01   assets/helix/assets/index-BaojkkzC.js
+      501  1981-01-01 01:01   assets/helix/index.html
+     8936  1981-01-01 01:01   AndroidManifest.xml
+     1072  1981-01-01 01:01   res/drawable/ic_launcher_background.xml
+      648  1981-01-01 01:01   res/xml/jarvis_app_automation_service.xml
+      668  1981-01-01 01:01   res/xml/jarvis_system_control_service.xml
+      652  1981-01-01 01:01   res/xml/network_security_config.xml
+     2900  1981-01-01 01:01   resources.arsc
+      928  1981-01-01 01:01   kotlin/annotation/annotation.kotlin_builtins
+     3685  1981-01-01 01:01   kotlin/collections/collections.kotlin_builtins
+      200  1981-01-01 01:01   kotlin/coroutines/coroutines.kotlin_builtins
+      646  1981-01-01 01:01   kotlin/internal/internal.kotlin_builtins
+    18661  1981-01-01 01:01   kotlin/kotlin.kotlin_builtins
+     3399  1981-01-01 01:01   kotlin/ranges/ranges.kotlin_builtins
+     2426  1981-01-01 01:01   kotlin/reflect/reflect.kotlin_builtins
+      218  1981-01-01 01:01   okhttp3/internal/publicsuffix/NOTICE
+    41394  1981-01-01 01:01   okhttp3/internal/publicsuffix/publicsuffixes.gz
+---------                     -------
+  5886595                     23 files
