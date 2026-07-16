@@ -5,7 +5,8 @@ package com.seongja.jarvis
  *
  * Reasoning providers occasionally emit private scratchpad tags despite prompt
  * instructions. Nothing inside those blocks belongs in the HUD, speech output,
- * memory, or conversation history.
+ * memory, or conversation history. Legacy identity words are normalized here so
+ * every visible and audible answer belongs to FRIDAY, not an earlier build name.
  */
 object JarvisResponseSanitizer {
 
@@ -33,6 +34,8 @@ object JarvisResponseSanitizer {
             .replace(Regex("(?i)\\bthe user\\b"), "you")
             .replace(Regex("(?i)\\bthe operator's\\b"), "your")
             .replace(Regex("(?i)\\bthe operator\\b"), "you")
+            .replace(Regex("(?i)\\bJarvis\\b"), "FRIDAY")
+            .replace(Regex("(?i)\\bSir\\b"), "Boss")
             .replace(Regex("[ \\t]+\\n"), "\n")
             .replace(Regex("\\n{3,}"), "\n\n")
             .replace(Regex("[ \\t]{2,}"), " ")
@@ -44,8 +47,6 @@ object JarvisResponseSanitizer {
     }
 
     fun spoken(raw: String): String = clean(raw)
-        .replace(Regex("(?i)\\bSir\\b"), "Boss")
-        .replace(Regex("(?i)\\bJarvis\\b"), "FRIDAY")
         .replace(Regex("```[\\s\\S]*?```"), " Code is displayed on screen. ")
         .replace(Regex("https?://\\S+"), "")
         .replace(Regex("\\[(\\d+)]"), "")

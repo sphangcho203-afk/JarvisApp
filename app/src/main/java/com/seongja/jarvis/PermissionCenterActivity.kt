@@ -71,7 +71,7 @@ class PermissionCenterActivity : Activity() {
         }
 
         root.addView(TextView(this).apply {
-            text = "JARVIS // ANDROID PERMISSION CENTER"
+            text = "F.R.I.D.A.Y. // ANDROID PERMISSION CENTER"
             textSize = 23f
             gravity = Gravity.CENTER_HORIZONTAL
             setTextColor(Color.rgb(62, 239, 225))
@@ -145,7 +145,7 @@ class PermissionCenterActivity : Activity() {
         usageAccessRow = addCapability(
             root,
             title = "USAGE ACCESS",
-            description = "Allows Jarvis to identify the recently active app and improve screen/task context. It does not reveal passwords or protected fields.",
+            description = "Allows FRIDAY to identify the recently active app and improve screen/task context. It does not reveal passwords or protected fields.",
             buttonLabel = "OPEN USAGE ACCESS",
             action = ::openUsageAccess
         )
@@ -187,7 +187,7 @@ class PermissionCenterActivity : Activity() {
         }, matchWidth(bottom = 8))
 
         root.addView(TextView(this).apply {
-            text = "After API setup is complete, the HELIX setup button becomes ANDROID and reopens this screen. Android may revoke permissions or accessibility services at any time, so Jarvis must continue verifying state before every sensitive action."
+            text = "Initial onboarding proceeds automatically through cortex, weather, and permissions. Android may revoke permissions or accessibility services at any time, so FRIDAY verifies state before every sensitive action."
             textSize = 11f
             setTextColor(Color.GRAY)
             setPadding(0, dp(8), 0, 0)

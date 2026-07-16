@@ -22,15 +22,16 @@ import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * User-started local wake listener.
+ * User-started local FRIDAY wake listener.
  *
  * It uses only Android's on-device speech recognizer. When on-device recognition
  * is unavailable, the service refuses to start rather than silently using a
  * network recognizer. The visible foreground notification remains active while
- * the feature is enabled.
+ * the feature is enabled, with OEM recognition tones suppressed in short windows.
  */
 class JarvisWakeService : Service(), RecognitionListener {
     private val handler = Handler(Looper.getMainLooper())
+    private lateinit var cueSilencer: SpeechCueSilencer
     private var recognizer: SpeechRecognizer? = null
     private var listening = false
     private var destroyed = false
@@ -39,6 +40,7 @@ class JarvisWakeService : Service(), RecognitionListener {
 
     override fun onCreate() {
         super.onCreate()
+        cueSilencer = SpeechCueSilencer(applicationContext)
         instance = this
         running.set(true)
         createNotificationChannel()
@@ -83,9 +85,11 @@ class JarvisWakeService : Service(), RecognitionListener {
         running.set(false)
         if (instance === this) instance = null
         handler.removeCallbacksAndMessages(null)
+        if (::cueSilencer.isInitialized) cueSilencer.suppress(END_CUE_WINDOW_MS)
         runCatching { recognizer?.cancel() }
         runCatching { recognizer?.destroy() }
         recognizer = null
+        if (::cueSilencer.isInitialized) cueSilencer.release()
         super.onDestroy()
     }
 
@@ -130,8 +134,10 @@ class JarvisWakeService : Service(), RecognitionListener {
             putExtra(RecognizerIntent.EXTRA_CALLING_PACKAGE, packageName)
         }
         listening = true
+        cueSilencer.suppress(START_CUE_WINDOW_MS)
         runCatching { engine.startListening(intent) }
             .onFailure {
+                cueSilencer.restore()
                 listening = false
                 startListeningSoon(RESTART_DELAY_MS)
             }
@@ -141,6 +147,7 @@ class JarvisWakeService : Service(), RecognitionListener {
         pausedForConversation = true
         listening = false
         handler.removeCallbacksAndMessages(START_TOKEN)
+        cueSilencer.suppress(END_CUE_WINDOW_MS)
         runCatching { recognizer?.cancel() }
     }
 
@@ -156,14 +163,15 @@ class JarvisWakeService : Service(), RecognitionListener {
                 .trim()
             WAKE_PHRASES.any { phrase -> normalized.contains(phrase) }
         }
-        if (matched != null) summonJarvis()
+        if (matched != null) summonFriday()
         if (final && !pausedForConversation) {
             listening = false
+            cueSilencer.suppress(END_CUE_WINDOW_MS)
             startListeningSoon(RESTART_DELAY_MS)
         }
     }
 
-    private fun summonJarvis() {
+    private fun summonFriday() {
         val now = android.os.SystemClock.elapsedRealtime()
         if (now - lastWakeAtMs < WAKE_COOLDOWN_MS) return
         lastWakeAtMs = now
@@ -221,7 +229,7 @@ class JarvisWakeService : Service(), RecognitionListener {
                 getString(R.string.wake_service_channel_name),
                 NotificationManager.IMPORTANCE_LOW
             ).apply {
-                description = "Visible local microphone service for the Jarvis wake phrase."
+                description = "Visible local microphone service for the FRIDAY wake phrase."
                 setSound(null, null)
                 enableVibration(false)
             }
@@ -232,7 +240,10 @@ class JarvisWakeService : Service(), RecognitionListener {
     override fun onBeginningOfSpeech() = Unit
     override fun onRmsChanged(rmsdB: Float) = Unit
     override fun onBufferReceived(buffer: ByteArray?) = Unit
-    override fun onEndOfSpeech() = Unit
+
+    override fun onEndOfSpeech() {
+        cueSilencer.suppress(END_CUE_WINDOW_MS)
+    }
 
     override fun onError(error: Int) {
         listening = false
@@ -256,6 +267,8 @@ class JarvisWakeService : Service(), RecognitionListener {
         private const val PREF_ENABLED = "wake_enabled"
         private const val RESTART_DELAY_MS = 550L
         private const val WAKE_COOLDOWN_MS = 4_000L
+        private const val START_CUE_WINDOW_MS = 460L
+        private const val END_CUE_WINDOW_MS = 520L
         private val START_TOKEN = Any()
         private val running = AtomicBoolean(false)
 
@@ -263,9 +276,9 @@ class JarvisWakeService : Service(), RecognitionListener {
         private var instance: JarvisWakeService? = null
 
         private val WAKE_PHRASES = setOf(
-            "wake up jarvis",
-            "hey jarvis",
-            "jarvis wake up"
+            "wake up friday",
+            "hey friday",
+            "friday wake up"
         )
 
         fun isRunning(): Boolean = running.get()

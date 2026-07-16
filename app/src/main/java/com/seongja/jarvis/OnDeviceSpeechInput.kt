@@ -12,12 +12,13 @@ import android.speech.SpeechRecognizer
 import java.util.Locale
 
 /**
- * API-key-free Android speech input with a real capture watchdog.
+ * API-key-free speech input with real capture proof and silent cue windows.
  *
  * Dedicated on-device recognition is preferred, but some vendor builds report
- * "ready" without ever delivering microphone activity. If that happens, this
- * class abandons the silent recognizer and falls back to Android's normal speech
- * service instead of leaving Jarvis in a fake LISTENING state.
+ * readiness without delivering microphone activity. This class falls back to
+ * Android's normal recognition service instead of leaving FRIDAY in a fake
+ * listening state. Short OEM start/end beeps are suppressed without muting the
+ * device throughout the conversation.
  */
 class OnDeviceSpeechInput(
     private val activity: Activity,
@@ -34,6 +35,7 @@ class OnDeviceSpeechInput(
     }
 
     private val handler = Handler(Looper.getMainLooper())
+    private val cueSilencer = SpeechCueSilencer(activity.applicationContext)
     private var recognizer: SpeechRecognizer? = null
     private var active = false
     private var destroyed = false
@@ -50,7 +52,7 @@ class OnDeviceSpeechInput(
     fun isActive(): Boolean = active
 
     fun backendLabel(): String =
-        if (usingDedicatedOnDevice) "ANDROID ON-DEVICE" else "ANDROID SPEECH SERVICE"
+        if (usingDedicatedOnDevice) "ON-DEVICE SPEECH" else "SYSTEM SPEECH SERVICE"
 
     fun start(): Boolean {
         if (destroyed || active || !isAvailable()) return false
@@ -77,12 +79,14 @@ class OnDeviceSpeechInput(
         }
 
         active = true
+        cueSilencer.suppress(START_CUE_SUPPRESSION_MS)
         return runCatching {
             engine.startListening(intent)
             armStartupWatchdog(currentSession)
             true
         }.getOrElse {
             active = false
+            cueSilencer.restore()
             resetRecognizer()
             false
         }
@@ -93,6 +97,7 @@ class OnDeviceSpeechInput(
         active = false
         sessionId++
         handler.removeCallbacksAndMessages(WATCHDOG_TOKEN)
+        cueSilencer.suppress(END_CUE_SUPPRESSION_MS)
         expectClientCancellation()
         runCatching { recognizer?.cancel() }
         listener.onRms(0f)
@@ -103,10 +108,12 @@ class OnDeviceSpeechInput(
         active = false
         sessionId++
         handler.removeCallbacksAndMessages(null)
+        cueSilencer.suppress(END_CUE_SUPPRESSION_MS)
         expectClientCancellation()
         runCatching { recognizer?.cancel() }
         runCatching { recognizer?.destroy() }
         recognizer = null
+        cueSilencer.release()
     }
 
     private fun hasDedicatedOnDeviceRecognizer(): Boolean =
@@ -181,6 +188,7 @@ class OnDeviceSpeechInput(
         val old = recognizer
         recognizer = null
         usingDedicatedOnDevice = false
+        cueSilencer.suppress(END_CUE_SUPPRESSION_MS)
         expectClientCancellation()
         runCatching { old?.cancel() }
         runCatching { old?.destroy() }
@@ -224,6 +232,7 @@ class OnDeviceSpeechInput(
     override fun onEndOfSpeech() {
         if (!active || destroyed) return
         markSpeechActivity()
+        cueSilencer.suppress(END_CUE_SUPPRESSION_MS)
         armResultWatchdog(sessionId)
     }
 
@@ -271,6 +280,7 @@ class OnDeviceSpeechInput(
 
     override fun onResults(results: Bundle?) {
         handler.removeCallbacksAndMessages(WATCHDOG_TOKEN)
+        cueSilencer.suppress(END_CUE_SUPPRESSION_MS)
         active = false
         listener.onRms(0f)
         val text = results
@@ -305,5 +315,7 @@ class OnDeviceSpeechInput(
         private const val RESULT_TIMEOUT_MS = 5_000L
         private const val EXPECTED_ERROR_TTL_MS = 1_800L
         private const val SPEECH_ACTIVITY_THRESHOLD = 0.035f
+        private const val START_CUE_SUPPRESSION_MS = 460L
+        private const val END_CUE_SUPPRESSION_MS = 520L
     }
 }

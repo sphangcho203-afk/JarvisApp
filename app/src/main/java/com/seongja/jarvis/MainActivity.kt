@@ -83,7 +83,7 @@ class MainActivity : Activity() {
         hud.pushEvent("PHASE 11 -> HELIX WEBGL COGNITIVE INTERFACE")
         hud.pushEvent("HELIX WEBGL -> REACT THREE FIBER / BLOOM / NATIVE BRIDGE")
         hud.pushEvent("ON-DEVICE SPEECH -> API-KEY-FREE COMMAND FALLBACK")
-        hud.pushEvent("ANDROID TEXT TO SPEECH -> REMOVED")
+        hud.pushEvent("LOCAL ANDROID SPEECH OUTPUT -> DISABLED")
         hud.pushEvent("MICROPHONE -> RAW PCM / ON-DEVICE HANDOFF")
         hud.pushEvent("PREMIUM VOICE OUTPUT -> OPTIONAL LOCAL RUNTIME")
         hud.pushEvent("CLOUD CORTEX -> OPTIONAL")
@@ -562,8 +562,7 @@ class MainActivity : Activity() {
                         voiceLoop.isPremiumBackendReady() ->
                             speak("Systems online. Premium streaming voice is active, Boss.")
                         else -> {
-                            hud.pushEvent("VOICE -> LOCAL JARVIS OUTPUT // ANDROID TTS")
-                            speak("Systems online. Your local voice is active, Boss.")
+                            hud.pushEvent("VOICE OUTPUT -> CARTESIA REQUIRED // LOCAL TTS DISABLED")
                         }
                     }
                 }
@@ -584,7 +583,7 @@ class MainActivity : Activity() {
             when {
                 voiceLoop.isCartesiaConfigured() -> "VOICE -> CARTESIA SONIC STREAM"
                 voiceLoop.isPremiumBackendReady() -> "VOICE -> STREAM REQUEST"
-                else -> "VOICE -> LOCAL JARVIS SYNTHESIS"
+                else -> "VOICE OUTPUT -> LOCAL TTS DISABLED"
             }
         )
 
@@ -635,7 +634,7 @@ class MainActivity : Activity() {
             .replace(Regex("[^a-z0-9 ]"), " ")
             .replace(Regex("\\s+"), " ")
             .trim()
-        if (normalized in setOf("sir", "yes sir", "okay sir", "ok sir")) return true
+        if (normalized in setOf("boss", "yes boss", "okay boss", "ok boss")) return true
         val sinceTts = SystemClock.elapsedRealtime() - lastTtsFinishedAt
         return sinceTts in 0..1_400L && normalized.split(" ").size <= 3
     }

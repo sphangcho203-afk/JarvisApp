@@ -71,8 +71,8 @@ class JarvisBrain(context: Context) {
 
         if (lower in setOf("who are you", "tell me about yourself", "what are you")) {
             return localResponse(
-                spoken = "I am Jarvis, your private personal intelligence, Sir. You built me to know your world, protect your privacy, remember what matters, research what you ask, and act across this phone. I am here for you, not the public.",
-                display = "JARVIS // SEONGJA'S PRIVATE INTELLIGENCE\nBUILT BY YOU // FOR YOU\nVOICE // MEMORY // RESEARCH // VERIFIED ANDROID ACTIONS",
+                spoken = "I am FRIDAY, your private personal intelligence, Sir. You built me to know your world, protect your privacy, remember what matters, research what you ask, and act across this phone. I am here for you, not the public.",
+                display = "F.R.I.D.A.Y. // SEONGJA'S PRIVATE INTELLIGENCE\nBUILT BY YOU // FOR YOU\nVOICE // MEMORY // RESEARCH // VERIFIED ANDROID ACTIONS",
                 intent = "dialogue/self_identity"
             )
         }

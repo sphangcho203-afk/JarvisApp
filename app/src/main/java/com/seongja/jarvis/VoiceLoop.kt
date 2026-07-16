@@ -122,7 +122,7 @@ class VoiceLoop(
 
                 consecutiveInputFailures++
                 if (onDeviceInput.isAvailable()) {
-                    onDiagnostic("VOICE INPUT -> SWITCHING TO ANDROID SPEECH")
+                    onDiagnostic("VOICE INPUT -> SWITCHING TO ON-DEVICE SPEECH")
                     onState(State.READY)
                     startDelayed(recoveryDelayMs())
                 } else {
@@ -198,11 +198,11 @@ class VoiceLoop(
                 usingOnDeviceInput = false
                 speechConfirmed = false
                 onRms(0f)
-                onDiagnostic("ANDROID SPEECH -> ${speechErrorName(code)} ($code)")
+                onDiagnostic("ON-DEVICE SPEECH -> ${speechErrorName(code)} ($code)")
                 if (destroyed) return@post
 
                 if (paused) {
-                    onDiagnostic("ANDROID SPEECH ERROR -> IGNORED WHILE PAUSED")
+                    onDiagnostic("ON-DEVICE SPEECH ERROR -> IGNORED WHILE PAUSED")
                     onState(State.READY)
                     return@post
                 }
@@ -263,7 +263,7 @@ class VoiceLoop(
                 cartesiaStreaming = false
                 onDiagnostic("VOICE OUTPUT -> CARTESIA ERROR // $message")
                 if (shouldFallback) {
-                    onDiagnostic("VOICE OUTPUT -> ANDROID LOCAL FALLBACK")
+                    onDiagnostic("VOICE OUTPUT -> CARTESIA FAILED // LOCAL TTS DISABLED")
                     localVoice.speak(fallback)
                 } else {
                     val completion = outputCompletion
@@ -436,7 +436,7 @@ class VoiceLoop(
             return
         }
 
-        onDiagnostic("VOICE OUTPUT -> LOCAL JARVIS SYNTHESIS")
+        onDiagnostic("VOICE OUTPUT -> LOCAL TTS DISABLED")
         if (!localVoice.speak(clean)) {
             val completion = outputCompletion
             outputCompletion = null
@@ -507,7 +507,7 @@ class VoiceLoop(
             if (!started) {
                 usingOnDeviceInput = false
                 consecutiveInputFailures++
-                onDiagnostic("ANDROID SPEECH -> START FAILED // RETRYING")
+                onDiagnostic("ON-DEVICE SPEECH -> START FAILED // RETRYING")
                 onState(State.READY)
                 startDelayed(recoveryDelayMs())
             } else {
@@ -517,7 +517,7 @@ class VoiceLoop(
         }
 
         consecutiveInputFailures++
-        onDiagnostic("VOICE INPUT -> NO ANDROID RECOGNIZER // RETRYING")
+        onDiagnostic("VOICE INPUT -> NO LOCAL RECOGNIZER // RETRYING")
         onState(State.UNAVAILABLE)
         startDelayed(3_000L)
     }

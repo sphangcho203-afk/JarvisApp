@@ -39,7 +39,7 @@ class WeatherApiClient(
         val request = Request.Builder()
             .url(url)
             .header("Accept", "application/json")
-            .header("User-Agent", "Jarvis-Android/0.9.20")
+            .header("User-Agent", "Friday-Android/0.9.21")
             .get()
             .build()
 
