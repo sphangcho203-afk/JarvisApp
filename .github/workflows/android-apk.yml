@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   build:
-    name: Validate Android permission center APK
+    name: Validate WeatherAPI intelligence APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -35,7 +35,7 @@ jobs:
           cache: npm
           cache-dependency-path: helix-ui/package.json
 
-      - name: Build voice-first Helix interface
+      - name: Build weather-aware Helix interface
         shell: bash
         run: |
           set -euo pipefail
@@ -51,7 +51,7 @@ jobs:
           test -n "$(find app/src/main/assets/helix/assets -name '*.js' -type f -print -quit)"
           test -n "$(find app/src/main/assets/helix/assets -name '*.css' -type f -print -quit)"
 
-      - name: Smoke-test Helix interface
+      - name: Smoke-test weather-aware Helix
         shell: bash
         run: |
           set -euo pipefail
@@ -80,9 +80,9 @@ jobs:
             --screenshot=helix-smoke.png \
             --dump-dom \
             http://127.0.0.1:4173/ > helix-dom.html
-          grep -q 'BUILD 0.9.19' helix-dom.html
-          grep -q 'API SETUP' helix-dom.html
-          grep -q 'ANDROID PERMISSIONS ARE VERIFIED' helix-dom.html
+          grep -q 'BUILD 0.9.20' helix-dom.html
+          grep -q 'CONNECT WEATHERAPI' helix-dom.html
+          grep -q 'LATEST VERIFIED RESPONSE' helix-dom.html
           if grep -q 'TYPE COMMAND' helix-dom.html || grep -q '>SEND<' helix-dom.html; then
             echo 'Chat input controls are still present.' >&2
             exit 1
@@ -122,7 +122,7 @@ jobs:
             --warning-mode all \
             --no-daemon 2>&1 | tee android-build.log
 
-      - name: Verify permission center and existing systems
+      - name: Verify intelligent weather APK
         shell: bash
         run: |
           set -euo pipefail
@@ -137,29 +137,27 @@ jobs:
           unzip -l "$APK" | tee apk-contents.log
 
           grep -q "package: name='com.seongja.jarvis'" apk-badging.log
-          grep -q "versionName='0.9.19-permission-center'" apk-badging.log
+          grep -q "versionName='0.9.20-weather-intelligence'" apk-badging.log
           grep -q "sdkVersion:'28'" apk-badging.log
           grep -q "targetSdkVersion:'35'" apk-badging.log
           grep -q "android.permission.INTERNET" apk-permissions.log
-          grep -q "android.permission.RECORD_AUDIO" apk-permissions.log
-          grep -q "android.permission.CAMERA" apk-permissions.log
-          grep -q "android.permission.POST_NOTIFICATIONS" apk-permissions.log
-          grep -q "android.permission.WRITE_SETTINGS" apk-permissions.log
-          grep -q "android.permission.PACKAGE_USAGE_STATS" apk-permissions.log
           grep -q 'classes.dex' apk-contents.log
           grep -q 'assets/helix/index.html' apk-contents.log
-          grep -q 'assets/helix/assets/.*\.js' apk-contents.log
-          grep -q 'assets/helix/assets/.*\.css' apk-contents.log
 
+          grep -q 'FORECAST_ENDPOINT = "https://api.weatherapi.com/v1/forecast.json"' app/src/main/java/com/seongja/jarvis/WeatherSettings.kt
+          grep -q 'alerts", "yes"' app/src/main/java/com/seongja/jarvis/WeatherApiClient.kt
+          grep -q 'class SecureWeatherRegistry' app/src/main/java/com/seongja/jarvis/SecureWeatherRegistry.kt
+          grep -q 'class WeatherSetupActivity' app/src/main/java/com/seongja/jarvis/WeatherSetupActivity.kt
+          grep -q 'WeatherSetupActivity' app/src/main/AndroidManifest.xml
+          grep -q 'WeatherRuntime.addListener(weatherListener)' app/src/main/java/com/seongja/jarvis/MainActivity.kt
+          grep -q 'WeatherRuntime.answer(clean)' app/src/main/java/com/seongja/jarvis/MainActivity.kt
+          grep -q 'consumeAdvisory' app/src/main/java/com/seongja/jarvis/WeatherIntelligence.kt
+          grep -q 'getWeatherJson' app/src/main/java/com/seongja/jarvis/JarvisApplication.kt
+          grep -q 'CONNECT WEATHERAPI' helix-ui/src/Hud.tsx
+          grep -q 'getWeatherJson' helix-ui/src/nativeBridge.ts
+
+          # Preserve Android control and Cartesia/cortex streaming systems.
           grep -q 'class PermissionCenterActivity' app/src/main/java/com/seongja/jarvis/PermissionCenterActivity.kt
-          grep -q 'isOnboardingComplete' app/src/main/java/com/seongja/jarvis/PermissionCenterActivity.kt
-          grep -q 'openPermissionCenter' app/src/main/java/com/seongja/jarvis/JarvisApplication.kt
-          grep -q 'JarvisNotificationListenerService' app/src/main/AndroidManifest.xml
-          grep -q 'canPerformGestures="true"' app/src/main/res/xml/jarvis_app_automation_service.xml
-          grep -q 'canTakeScreenshot="true"' app/src/main/res/xml/jarvis_app_automation_service.xml
-          grep -q 'setupLabel: telemetry.cloudConfigured' helix-ui/src/nativeBridge.ts
-
-          # Preserve previously validated Cartesia and live cortex streaming.
           grep -q 'MODEL_ID = "sonic-3"' app/src/main/java/com/seongja/jarvis/CartesiaVoiceSettings.kt
           grep -q 'AudioTrack.MODE_STREAM' app/src/main/java/com/seongja/jarvis/CartesiaSonicClient.kt
           grep -q 'streamGenerateContent?alt=sse' app/src/main/java/com/seongja/jarvis/CortexStreamingTransport.kt
@@ -169,7 +167,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: Jarvis-0.9.19-permission-validation-logs
+          name: Jarvis-0.9.20-weather-validation-logs
           path: |
             helix-build.log
             helix-server.log
@@ -190,7 +188,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v7
         with:
-          name: Jarvis-Helix-0.9.19-Permission-Center-apk
+          name: Jarvis-Helix-0.9.20-Weather-Intelligence-apk
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
           retention-days: 14

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import type { AudioMetrics, CountdownState, HelixState, NativePayload, NativeTelemetry, TerminalLog } from './types'
+import type { AudioMetrics, CountdownState, HelixState, NativePayload, NativeTelemetry, TerminalLog, WeatherTelemetry } from './types'
 
 declare global {
   interface Window {
@@ -11,6 +11,9 @@ declare global {
     JarvisCommandBridge?: {
       openApiSetup: () => void
       openPermissionCenter: () => void
+      openWeatherSetup: () => void
+      getWeatherJson: () => string
+      refreshWeather: () => void
     }
     jarvisHelix?: { receive: (payload: NativePayload) => void }
   }
@@ -18,6 +21,7 @@ declare global {
 
 const EMPTY_AUDIO: AudioMetrics = { rms: 0, peak: 0, bass: 0, mid: 0, treble: 0 }
 const INITIAL_TELEMETRY: NativeTelemetry = { time: '--:--:--', battery: 0, network: 'SYNCING', heapMb: 0, device: 'ANDROID', voiceSource: 'LOCAL', cloudConfigured: false }
+const INITIAL_WEATHER: WeatherTelemetry = { configured: false, status: 'NOT CONFIGURED', fresh: false, location: '', tempC: 0, feelsLikeC: 0, condition: '', conditionCode: 0, icon: '◌', isDay: true, windKph: 0, windDirection: '', gustKph: 0, humidity: 0, cloudPercent: 0, precipMm: 0, rainChance: 0, todayMinC: 0, todayMaxC: 0, updatedAtMs: 0, alert: '' }
 const INITIAL_COUNTDOWN: CountdownState = { active: false, label: 'MISSION TIMER', remainingMs: 0, totalMs: 0, progress: 0 }
 
 export function useNativeBridge() {
@@ -25,11 +29,13 @@ export function useNativeBridge() {
   const peakRef = useRef(0)
   const logId = useRef(4)
   const bootAt = useRef(performance.now())
+  const weatherSignature = useRef('')
   const [mode, setMode] = useState<HelixState>('IDLE')
   const [metrics, setMetrics] = useState<AudioMetrics>({ ...EMPTY_AUDIO })
   const [transcript, setTranscript] = useState('Listening for you, Sir.')
   const [response, setResponse] = useState('Jarvis is standing by, Sir.')
   const [telemetry, setTelemetry] = useState(INITIAL_TELEMETRY)
+  const [weather, setWeather] = useState(INITIAL_WEATHER)
   const [countdown, setCountdown] = useState(INITIAL_COUNTDOWN)
   const [bridgeReady, setBridgeReady] = useState(false)
   const [logs, setLogs] = useState<TerminalLog[]>([
@@ -42,6 +48,22 @@ export function useNativeBridge() {
     const elapsed = Math.floor((performance.now() - bootAt.current) / 1000)
     const time = new Date(elapsed * 1000).toISOString().slice(11, 19)
     setLogs(current => [...current.slice(-17), { id: logId.current++, time, channel, text }])
+  }
+
+  const readWeather = () => {
+    const raw = window.JarvisCommandBridge?.getWeatherJson?.()
+    if (!raw) return
+    try {
+      const next = { ...INITIAL_WEATHER, ...(JSON.parse(raw) as Partial<WeatherTelemetry>) }
+      setWeather(next)
+      const signature = `${next.updatedAtMs}|${next.conditionCode}|${next.alert}`
+      if (next.configured && signature !== weatherSignature.current) {
+        weatherSignature.current = signature
+        pushLog(next.alert ? 'WARN' : 'SYS', next.alert ? `WEATHER ALERT // ${next.alert}` : `WEATHER // ${next.icon} ${Math.round(next.tempC)}°C ${next.condition.toUpperCase()}`)
+      }
+    } catch (error) {
+      console.warn('WEATHER_BRIDGE_PARSE_FAILED', error)
+    }
   }
 
   useEffect(() => {
@@ -70,14 +92,22 @@ export function useNativeBridge() {
       },
     }
     window.JarvisAndroid?.onHelixReady()
-    return () => { delete window.jarvisHelix }
+    const firstRead = window.setTimeout(readWeather, 900)
+    const poll = window.setInterval(readWeather, 60_000)
+    return () => {
+      window.clearTimeout(firstRead)
+      window.clearInterval(poll)
+      delete window.jarvisHelix
+    }
   }, [])
 
   const openSetup = () => {
-    if (telemetry.cloudConfigured) {
-      window.JarvisCommandBridge?.openPermissionCenter()
-    } else {
+    if (!telemetry.cloudConfigured) {
       window.JarvisCommandBridge?.openApiSetup()
+    } else if (!weather.configured) {
+      window.JarvisCommandBridge?.openWeatherSetup()
+    } else {
+      window.JarvisCommandBridge?.openPermissionCenter()
     }
   }
 
@@ -88,12 +118,17 @@ export function useNativeBridge() {
     transcript,
     response,
     telemetry,
+    weather,
     countdown,
     bridgeReady,
     logs,
     clearLogs: () => setLogs([]),
-    setupLabel: telemetry.cloudConfigured ? 'ANDROID' : 'API SETUP',
+    setupLabel: !telemetry.cloudConfigured ? 'API SETUP' : !weather.configured ? 'WEATHER' : 'ANDROID',
     openSetup,
+    refreshWeather: () => {
+      window.JarvisCommandBridge?.refreshWeather()
+      window.setTimeout(readWeather, 900)
+    },
     tapCore: () => {
       if (!telemetry.cloudConfigured && window.JarvisCommandBridge) {
         window.JarvisCommandBridge.openApiSetup()
@@ -106,8 +141,8 @@ export function useNativeBridge() {
 
 function channelFor(text: string): TerminalLog['channel'] {
   const value = text.toUpperCase()
-  if (value.includes('ERROR') || value.includes('FAILED') || value.includes('DENIED')) return 'WARN'
+  if (value.includes('ERROR') || value.includes('FAILED') || value.includes('DENIED') || value.includes('ALERT')) return 'WARN'
   if (value.includes('VOICE') || value.includes('MIC')) return 'VOICE'
-  if (value.includes('ACTION') || value.includes('SYSTEM') || value.includes('DEVICE') || value.includes('PERMISSION')) return 'SYS'
+  if (value.includes('ACTION') || value.includes('SYSTEM') || value.includes('DEVICE') || value.includes('PERMISSION') || value.includes('WEATHER')) return 'SYS'
   return 'CORE'
 }

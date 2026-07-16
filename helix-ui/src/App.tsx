@@ -79,10 +79,10 @@ class HelixErrorBoundary extends Component<BoundaryProps, BoundaryState> {
               </button>
               <button
                 type="button"
-                onClick={() => window.JarvisCommandBridge?.openPermissionCenter()}
+                onClick={() => window.JarvisCommandBridge?.openWeatherSetup()}
                 style={{ background: 'transparent', border: '1px solid rgba(74,222,255,.38)', color: '#4adeff', font: 'inherit', fontSize: '10px', letterSpacing: '.16em', padding: '10px 14px' }}
               >
-                ANDROID PERMISSIONS
+                WEATHER SETUP
               </button>
               <button
                 type="button"
@@ -112,12 +112,14 @@ export default function App() {
         transcript={bridge.transcript}
         response={bridge.response}
         telemetry={bridge.telemetry}
+        weather={bridge.weather}
         countdown={bridge.countdown}
         bridgeReady={bridge.bridgeReady}
         logs={bridge.logs}
         onCoreTap={bridge.tapCore}
         onSetup={bridge.openSetup}
         setupLabel={bridge.setupLabel}
+        onRefreshWeather={bridge.refreshWeather}
         onClearLogs={bridge.clearLogs}
       />
     </HelixErrorBoundary>

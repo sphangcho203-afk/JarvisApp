@@ -11,8 +11,8 @@ android {
         applicationId = "com.seongja.jarvis"
         minSdk = 28
         targetSdk = 35
-        versionCode = 29
-        versionName = "0.9.19-permission-center"
+        versionCode = 30
+        versionName = "0.9.20-weather-intelligence"
     }
 
     buildTypes {

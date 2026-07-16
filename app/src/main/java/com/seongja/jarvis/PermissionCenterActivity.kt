@@ -167,6 +167,13 @@ class PermissionCenterActivity : Activity() {
         )
 
         root.addView(Button(this).apply {
+            text = "OPEN WEATHER SETUP"
+            setOnClickListener {
+                startActivity(Intent(this@PermissionCenterActivity, WeatherSetupActivity::class.java))
+            }
+        }, matchWidth(bottom = 8))
+
+        root.addView(Button(this).apply {
             text = "REFRESH ANDROID STATUS"
             setOnClickListener { refreshStatus() }
         }, matchWidth(bottom = 8))
