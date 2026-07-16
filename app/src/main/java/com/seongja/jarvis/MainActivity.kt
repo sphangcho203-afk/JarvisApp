@@ -34,6 +34,20 @@ class MainActivity : Activity() {
     private var processingTimeout: Runnable? = null
     private var ttsResumeWatchdog: Runnable? = null
     private var lastTtsFinishedAt = 0L
+    private val weatherListener: (WeatherSnapshot) -> Unit = { snapshot ->
+        runOnUiThread {
+            if (::hud.isInitialized) {
+                hud.pushEvent("WEATHER -> ${snapshot.compactLabel()}")
+            }
+            if (resumed && !brainBusy.get() && ::voiceLoop.isInitialized) {
+                WeatherRuntime.consumeAdvisory(snapshot)?.let { advisory ->
+                    mainHandler.postDelayed({
+                        if (resumed && !brainBusy.get()) speak(advisory)
+                    }, 550L)
+                }
+            }
+        }
+    }
     private val deviceCommandRouter by lazy {
         DeviceCommandRouter(applicationContext, ::handleDeferredDeviceResult)
     }
@@ -58,6 +72,8 @@ class MainActivity : Activity() {
             onState = ::handleVoiceState,
             onDiagnostic = { message -> runOnUiThread { hud.pushEvent(message) } }
         )
+        WeatherRuntime.addListener(weatherListener)
+        WeatherRuntime.refresh()
 
         setContentView(hud)
         hud.setCloudConfigured(brain.isCloudConfigured())
@@ -73,6 +89,7 @@ class MainActivity : Activity() {
         hud.pushEvent("CLOUD CORTEX -> OPTIONAL")
         hud.pushEvent("APP AUTOMATION -> GMAIL / WHATSAPP / SCREEN CONTEXT")
         hud.pushEvent("SYSTEM CONTROL -> QUICK SETTINGS EXECUTOR")
+        hud.pushEvent("WEATHER CORE -> WEATHERAPI / FORECAST / ALERTS")
         hud.pushEvent("TAP -> RECALIBRATE VOICE ARRAY")
 
         hud.postDelayed({ soundEngine.boot() }, 350L)
@@ -126,6 +143,7 @@ class MainActivity : Activity() {
                 }
             )
         }
+        WeatherRuntime.refresh()
         if (hasMicPermission() && !brainBusy.get()) {
             voiceLoop.resume()
             hud.postDelayed({ openCloudSetupIfRequired() }, 450L)
@@ -173,6 +191,21 @@ class MainActivity : Activity() {
 
         CountdownCommandParser.parse(clean)?.let { timerCommand ->
             handleCountdownCommand(timerCommand)
+            return
+        }
+
+        WeatherRuntime.answer(clean)?.let { weather ->
+            finishLocalCommand(
+                spoken = weather.spoken,
+                display = weather.display,
+                intent = weather.intent,
+                mode = BrainMode.ONLINE,
+                trace = listOf(
+                    "weatherapi_verified_cache",
+                    "coordinates=encrypted",
+                    "forecast=hourly+current+alerts"
+                )
+            )
             return
         }
 
@@ -696,6 +729,7 @@ class MainActivity : Activity() {
     }
 
     override fun onDestroy() {
+        WeatherRuntime.removeListener(weatherListener)
         cancelProcessingTimeout()
         cancelTtsWatchdog()
         mainHandler.removeCallbacksAndMessages(null)

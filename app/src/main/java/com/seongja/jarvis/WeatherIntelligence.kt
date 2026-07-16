@@ -95,7 +95,7 @@ class WeatherIntelligence(context: Context) {
                 intent = "weather/temperature"
             )
             else -> WeatherAnswer(
-                spoken = snapshot.fullSpokenSummary(if (input.hashCode() and 1 == 0) "Boss" else "Sir"),
+                spoken = snapshot.fullSpokenSummary(if ((input.hashCode() and 1) == 0) "Boss" else "Sir"),
                 display = buildDisplay(snapshot),
                 intent = "weather/current_forecast"
             )
