@@ -1,7 +1,7 @@
 {
   "name": "friday-helix-android-hud",
   "private": true,
-  "version": "0.9.21",
+  "version": "0.9.22",
   "type": "module",
   "scripts": {
     "build": "tsc -b && vite build"
