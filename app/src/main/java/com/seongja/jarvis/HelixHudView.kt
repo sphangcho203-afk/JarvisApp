@@ -80,7 +80,7 @@ class HelixHudView(context: Context) : WebView(context) {
             setSupportZoom(false)
             setGeolocationEnabled(false)
             databaseEnabled = false
-            userAgentString = "$userAgentString JarvisHelix/0.9.20"
+            userAgentString = "$userAgentString FridayHelix/0.9.21"
             @Suppress("DEPRECATION")
             saveFormData = false
             @Suppress("DEPRECATION")
@@ -210,11 +210,13 @@ class HelixHudView(context: Context) : WebView(context) {
     }
 
     fun submitBrainResponse(response: BrainResponse) {
+        val spoken = JarvisResponseSanitizer.spoken(response.spoken)
+        val display = JarvisResponseSanitizer.clean(response.display)
         dispatch(
             JSONObject()
                 .put("type", "response")
-                .put("spoken", response.spoken.take(MAX_TEXT_CHARS))
-                .put("display", response.display.take(MAX_TEXT_CHARS))
+                .put("spoken", spoken.take(MAX_TEXT_CHARS))
+                .put("display", display.take(MAX_TEXT_CHARS))
                 .put("intent", response.intent)
                 .put("confidence", response.confidence.toDouble())
                 .put("trace", JSONArray(response.trace.takeLast(10)))
@@ -423,9 +425,9 @@ class HelixHudView(context: Context) : WebView(context) {
             </head>
             <body>
               <main>
-                <div class="eyebrow">JARVIS // HELIX</div>
+                <div class="eyebrow">F.R.I.D.A.Y. // HELIX</div>
                 <div class="title">NATIVE FALLBACK ONLINE</div>
-                <p class="copy">The visual document could not initialize. The native Android command core remains available.</p>
+                <p class="copy">The visual document could not initialize. FRIDAY's native command core remains available.</p>
                 <pre>$safeReason</pre>
                 <div class="actions">
                   <button onclick="location.href='index.html'">RETRY HELIX</button>

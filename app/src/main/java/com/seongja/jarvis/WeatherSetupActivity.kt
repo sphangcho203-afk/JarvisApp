@@ -45,7 +45,7 @@ class WeatherSetupActivity : Activity() {
         }
 
         root.addView(TextView(this).apply {
-            text = "JARVIS // WEATHER CORE"
+            text = "F.R.I.D.A.Y. // WEATHER CORE"
             textSize = 24f
             gravity = Gravity.CENTER_HORIZONTAL
             setTextColor(Color.rgb(88, 231, 211))
@@ -53,7 +53,7 @@ class WeatherSetupActivity : Activity() {
         })
 
         root.addView(TextView(this).apply {
-            text = "Connect WeatherAPI.com once. Jarvis will use the saved latitude and longitude for verified current conditions, hourly rain probability, wind, temperature, sunrise, sunset, and official weather alerts."
+            text = "Connect WeatherAPI.com once. FRIDAY will use the saved latitude and longitude for verified current conditions, hourly rain probability, wind, temperature, sunrise, sunset, and official weather alerts."
             textSize = 14f
             setTextColor(Color.LTGRAY)
             setPadding(0, 0, 0, dp(12))
@@ -116,7 +116,7 @@ class WeatherSetupActivity : Activity() {
         root.addView(panel, matchWidth(bottom = 14))
 
         root.addView(TextView(this).apply {
-            text = "Weather refreshes approximately every 15 minutes while Jarvis is active. Severe alerts, active rain, strong wind, and dangerous heat can trigger a concise spoken advisory once per meaningful change."
+            text = "Weather refreshes approximately every 15 minutes while FRIDAY is active. Severe alerts, active rain, strong wind, and dangerous heat can trigger a concise spoken advisory once per meaningful change."
             textSize = 12f
             setTextColor(Color.GRAY)
             setPadding(0, 0, 0, dp(12))

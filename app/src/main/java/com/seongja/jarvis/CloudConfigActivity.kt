@@ -64,7 +64,7 @@ class CloudConfigActivity : Activity() {
         }
 
         root.addView(TextView(this).apply {
-            text = "JARVIS // CORTEX + SEARCH GRID"
+            text = "F.R.I.D.A.Y. // CORTEX + SEARCH GRID"
             textSize = 24f
             setTextColor(Color.rgb(64, 255, 226))
             gravity = Gravity.CENTER_HORIZONTAL
@@ -72,7 +72,7 @@ class CloudConfigActivity : Activity() {
         })
 
         root.addView(TextView(this).apply {
-            text = "Ten encrypted reasoning nodes plus dedicated Tavily and Exa retrieval engines. Jarvis searches, deduplicates evidence, cross-checks sources, and sends the evidence packet to the healthiest cortex node for synthesis."
+            text = "Ten encrypted reasoning nodes plus dedicated Tavily and Exa retrieval engines. FRIDAY searches, deduplicates evidence, cross-checks sources, and sends the evidence packet to the healthiest cortex node for synthesis."
             textSize = 14f
             setTextColor(Color.LTGRAY)
             setPadding(0, 0, 0, dp(12))
@@ -187,7 +187,7 @@ class CloudConfigActivity : Activity() {
         }, matchWidth(bottom = 8))
 
         root.addView(Button(this).apply {
-            text = "RETURN TO JARVIS"
+            text = "RETURN TO FRIDAY"
             setOnClickListener { finish() }
         }, matchWidth(bottom = 24))
 
