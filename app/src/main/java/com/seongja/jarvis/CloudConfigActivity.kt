@@ -1,6 +1,7 @@
 package com.seongja.jarvis
 
 import android.app.Activity
+import android.content.Intent
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -249,7 +250,12 @@ class CloudConfigActivity : Activity() {
         body.addView(gmailKey, matchWidth(bottom = 6))
         body.addView(gmailOAuthClient, matchWidth(bottom = 4))
         body.addView(gmailEnabled)
-        body.addView(gmailStatus)
+        body.addView(gmailStatus, matchWidth(bottom = 6))
+        body.addView(actionButton("CONNECT / MANAGE GMAIL OAUTH") {
+            if (saveAll(false)) {
+                startActivity(Intent(this, GmailAuthorizationActivity::class.java))
+            }
+        }, matchWidth())
         return body
     }
 
