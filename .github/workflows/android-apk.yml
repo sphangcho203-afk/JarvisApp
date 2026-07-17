@@ -16,13 +16,15 @@ concurrency:
   group: friday-android-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  CI: true
+  FRIDAY_VERSION: 0.9.31
+
 jobs:
   build:
-    name: Validate FRIDAY Owner Voice APK
+    name: Validate FRIDAY 0.9.31 hardened release
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    env:
-      CI: true
+    timeout-minutes: 60
 
     steps:
       - name: Checkout repository
@@ -32,16 +34,20 @@ jobs:
         uses: actions/setup-node@v7
         with:
           node-version: '22'
-          cache: npm
-          cache-dependency-path: helix-ui/package.json
 
-      - name: Build locked HELIX interface
+      - name: Install and build locked HELIX interface
         shell: bash
         run: |
           set -euo pipefail
-          sed -i 's/BUILD 0.9.25/BUILD 0.9.30/g; s/BUILD 0.9.26/BUILD 0.9.30/g; s/BUILD 0.9.27/BUILD 0.9.30/g; s/BUILD 0.9.28/BUILD 0.9.30/g; s/BUILD 0.9.29/BUILD 0.9.30/g' helix-ui/src/Hud.tsx
+          sed -Ei 's/BUILD 0\.9\.[0-9]+/BUILD 0.9.31/g' helix-ui/src/Hud.tsx
+          sed -Ei 's#FridayHelix/0\.9\.[0-9]+#FridayHelix/0.9.31#g' app/src/main/java/com/seongja/jarvis/HelixHudView.kt
           cd helix-ui
-          npm install --no-audit --no-fund
+          if [[ -f package-lock.json ]]; then
+            npm ci --no-audit --no-fund
+          else
+            npm install --no-audit --no-fund
+            cp package-lock.json ../generated-package-lock.json
+          fi
           npm run build 2>&1 | tee ../helix-build.log
           cd ..
           rm -rf app/src/main/assets/helix
@@ -68,7 +74,7 @@ jobs:
           "$CHROME" --headless=new --no-sandbox --disable-dev-shm-usage --use-gl=swiftshader --enable-webgl --virtual-time-budget=7000 --window-size=1280,720 --screenshot=helix-desktop-smoke.png http://127.0.0.1:4173/ > /dev/null
           grep -q 'F.R.I.D.A.Y.' helix-mobile-dom.html
           grep -q 'HELIX OPS' helix-mobile-dom.html
-          grep -q 'BUILD 0.9.30' helix-mobile-dom.html
+          grep -q 'BUILD 0.9.31' helix-mobile-dom.html
           grep -q 'RESPONSE TERMINAL' helix-mobile-dom.html
           grep -q 'response-scroll' helix-mobile-dom.html
           grep -q 'weather-glyph' helix-mobile-dom.html
@@ -83,72 +89,123 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v4
 
-      - name: Install Android SDK 35
+      - name: Install Android 16 SDK
         shell: bash
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
 
-      - name: Set up Gradle
+      - name: Set up Gradle wrapper cache
         uses: gradle/actions/setup-gradle@v5
-        with:
-          gradle-version: 8.10.2
 
-      - name: Lint, test, and build APK
+      - name: Prepare production signing material
+        id: signing
         shell: bash
-        run: |
-          set -o pipefail
-          gradle :app:lintDebug :app:testDebugUnitTest :app:assembleDebug --stacktrace --warning-mode all --no-daemon 2>&1 | tee android-build.log
-
-      - name: Verify owner voice, Memory Vault, diary, and preserved systems
-        shell: bash
+        env:
+          FRIDAY_KEYSTORE_BASE64: ${{ secrets.FRIDAY_KEYSTORE_BASE64 }}
+          FRIDAY_KEYSTORE_PASSWORD: ${{ secrets.FRIDAY_KEYSTORE_PASSWORD }}
+          FRIDAY_KEY_ALIAS: ${{ secrets.FRIDAY_KEY_ALIAS }}
+          FRIDAY_KEY_PASSWORD: ${{ secrets.FRIDAY_KEY_PASSWORD }}
         run: |
           set -euo pipefail
-          APK="$(find app/build/outputs/apk/debug -name '*.apk' -type f | head -n 1)"
-          test -n "$APK"
-          BUILD_TOOLS="$ANDROID_HOME/build-tools/35.0.0"
-          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" 2>&1 | tee apk-signature.log
-          "$BUILD_TOOLS/zipalign" -c -v 4 "$APK" 2>&1 | tee apk-zipalign.log
-          "$BUILD_TOOLS/aapt" dump badging "$APK" | tee apk-badging.log
-          "$BUILD_TOOLS/aapt" dump permissions "$APK" | tee apk-permissions.log
-          unzip -l "$APK" | tee apk-contents.log
+          if [[ -n "$FRIDAY_KEYSTORE_BASE64" && -n "$FRIDAY_KEYSTORE_PASSWORD" && -n "$FRIDAY_KEY_ALIAS" && -n "$FRIDAY_KEY_PASSWORD" ]]; then
+            mkdir -p .signing
+            printf '%s' "$FRIDAY_KEYSTORE_BASE64" | base64 --decode > .signing/friday-release.jks
+            chmod 600 .signing/friday-release.jks
+            test -s .signing/friday-release.jks
+            echo "configured=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "configured=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Lint, unit-test, and assemble debug and release variants
+        shell: bash
+        env:
+          FRIDAY_KEYSTORE_PATH: ${{ github.workspace }}/.signing/friday-release.jks
+          FRIDAY_KEYSTORE_PASSWORD: ${{ secrets.FRIDAY_KEYSTORE_PASSWORD }}
+          FRIDAY_KEY_ALIAS: ${{ secrets.FRIDAY_KEY_ALIAS }}
+          FRIDAY_KEY_PASSWORD: ${{ secrets.FRIDAY_KEY_PASSWORD }}
+        run: |
+          set -o pipefail
+          ./gradlew :app:lintDebug :app:lintRelease :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease --stacktrace --warning-mode all --no-daemon 2>&1 | tee android-build.log
+
+      - name: Run Android 16 emulator smoke tests
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          arch: x86_64
+          profile: pixel_6
+          disable-animations: true
+          script: ./gradlew :app:connectedDebugAndroidTest --stacktrace --no-daemon
+
+      - name: Verify hardened release package
+        id: verify
+        shell: bash
+        env:
+          SIGNING_CONFIGURED: ${{ steps.signing.outputs.configured }}
+        run: |
+          set -euo pipefail
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          DEBUG_APK="$(find app/build/outputs/apk/debug -name '*.apk' -type f | head -n 1)"
+          RELEASE_APK="$(find app/build/outputs/apk/release -name '*.apk' -type f | head -n 1)"
+          test -n "$DEBUG_APK"
+          test -n "$RELEASE_APK"
+          "$BUILD_TOOLS/zipalign" -c -v 4 "$RELEASE_APK" 2>&1 | tee apk-zipalign.log
+          "$BUILD_TOOLS/aapt" dump badging "$RELEASE_APK" | tee apk-badging.log
+          "$BUILD_TOOLS/aapt" dump permissions "$RELEASE_APK" | tee apk-permissions.log
+          unzip -l "$RELEASE_APK" | tee apk-contents.log
           grep -q "package: name='com.seongja.jarvis'" apk-badging.log
-          grep -q "versionName='0.9.30-owner-voice'" apk-badging.log
+          grep -q "versionName='0.9.31-hardening'" apk-badging.log
           grep -q "application-label:'F.R.I.D.A.Y.'" apk-badging.log
+          if grep -q 'application-debuggable' apk-badging.log; then
+            echo 'Release APK is incorrectly debuggable.' >&2
+            exit 1
+          fi
           grep -q 'android.permission.RECORD_AUDIO' apk-permissions.log
           grep -q 'android.permission.USE_BIOMETRIC' apk-permissions.log
           grep -q 'classes.dex' apk-contents.log
           grep -q 'assets/helix/index.html' apk-contents.log
-          grep -q 'data class OwnerVoiceProfile' app/src/main/java/com/seongja/jarvis/OwnerVoiceProfile.kt
-          grep -q 'class PcmFeatureAccumulator' app/src/main/java/com/seongja/jarvis/OwnerVoiceProfile.kt
-          grep -q 'AndroidKeyStore' app/src/main/java/com/seongja/jarvis/OwnerVoiceProfile.kt
-          grep -q 'MIN_ENROLLMENT_SAMPLES = 4' app/src/main/java/com/seongja/jarvis/OwnerVoiceProfile.kt
-          grep -q 'ADAPTATION_MATCH_THRESHOLD = .82f' app/src/main/java/com/seongja/jarvis/OwnerVoiceProfile.kt
-          grep -q 'class OwnerVoiceRuntime' app/src/main/java/com/seongja/jarvis/OwnerVoiceRuntime.kt
+          grep -q 'class OwnerAccessGateActivity' app/src/main/java/com/seongja/jarvis/OwnerAccessGateActivity.kt
+          grep -q 'FLAG_SECURE' app/src/main/java/com/seongja/jarvis/OwnerAccessController.kt
+          grep -q 'dataExtractionRules' app/src/main/AndroidManifest.xml
           grep -q 'mayAuthorizeSensitiveAction(): Boolean = false' app/src/main/java/com/seongja/jarvis/OwnerVoiceRuntime.kt
-          grep -q 'class OwnerVoiceEnrollmentActivity' app/src/main/java/com/seongja/jarvis/OwnerVoiceEnrollmentActivity.kt
-          grep -q 'RAW AUDIO STORAGE // DISABLED' app/src/main/java/com/seongja/jarvis/OwnerVoiceEnrollmentActivity.kt
-          grep -q 'pcmObserver: PcmCaptureObserver' app/src/main/java/com/seongja/jarvis/JarvisVoiceGateway.kt
-          grep -q 'onPcmChunk' app/src/main/java/com/seongja/jarvis/JarvisVoiceGateway.kt
-          grep -q 'completeTranscript' app/src/main/java/com/seongja/jarvis/JarvisVoiceGateway.kt
-          grep -q 'OwnerVoiceCommandParser.parse' app/src/main/java/com/seongja/jarvis/FridayCapabilityRouter.kt
-          grep -q 'class OwnerVoiceProfileTest' app/src/test/java/com/seongja/jarvis/OwnerVoiceProfileTest.kt
-          grep -q 'android:name=".OwnerVoiceEnrollmentActivity"' app/src/main/AndroidManifest.xml
-          grep -q 'class StructuredMemoryStore' app/src/main/java/com/seongja/jarvis/StructuredMemoryStore.kt
-          grep -q 'object MemorySecretGuard' app/src/main/java/com/seongja/jarvis/MemorySecretGuard.kt
-          grep -q 'class MemoryVaultActivity' app/src/main/java/com/seongja/jarvis/MemoryVaultActivity.kt
-          grep -q 'class PrivateDiaryActivity' app/src/main/java/com/seongja/jarvis/PrivateDiaryActivity.kt
-          grep -q 'object GmailAuthorizationRecovery' app/src/main/java/com/seongja/jarvis/GmailAuthorizationRecovery.kt
-          grep -q 'class WaApiClient' app/src/main/java/com/seongja/jarvis/WaApiClient.kt
-          grep -q 'class GeminiImageClient' app/src/main/java/com/seongja/jarvis/GeminiImageClient.kt
-          grep -q 'response-scroll' helix-ui/src/Hud.tsx
+          grep -q 'class RuntimeSmokeTest' app/src/androidTest/java/com/seongja/jarvis/RuntimeSmokeTest.kt
+
           mkdir -p release
-          cp "$APK" release/FRIDAY-0.9.30-Owner-Voice.apk
-          sha256sum release/FRIDAY-0.9.30-Owner-Voice.apk > release/FRIDAY-0.9.30-Owner-Voice.apk.sha256
+          if [[ "$SIGNING_CONFIGURED" == "true" ]]; then
+            "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$RELEASE_APK" 2>&1 | tee apk-signature.log
+            cp "$RELEASE_APK" release/FRIDAY-0.9.31-Hardened.apk
+            sha256sum release/FRIDAY-0.9.31-Hardened.apk > release/FRIDAY-0.9.31-Hardened.apk.sha256
+            echo "signed=true" >> "$GITHUB_OUTPUT"
+          else
+            if "$BUILD_TOOLS/apksigner" verify "$RELEASE_APK" > apk-signature.log 2>&1; then
+              echo 'Unsigned validation build unexpectedly has a signing certificate.' >&2
+              exit 1
+            fi
+            echo "signed=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Require permanent signing before publishing main
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: bash
+        run: |
+          test "${{ steps.verify.outputs.signed }}" = "true" || {
+            echo 'Main release blocked: configure the four FRIDAY signing secrets first.' >&2
+            exit 1
+          }
+
+      - name: Upload generated dependency lock candidate
+        if: always() && hashFiles('generated-package-lock.json') != ''
+        uses: actions/upload-artifact@v7
+        with:
+          name: FRIDAY-0.9.31-generated-package-lock
+          path: generated-package-lock.json
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Upload validation logs
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: FRIDAY-0.9.30-owner-voice-validation-logs
+          name: FRIDAY-0.9.31-hardening-validation-logs
           path: |
             helix-build.log
             helix-server.log
@@ -162,28 +219,30 @@ jobs:
             apk-permissions.log
             apk-contents.log
             app/build/reports/lint-results-debug.html
+            app/build/reports/lint-results-release.html
             app/build/reports/tests/testDebugUnitTest/
+            app/build/reports/androidTests/connected/
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Upload verified APK artifact
-        if: success()
+      - name: Upload verified signed APK
+        if: success() && steps.verify.outputs.signed == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: FRIDAY-Helix-0.9.30-Owner-Voice-apk
+          name: FRIDAY-Helix-0.9.31-Hardened-apk
           path: |
-            release/FRIDAY-0.9.30-Owner-Voice.apk
-            release/FRIDAY-0.9.30-Owner-Voice.apk.sha256
+            release/FRIDAY-0.9.31-Hardened.apk
+            release/FRIDAY-0.9.31-Hardened.apk.sha256
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 30
 
       - name: Publish stable FRIDAY release
-        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.verify.outputs.signed == 'true'
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="v0.9.30-owner-voice"
+          TAG="v0.9.31-hardening"
           if gh release view "$TAG" >/dev/null 2>&1; then gh release delete "$TAG" --cleanup-tag --yes; fi
-          gh release create "$TAG" release/FRIDAY-0.9.30-Owner-Voice.apk release/FRIDAY-0.9.30-Owner-Voice.apk.sha256 --target "$GITHUB_SHA" --title "F.R.I.D.A.Y. 0.9.30 // Owner Voice" --notes "Adds encrypted owner voice feature enrollment, continuous high-confidence acoustic adaptation, language-pattern familiarity, explicit raw-audio deletion, and a strict rule that voice familiarity never authorizes sensitive actions while preserving the Memory Vault, Private Diary, Gmail recovery, WaAPI, image synthesis, research, weather, and Android controls."
+          gh release create "$TAG" release/FRIDAY-0.9.31-Hardened.apk release/FRIDAY-0.9.31-Hardened.apk.sha256 --target "$GITHUB_SHA" --title "F.R.I.D.A.Y. 0.9.31 // Hardened Release" --notes "Production release with persistent signing support, Android 16 targeting, owner-gated credential consoles, backup exclusion, deterministic HELIX dependencies, unit tests, browser smoke tests, and an Android emulator launch test."
