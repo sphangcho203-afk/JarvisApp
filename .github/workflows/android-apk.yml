@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   build:
-    name: Validate FRIDAY operations core APK
+    name: Validate FRIDAY design-lock APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -35,7 +35,7 @@ jobs:
           cache: npm
           cache-dependency-path: helix-ui/package.json
 
-      - name: Build FRIDAY Helix operations interface
+      - name: Build FRIDAY Helix design-lock interface
         shell: bash
         run: |
           set -euo pipefail
@@ -51,7 +51,7 @@ jobs:
           test -n "$(find app/src/main/assets/helix/assets -name '*.js' -type f -print -quit)"
           test -n "$(find app/src/main/assets/helix/assets -name '*.css' -type f -print -quit)"
 
-      - name: Smoke-test FRIDAY operations interface
+      - name: Smoke-test locked mobile and desktop interface
         shell: bash
         run: |
           set -euo pipefail
@@ -69,6 +69,19 @@ jobs:
             sleep 0.5
           done
           test "$READY" = 1
+
+          "$CHROME" \
+            --headless=new \
+            --no-sandbox \
+            --disable-dev-shm-usage \
+            --use-gl=swiftshader \
+            --enable-webgl \
+            --virtual-time-budget=7000 \
+            --window-size=432,960 \
+            --screenshot=helix-mobile-smoke.png \
+            --dump-dom \
+            http://127.0.0.1:4173/ > helix-mobile-dom.html
+
           "$CHROME" \
             --headless=new \
             --no-sandbox \
@@ -77,26 +90,31 @@ jobs:
             --enable-webgl \
             --virtual-time-budget=7000 \
             --window-size=1280,720 \
-            --screenshot=helix-smoke.png \
-            --dump-dom \
-            http://127.0.0.1:4173/ > helix-dom.html
-          grep -q 'F.R.I.D.A.Y.' helix-dom.html
-          grep -q 'HELIX OPS' helix-dom.html
-          grep -q 'BUILD 0.9.22' helix-dom.html
-          grep -q 'RESPONSE TERMINAL' helix-dom.html
-          grep -q 'LIVE TELEMETRY' helix-dom.html
-          grep -q 'SERVICE GRID' helix-dom.html
-          grep -q 'LATENCY' helix-dom.html
-          grep -q 'operations emblem' helix-dom.html
-          if grep -q 'JARVIS // HELIX' helix-dom.html; then
+            --screenshot=helix-desktop-smoke.png \
+            http://127.0.0.1:4173/ > /dev/null
+
+          grep -q 'F.R.I.D.A.Y.' helix-mobile-dom.html
+          grep -q 'HELIX OPS' helix-mobile-dom.html
+          grep -q 'BUILD 0.9.23' helix-mobile-dom.html
+          grep -q 'RESPONSE TERMINAL' helix-mobile-dom.html
+          grep -q 'LATENCY' helix-mobile-dom.html
+          grep -q 'WEATHER CORE' helix-mobile-dom.html
+          grep -q 'VOICE LINK' helix-mobile-dom.html
+          grep -q 'telemetry-rails' helix-mobile-dom.html
+          grep -q 'status-dock' helix-mobile-dom.html
+          grep -q 'service-strip' helix-mobile-dom.html
+          grep -q 'terminal-log' helix-mobile-dom.html
+          grep -q 'operations emblem' helix-mobile-dom.html
+
+          if grep -q 'JARVIS // HELIX' helix-mobile-dom.html; then
             echo 'Legacy Jarvis header is still visible.' >&2
             exit 1
           fi
-          if grep -q 'TYPE COMMAND' helix-dom.html || grep -q '>SEND<' helix-dom.html; then
+          if grep -q 'TYPE COMMAND' helix-mobile-dom.html || grep -q '>SEND<' helix-mobile-dom.html; then
             echo 'Chat input controls are still present.' >&2
             exit 1
           fi
-          if grep -q 'RENDER FALLBACK ONLINE' helix-dom.html; then
+          if grep -q 'RENDER FALLBACK ONLINE' helix-mobile-dom.html; then
             echo 'Helix entered render fallback.' >&2
             exit 1
           fi
@@ -131,7 +149,7 @@ jobs:
             --warning-mode all \
             --no-daemon 2>&1 | tee android-build.log
 
-      - name: Verify FRIDAY operations systems
+      - name: Verify FRIDAY locked design and operations systems
         shell: bash
         run: |
           set -euo pipefail
@@ -146,7 +164,7 @@ jobs:
           unzip -l "$APK" | tee apk-contents.log
 
           grep -q "package: name='com.seongja.jarvis'" apk-badging.log
-          grep -q "versionName='0.9.22-ops-core'" apk-badging.log
+          grep -q "versionName='0.9.23-design-lock'" apk-badging.log
           grep -q "application-label:'F.R.I.D.A.Y.'" apk-badging.log
           grep -q "sdkVersion:'28'" apk-badging.log
           grep -q "targetSdkVersion:'35'" apk-badging.log
@@ -156,8 +174,14 @@ jobs:
           grep -q 'assets/helix/index.html' apk-contents.log
 
           grep -q 'FridayMark' helix-ui/src/Hud.tsx
-          grep -q 'LIVE TELEMETRY' helix-ui/src/Hud.tsx
-          grep -q 'SERVICE GRID' helix-ui/src/Hud.tsx
+          grep -q 'telemetry-rails' helix-ui/src/Hud.tsx
+          grep -q 'status-dock' helix-ui/src/Hud.tsx
+          grep -q 'service-strip' helix-ui/src/Hud.tsx
+          grep -q 'terminal-log' helix-ui/src/Hud.tsx
+          grep -q 'compactLogs' helix-ui/src/Hud.tsx
+          grep -q 'normalizeOperationalEvent' helix-ui/src/nativeBridge.ts
+          grep -q 'core-state-title' helix-ui/src/styles.css
+          grep -q 'helix-mobile-smoke.png' .github/workflows/android-apk.yml
           grep -q "type: 'operation'" helix-ui/src/types.ts
           grep -q 'class NetworkHealthMonitor' app/src/main/java/com/seongja/jarvis/NetworkHealthMonitor.kt
           grep -q 'LIVE WEB SEARCH' app/src/main/java/com/seongja/jarvis/JarvisBrain.kt
@@ -168,7 +192,6 @@ jobs:
           grep -q 'backupApiKeys' app/src/main/java/com/seongja/jarvis/CartesiaVoiceSettings.kt
           grep -q 'FAILOVER TO' app/src/main/java/com/seongja/jarvis/CartesiaSonicClient.kt
           grep -q 'Gmail mailbox access requires OAuth consent' app/src/main/java/com/seongja/jarvis/CloudConfigActivity.kt
-          grep -q 'FridayHelix/0.9.22' app/src/main/java/com/seongja/jarvis/HelixHudView.kt
           grep -q 'FORECAST_ENDPOINT = "https://api.weatherapi.com/v1/forecast.json"' app/src/main/java/com/seongja/jarvis/WeatherSettings.kt
           grep -q 'class PermissionCenterActivity' app/src/main/java/com/seongja/jarvis/PermissionCenterActivity.kt
           grep -q 'MODEL_ID = "sonic-3"' app/src/main/java/com/seongja/jarvis/CartesiaVoiceSettings.kt
@@ -176,19 +199,20 @@ jobs:
           grep -q 'streamGenerateContent?alt=sse' app/src/main/java/com/seongja/jarvis/CortexStreamingTransport.kt
 
           mkdir -p release
-          cp "$APK" release/FRIDAY-0.9.22-Operations-Core.apk
-          sha256sum release/FRIDAY-0.9.22-Operations-Core.apk > release/FRIDAY-0.9.22-Operations-Core.apk.sha256
+          cp "$APK" release/FRIDAY-0.9.23-Design-Lock.apk
+          sha256sum release/FRIDAY-0.9.23-Design-Lock.apk > release/FRIDAY-0.9.23-Design-Lock.apk.sha256
 
       - name: Upload validation logs
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: FRIDAY-0.9.22-operations-validation-logs
+          name: FRIDAY-0.9.23-design-lock-validation-logs
           path: |
             helix-build.log
             helix-server.log
-            helix-dom.html
-            helix-smoke.png
+            helix-mobile-dom.html
+            helix-mobile-smoke.png
+            helix-desktop-smoke.png
             android-build.log
             apk-signature.log
             apk-zipalign.log
@@ -204,10 +228,10 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v7
         with:
-          name: FRIDAY-Helix-0.9.22-Operations-Core-apk
+          name: FRIDAY-Helix-0.9.23-Design-Lock-apk
           path: |
-            release/FRIDAY-0.9.22-Operations-Core.apk
-            release/FRIDAY-0.9.22-Operations-Core.apk.sha256
+            release/FRIDAY-0.9.23-Design-Lock.apk
+            release/FRIDAY-0.9.23-Design-Lock.apk.sha256
           if-no-files-found: error
           retention-days: 14
 
@@ -218,16 +242,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="v0.9.22-ops-core"
+          TAG="v0.9.23-design-lock"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release delete "$TAG" --cleanup-tag --yes
           fi
           gh release create "$TAG" \
-            release/FRIDAY-0.9.22-Operations-Core.apk \
-            release/FRIDAY-0.9.22-Operations-Core.apk.sha256 \
+            release/FRIDAY-0.9.23-Design-Lock.apk \
+            release/FRIDAY-0.9.23-Design-Lock.apk.sha256 \
             --target "$GITHUB_SHA" \
-            --title "F.R.I.D.A.Y. 0.9.22 // Operations Core" \
-            --notes "Verified Android build with HELIX operations UI, live network telemetry, visible web-research phases, Cartesia four-key failover, DeepSeek fallback, YouTube Data API v3, and encrypted integration configuration."
+            --title "F.R.I.D.A.Y. 0.9.23 // Design Lock" \
+            --notes "Verified Android build restoring the locked premium HELIX composition: central orb hero, disciplined telemetry rails, simplified status dock, concise operational terminal, and all 0.9.22 network, research, voice failover, DeepSeek, YouTube, Gmail readiness, and Android systems preserved."
 
       - name: Publish failed build diagnostics
         if: failure()
@@ -239,7 +263,7 @@ jobs:
           set -euo pipefail
           mkdir -p /tmp/friday-failed
           for candidate in \
-            helix-build.log helix-server.log helix-dom.html android-build.log \
+            helix-build.log helix-server.log helix-mobile-dom.html android-build.log \
             apk-signature.log apk-zipalign.log apk-badging.log apk-permissions.log apk-contents.log; do
             if test -f "$candidate"; then
               cp "$candidate" "/tmp/friday-failed/$candidate"
