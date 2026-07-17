@@ -22,6 +22,11 @@ data class VoiceFamiliarityResult(
     }
 }
 
+object OwnerVoiceAuthorizationPolicy {
+    /** Acoustic familiarity never grants privileged access. */
+    fun mayAuthorizeSensitiveAction(): Boolean = false
+}
+
 class OwnerVoiceRuntime(context: Context) : PcmCaptureObserver {
     private val store = OwnerVoiceProfileStore(context.applicationContext)
     private var accumulator: PcmFeatureAccumulator? = null
@@ -69,8 +74,8 @@ class OwnerVoiceRuntime(context: Context) : PcmCaptureObserver {
 
     fun profile(): OwnerVoiceProfile = store.load()
 
-    /** Voice familiarity is never authorization. */
-    fun mayAuthorizeSensitiveAction(): Boolean = false
+    fun mayAuthorizeSensitiveAction(): Boolean =
+        OwnerVoiceAuthorizationPolicy.mayAuthorizeSensitiveAction()
 
     private fun evaluateAndAdapt(sample: VoiceFeatureVector?, phrase: String): VoiceFamiliarityResult {
         val profile = store.load()
