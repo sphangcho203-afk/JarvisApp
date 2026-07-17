@@ -105,6 +105,7 @@ class StructuredMemoryStore(context: Context) {
             updatedAtMs = System.currentTimeMillis()
         )
         if (clean.value.isBlank()) return clean
+        MemorySecretGuard.rejectionReason(clean.value)?.let { throw MemoryPolicyException(it) }
         if (clean.retention == MemoryRetention.SESSION) {
             sessionRecords[clean.id] = clean
             return clean
@@ -156,7 +157,7 @@ class StructuredMemoryStore(context: Context) {
         var added = 0
         vault.facts(includeSensitive = false).forEach { fact ->
             val clean = fact.trim()
-            if (clean.isBlank()) return@forEach
+            if (clean.isBlank() || MemorySecretGuard.rejectionReason(clean) != null) return@forEach
             val namespace = inferNamespace(clean)
             if (fingerprints.add(fingerprint(clean, namespace))) {
                 records += StructuredMemoryRecord(
@@ -213,7 +214,9 @@ class StructuredMemoryStore(context: Context) {
             val root = JSONObject(plain)
             if (root.optString("format") != EXPORT_FORMAT) return@runCatching 0
             val imported = recordsFromJson(root.optJSONArray("records") ?: JSONArray())
-            imported.filter { it.retention != MemoryRetention.SESSION }.forEach(::upsert)
+                .filter { it.retention != MemoryRetention.SESSION }
+                .filter { MemorySecretGuard.rejectionReason(it.value) == null }
+            imported.forEach(::upsert)
             imported.size
         }.getOrDefault(0)
     }
