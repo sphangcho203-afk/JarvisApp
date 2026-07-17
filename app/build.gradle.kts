@@ -11,8 +11,8 @@ android {
         applicationId = "com.seongja.jarvis"
         minSdk = 28
         targetSdk = 35
-        versionCode = 38
-        versionName = "0.9.28-private-diary"
+        versionCode = 39
+        versionName = "0.9.29-memory-vault"
     }
 
     buildTypes {
