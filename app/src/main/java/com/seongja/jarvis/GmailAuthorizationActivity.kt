@@ -109,7 +109,7 @@ class GmailAuthorizationActivity : Activity() {
             }
             return
         }
-        acceptTokens(result)
+        acceptAuthorization(result)
     }
 
     @Deprecated("Google Identity authorization currently returns through Activity results.")
@@ -122,20 +122,18 @@ class GmailAuthorizationActivity : Activity() {
             return
         }
         runCatching { authorizationClient.getAuthorizationResultFromIntent(data) }
-            .onSuccess(::acceptTokens)
+            .onSuccess(::acceptAuthorization)
             .onFailure {
                 store.recordFailure(it.message ?: it.javaClass.simpleName)
                 renderState()
             }
     }
 
-    private fun acceptTokens(result: AuthorizationResult) {
+    private fun acceptAuthorization(result: AuthorizationResult) {
         val token = result.accessToken.orEmpty()
-        val googleAccount = result.toGoogleSignInAccount()
-        val email = googleAccount?.email.orEmpty()
         val granted = result.grantedScopes.orEmpty().toSet()
-        if (token.isBlank() || email.isBlank()) {
-            store.recordFailure("Google did not return an authorized Gmail account token.")
+        if (token.isBlank()) {
+            store.recordFailure("Google returned the granted scopes but no usable Gmail access token. Try Connect again.")
             renderState()
             return
         }
@@ -144,9 +142,20 @@ class GmailAuthorizationActivity : Activity() {
             renderState()
             return
         }
-        store.recordAuthorized(email, granted)
-        status.text = "AUTH STATE // AUTHORIZED // VERIFYING MAILBOX"
-        verifyMailbox()
+
+        status.text = "AUTH STATE // TOKEN GRANTED // RESOLVING MAILBOX"
+        Thread {
+            val recovered = runCatching { GmailAuthorizationRecovery.profile(token) }
+            runOnUiThread {
+                recovered.onSuccess { profile ->
+                    store.recordAuthorized(profile.emailAddress, granted)
+                    showAuthorized(profile)
+                }.onFailure { error ->
+                    store.recordFailure(error.message ?: error.javaClass.simpleName)
+                    renderState()
+                }
+            }
+        }.start()
     }
 
     private fun verifyMailbox() {
@@ -154,17 +163,20 @@ class GmailAuthorizationActivity : Activity() {
         Thread {
             val result = runCatching { GmailApiClient(this).profile() }
             runOnUiThread {
-                result.onSuccess { profile ->
-                    store.recordAuthorized(profile.emailAddress, GmailScopes.requiredUris)
-                    status.text = "AUTH STATE // AUTHORIZED // HTTP 200"
-                    account.text = "ACCOUNT // ${profile.emailAddress}"
-                    scopes.text = "MAILBOX // ${profile.messagesTotal} MESSAGES // ${profile.threadsTotal} THREADS"
-                }.onFailure { error ->
-                    store.recordFailure(error.message ?: error.javaClass.simpleName)
-                    renderState()
-                }
+                result.onSuccess(::showAuthorized)
+                    .onFailure { error ->
+                        store.recordFailure(error.message ?: error.javaClass.simpleName)
+                        renderState()
+                    }
             }
         }.start()
+    }
+
+    private fun showAuthorized(profile: GmailProfile) {
+        store.recordAuthorized(profile.emailAddress, GmailScopes.requiredUris)
+        status.text = "AUTH STATE // AUTHORIZED // HTTP 200"
+        account.text = "ACCOUNT // ${profile.emailAddress}"
+        scopes.text = "MAILBOX // ${profile.messagesTotal} MESSAGES // ${profile.threadsTotal} THREADS"
     }
 
     private fun revokeAccess() {
