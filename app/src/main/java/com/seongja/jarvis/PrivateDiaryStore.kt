@@ -8,6 +8,8 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.nio.charset.StandardCharsets
 import java.security.KeyStore
+import java.util.Calendar
+import java.util.Locale
 import java.util.UUID
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -87,9 +89,19 @@ class PrivateDiaryStore(context: Context) {
 
     @Synchronized
     fun searchOwnerView(query: String): List<PrivateDiaryEntry> {
-        val normalized = query.trim().lowercase()
+        val normalized = query.trim().lowercase(Locale.getDefault())
         if (normalized.isBlank()) return listEntries()
-        return listEntries().filter { it.searchableText().lowercase().contains(normalized) }
+
+        val timeRange = resolveTimeRange(normalized)
+        if (timeRange != null) {
+            return listEntries().filter { entry ->
+                entry.updatedAtMs >= timeRange.first && entry.updatedAtMs < timeRange.second
+            }
+        }
+
+        return listEntries().filter { entry ->
+            entry.searchableText().lowercase(Locale.getDefault()).contains(normalized)
+        }
     }
 
     @Synchronized
@@ -136,7 +148,7 @@ class PrivateDiaryStore(context: Context) {
         val events = readAudit().toMutableList()
         events += DiaryAccessEvent(
             entryId = entryId.take(80),
-            action = action.trim().uppercase().take(80),
+            action = action.trim().uppercase(Locale.US).take(80),
             detail = detail.replace(Regex("\\s+"), " ").trim().take(240)
         )
         writeAudit(events.takeLast(MAX_AUDIT_EVENTS))
@@ -154,6 +166,64 @@ class PrivateDiaryStore(context: Context) {
         prefs.edit().clear().apply()
     }
 
+    private fun resolveTimeRange(query: String): Pair<Long, Long>? {
+        val now = Calendar.getInstance()
+        return when {
+            query == "today" -> dayRange(now)
+            query == "yesterday" -> dayRange((now.clone() as Calendar).apply {
+                add(Calendar.DAY_OF_YEAR, -1)
+            })
+            query == "this week" -> weekRange(now, offsetWeeks = 0)
+            query == "last week" -> weekRange(now, offsetWeeks = -1)
+            query == "this month" -> monthRange(now, offsetMonths = 0)
+            query == "last month" -> monthRange(now, offsetMonths = -1)
+            query.startsWith("last ") -> lastWeekdayRange(query.removePrefix("last "), now)
+            else -> null
+        }
+    }
+
+    private fun dayRange(calendar: Calendar): Pair<Long, Long> {
+        val start = startOfDay(calendar)
+        val end = (start.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, 1) }
+        return start.timeInMillis to end.timeInMillis
+    }
+
+    private fun weekRange(calendar: Calendar, offsetWeeks: Int): Pair<Long, Long> {
+        val start = startOfDay(calendar)
+        val day = start.get(Calendar.DAY_OF_WEEK)
+        val daysSinceMonday = (day - Calendar.MONDAY + 7) % 7
+        start.add(Calendar.DAY_OF_YEAR, -daysSinceMonday + offsetWeeks * 7)
+        val end = (start.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, 7) }
+        return start.timeInMillis to end.timeInMillis
+    }
+
+    private fun monthRange(calendar: Calendar, offsetMonths: Int): Pair<Long, Long> {
+        val start = startOfDay(calendar).apply {
+            set(Calendar.DAY_OF_MONTH, 1)
+            add(Calendar.MONTH, offsetMonths)
+        }
+        val end = (start.clone() as Calendar).apply { add(Calendar.MONTH, 1) }
+        return start.timeInMillis to end.timeInMillis
+    }
+
+    private fun lastWeekdayRange(dayName: String, calendar: Calendar): Pair<Long, Long>? {
+        val target = WEEKDAYS[dayName.lowercase(Locale.US)] ?: return null
+        val start = startOfDay(calendar)
+        val current = start.get(Calendar.DAY_OF_WEEK)
+        var delta = (current - target + 7) % 7
+        if (delta == 0) delta = 7
+        start.add(Calendar.DAY_OF_YEAR, -delta)
+        val end = (start.clone() as Calendar).apply { add(Calendar.DAY_OF_YEAR, 1) }
+        return start.timeInMillis to end.timeInMillis
+    }
+
+    private fun startOfDay(source: Calendar): Calendar = (source.clone() as Calendar).apply {
+        set(Calendar.HOUR_OF_DAY, 0)
+        set(Calendar.MINUTE, 0)
+        set(Calendar.SECOND, 0)
+        set(Calendar.MILLISECOND, 0)
+    }
+
     private fun readEntries(): List<PrivateDiaryEntry> {
         val decrypted = decrypt(prefs.getString(KEY_ENTRIES, "").orEmpty())
         if (decrypted.isBlank()) return emptyList()
@@ -161,8 +231,7 @@ class PrivateDiaryStore(context: Context) {
             val array = JSONArray(decrypted)
             buildList {
                 for (index in 0 until array.length()) {
-                    val root = array.optJSONObject(index) ?: continue
-                    add(root.toEntry())
+                    array.optJSONObject(index)?.let { add(it.toEntry()) }
                 }
             }
         }.getOrDefault(emptyList())
@@ -295,5 +364,14 @@ class PrivateDiaryStore(context: Context) {
         private const val TRANSFORMATION = "AES/GCM/NoPadding"
         private const val IV_SIZE = 12
         private const val MAX_AUDIT_EVENTS = 500
+        private val WEEKDAYS = mapOf(
+            "sunday" to Calendar.SUNDAY,
+            "monday" to Calendar.MONDAY,
+            "tuesday" to Calendar.TUESDAY,
+            "wednesday" to Calendar.WEDNESDAY,
+            "thursday" to Calendar.THURSDAY,
+            "friday" to Calendar.FRIDAY,
+            "saturday" to Calendar.SATURDAY
+        )
     }
 }
