@@ -26,6 +26,22 @@ class PrivateDiaryCommandTest {
     }
 
     @Test
+    fun recognizesNaturalTimelineSearches() {
+        assertEquals(
+            PrivateDiaryCommand.Search("last friday"),
+            PrivateDiaryCommandParser.parse("Show what I wrote last Friday")
+        )
+        assertEquals(
+            PrivateDiaryCommand.Search("yesterday"),
+            PrivateDiaryCommandParser.parse("Read my diary from yesterday")
+        )
+        assertEquals(
+            PrivateDiaryCommand.Search("last month"),
+            PrivateDiaryCommandParser.parse("Show my journal entries from last month")
+        )
+    }
+
+    @Test
     fun securesVaultWithoutOpeningIt() {
         assertEquals(
             PrivateDiaryCommand.SecureVault,
