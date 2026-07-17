@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   build:
-    name: Validate FRIDAY design-lock APK
+    name: Validate FRIDAY Gmail OAuth + image APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -35,7 +35,7 @@ jobs:
           cache: npm
           cache-dependency-path: helix-ui/package.json
 
-      - name: Build FRIDAY Helix design-lock interface
+      - name: Build FRIDAY Helix locked interface
         shell: bash
         run: |
           set -euo pipefail
@@ -95,7 +95,7 @@ jobs:
 
           grep -q 'F.R.I.D.A.Y.' helix-mobile-dom.html
           grep -q 'HELIX OPS' helix-mobile-dom.html
-          grep -q 'BUILD 0.9.23' helix-mobile-dom.html
+          grep -q 'BUILD 0.9.24' helix-mobile-dom.html
           grep -q 'RESPONSE TERMINAL' helix-mobile-dom.html
           grep -q 'LATENCY' helix-mobile-dom.html
           grep -q 'WEATHER CORE' helix-mobile-dom.html
@@ -149,7 +149,7 @@ jobs:
             --warning-mode all \
             --no-daemon 2>&1 | tee android-build.log
 
-      - name: Verify FRIDAY locked design and operations systems
+      - name: Verify Gmail OAuth, image intelligence, and locked systems
         shell: bash
         run: |
           set -euo pipefail
@@ -164,7 +164,7 @@ jobs:
           unzip -l "$APK" | tee apk-contents.log
 
           grep -q "package: name='com.seongja.jarvis'" apk-badging.log
-          grep -q "versionName='0.9.23-design-lock'" apk-badging.log
+          grep -q "versionName='0.9.24-gmail-image'" apk-badging.log
           grep -q "application-label:'F.R.I.D.A.Y.'" apk-badging.log
           grep -q "sdkVersion:'28'" apk-badging.log
           grep -q "targetSdkVersion:'35'" apk-badging.log
@@ -183,15 +183,33 @@ jobs:
           grep -q 'core-state-title' helix-ui/src/styles.css
           grep -q 'helix-mobile-smoke.png' .github/workflows/android-apk.yml
           grep -q "type: 'operation'" helix-ui/src/types.ts
+
+          grep -q 'play-services-auth:21.6.0' app/build.gradle.kts
+          grep -q 'class GmailAuthorizationActivity' app/src/main/java/com/seongja/jarvis/GmailAuthorizationActivity.kt
+          grep -q 'AuthorizationRequest.builder' app/src/main/java/com/seongja/jarvis/GmailAuthorizationActivity.kt
+          grep -q 'class GmailAuthStore' app/src/main/java/com/seongja/jarvis/GmailAuthStore.kt
+          grep -q 'gmail.modify' app/src/main/java/com/seongja/jarvis/GmailAuthStore.kt
+          grep -q 'users/me/messages/send' app/src/main/java/com/seongja/jarvis/GmailApiClient.kt
+          grep -q 'users/me/drafts' app/src/main/java/com/seongja/jarvis/GmailApiClient.kt
+          grep -q 'token_not_persisted' app/src/main/java/com/seongja/jarvis/FridayCapabilityRouter.kt
+          grep -q 'CONNECT / MANAGE GMAIL OAUTH' app/src/main/java/com/seongja/jarvis/CloudConfigActivity.kt
+          grep -q 'GmailAuthorizationActivity' app/src/main/AndroidManifest.xml
+
+          grep -q 'class GeminiImageClient' app/src/main/java/com/seongja/jarvis/GeminiImageClient.kt
+          grep -q 'gemini-3.1-flash-lite-image' app/src/main/java/com/seongja/jarvis/GeminiImageClient.kt
+          grep -q 'gemini-2.5-flash-image' app/src/main/java/com/seongja/jarvis/GeminiImageClient.kt
+          grep -q 'class ImageGenerationActivity' app/src/main/java/com/seongja/jarvis/ImageGenerationActivity.kt
+          grep -q 'Pictures/FRIDAY' app/src/main/java/com/seongja/jarvis/ImageGenerationActivity.kt
+          grep -q 'capabilityRouter.intercept' app/src/main/java/com/seongja/jarvis/JarvisBrain.kt
+          grep -q 'ImageGenerationActivity' app/src/main/AndroidManifest.xml
+
           grep -q 'class NetworkHealthMonitor' app/src/main/java/com/seongja/jarvis/NetworkHealthMonitor.kt
           grep -q 'LIVE WEB SEARCH' app/src/main/java/com/seongja/jarvis/JarvisBrain.kt
           grep -q 'Searching the web, Sir.' app/src/main/java/com/seongja/jarvis/JarvisBrain.kt
           grep -q 'class DeepSeekClient' app/src/main/java/com/seongja/jarvis/DeepSeekClient.kt
           grep -q 'class YouTubeDataClient' app/src/main/java/com/seongja/jarvis/YouTubeDataClient.kt
-          grep -q 'class SecureIntegrationRegistry' app/src/main/java/com/seongja/jarvis/SecureIntegrationRegistry.kt
           grep -q 'backupApiKeys' app/src/main/java/com/seongja/jarvis/CartesiaVoiceSettings.kt
           grep -q 'FAILOVER TO' app/src/main/java/com/seongja/jarvis/CartesiaSonicClient.kt
-          grep -q 'Gmail mailbox access requires OAuth consent' app/src/main/java/com/seongja/jarvis/CloudConfigActivity.kt
           grep -q 'FORECAST_ENDPOINT = "https://api.weatherapi.com/v1/forecast.json"' app/src/main/java/com/seongja/jarvis/WeatherSettings.kt
           grep -q 'class PermissionCenterActivity' app/src/main/java/com/seongja/jarvis/PermissionCenterActivity.kt
           grep -q 'MODEL_ID = "sonic-3"' app/src/main/java/com/seongja/jarvis/CartesiaVoiceSettings.kt
@@ -199,14 +217,14 @@ jobs:
           grep -q 'streamGenerateContent?alt=sse' app/src/main/java/com/seongja/jarvis/CortexStreamingTransport.kt
 
           mkdir -p release
-          cp "$APK" release/FRIDAY-0.9.23-Design-Lock.apk
-          sha256sum release/FRIDAY-0.9.23-Design-Lock.apk > release/FRIDAY-0.9.23-Design-Lock.apk.sha256
+          cp "$APK" release/FRIDAY-0.9.24-Gmail-Image.apk
+          sha256sum release/FRIDAY-0.9.24-Gmail-Image.apk > release/FRIDAY-0.9.24-Gmail-Image.apk.sha256
 
       - name: Upload validation logs
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: FRIDAY-0.9.23-design-lock-validation-logs
+          name: FRIDAY-0.9.24-gmail-image-validation-logs
           path: |
             helix-build.log
             helix-server.log
@@ -228,10 +246,10 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v7
         with:
-          name: FRIDAY-Helix-0.9.23-Design-Lock-apk
+          name: FRIDAY-Helix-0.9.24-Gmail-Image-apk
           path: |
-            release/FRIDAY-0.9.23-Design-Lock.apk
-            release/FRIDAY-0.9.23-Design-Lock.apk.sha256
+            release/FRIDAY-0.9.24-Gmail-Image.apk
+            release/FRIDAY-0.9.24-Gmail-Image.apk.sha256
           if-no-files-found: error
           retention-days: 14
 
@@ -242,16 +260,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="v0.9.23-design-lock"
+          TAG="v0.9.24-gmail-image"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release delete "$TAG" --cleanup-tag --yes
           fi
           gh release create "$TAG" \
-            release/FRIDAY-0.9.23-Design-Lock.apk \
-            release/FRIDAY-0.9.23-Design-Lock.apk.sha256 \
+            release/FRIDAY-0.9.24-Gmail-Image.apk \
+            release/FRIDAY-0.9.24-Gmail-Image.apk.sha256 \
             --target "$GITHUB_SHA" \
-            --title "F.R.I.D.A.Y. 0.9.23 // Design Lock" \
-            --notes "Verified Android build restoring the locked premium HELIX composition: central orb hero, disciplined telemetry rails, simplified status dock, concise operational terminal, and all 0.9.22 network, research, voice failover, DeepSeek, YouTube, Gmail readiness, and Android systems preserved."
+            --title "F.R.I.D.A.Y. 0.9.24 // Gmail + Image Intelligence" \
+            --notes "Verified Android build preserving the locked premium HELIX interface while adding Google Identity Services Gmail authorization, private mailbox commands, and Gemini image synthesis with preview, gallery save, regeneration, and sharing. Existing network, research, voice failover, DeepSeek, YouTube, weather, and Android systems remain intact."
 
       - name: Publish failed build diagnostics
         if: failure()
