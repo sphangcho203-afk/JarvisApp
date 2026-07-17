@@ -9,7 +9,6 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
 
-    <!-- Camera and flash are optional; FRIDAY must still run without them. -->
     <uses-feature
         android:name="android.hardware.camera"
         android:required="false" />
@@ -17,7 +16,6 @@
         android:name="android.hardware.camera.flash"
         android:required="false" />
 
-    <!-- Special user-approved access opened through Android Settings panels. -->
     <uses-permission
         android:name="android.permission.WRITE_SETTINGS"
         tools:ignore="ProtectedPermissions" />
@@ -33,15 +31,12 @@
         <intent>
             <action android:name="android.speech.RecognitionService" />
         </intent>
-
         <package android:name="com.google.android.gm" />
         <package android:name="com.whatsapp" />
-
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
-
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" />
@@ -89,6 +84,13 @@
             android:exported="false"
             android:excludeFromRecents="true"
             android:label="FRIDAY Private Diary"
+            android:theme="@style/Theme.Jarvis" />
+
+        <activity
+            android:name=".MemoryVaultActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:label="FRIDAY Memory Vault"
             android:theme="@style/Theme.Jarvis" />
 
         <activity
