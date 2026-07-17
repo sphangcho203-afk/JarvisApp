@@ -38,6 +38,7 @@ class JarvisApplication : Application(), Application.ActivityLifecycleCallbacks 
     override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
         // API 28 fallback because onActivityPreCreated was added in API 29.
         OwnerAccessController.protect(activity)
+        OwnerAccessController.requireAuthentication(activity)
     }
 
     override fun onActivityResumed(activity: Activity) {
