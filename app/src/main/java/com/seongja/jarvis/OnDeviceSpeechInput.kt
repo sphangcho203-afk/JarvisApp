@@ -248,9 +248,9 @@ class OnDeviceSpeechInput(
         }
 
         val shouldFallBackToSystemRecognizer = usingDedicatedOnDevice && error in setOf(
-            SpeechRecognizer.ERROR_LANGUAGE_NOT_SUPPORTED,
-            SpeechRecognizer.ERROR_LANGUAGE_UNAVAILABLE,
-            SpeechRecognizer.ERROR_SERVER_DISCONNECTED,
+            ERROR_LANGUAGE_NOT_SUPPORTED_COMPAT,
+            ERROR_LANGUAGE_UNAVAILABLE_COMPAT,
+            ERROR_SERVER_DISCONNECTED_COMPAT,
             SpeechRecognizer.ERROR_SERVER,
             SpeechRecognizer.ERROR_NETWORK,
             SpeechRecognizer.ERROR_NETWORK_TIMEOUT,
@@ -267,7 +267,7 @@ class OnDeviceSpeechInput(
         if (error in setOf(
                 SpeechRecognizer.ERROR_CLIENT,
                 SpeechRecognizer.ERROR_RECOGNIZER_BUSY,
-                SpeechRecognizer.ERROR_SERVER_DISCONNECTED,
+                ERROR_SERVER_DISCONNECTED_COMPAT,
                 SpeechRecognizer.ERROR_SERVER
             )
         ) {
@@ -310,6 +310,13 @@ class OnDeviceSpeechInput(
 
     companion object {
         private val WATCHDOG_TOKEN = Any()
+
+        // These SpeechRecognizer status values are part of the wire contract and
+        // can be handled safely on API 28-30 without referencing API-31 fields.
+        private const val ERROR_SERVER_DISCONNECTED_COMPAT = 11
+        private const val ERROR_LANGUAGE_NOT_SUPPORTED_COMPAT = 12
+        private const val ERROR_LANGUAGE_UNAVAILABLE_COMPAT = 13
+
         private const val DEDICATED_STARTUP_TIMEOUT_MS = 4_500L
         private const val SYSTEM_STARTUP_TIMEOUT_MS = 8_000L
         private const val RESULT_TIMEOUT_MS = 5_000L
