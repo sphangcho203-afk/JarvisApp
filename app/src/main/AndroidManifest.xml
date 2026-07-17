@@ -72,6 +72,18 @@
             android:theme="@style/Theme.Jarvis" />
 
         <activity
+            android:name=".GmailAuthorizationActivity"
+            android:exported="false"
+            android:label="FRIDAY Gmail Authorization"
+            android:theme="@style/Theme.Jarvis" />
+
+        <activity
+            android:name=".ImageGenerationActivity"
+            android:exported="false"
+            android:label="FRIDAY Image Synthesis"
+            android:theme="@style/Theme.Jarvis" />
+
+        <activity
             android:name=".WeatherSetupActivity"
             android:exported="false"
             android:label="FRIDAY Weather Core"

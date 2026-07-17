@@ -52,15 +52,15 @@ jobs:
           cat > "status/${SOURCE_SHA}.json" <<EOF
           {
             "system": "F.R.I.D.A.Y. APK FACTORY",
-            "version": "0.9.23-design-lock",
+            "version": "0.9.24-gmail-image",
             "source_sha": "${SOURCE_SHA}",
             "source_branch": "${SOURCE_BRANCH}",
             "event": "${EVENT_NAME}",
             "conclusion": "${BUILD_RESULT}",
             "run_id": "${RUN_ID}",
             "run_number": "${RUN_NUMBER}",
-            "artifact": "FRIDAY-Helix-0.9.23-Design-Lock-apk",
-            "release_tag": "v0.9.23-design-lock"
+            "artifact": "FRIDAY-Helix-0.9.24-Gmail-Image-apk",
+            "release_tag": "v0.9.24-gmail-image"
           }
           EOF
 

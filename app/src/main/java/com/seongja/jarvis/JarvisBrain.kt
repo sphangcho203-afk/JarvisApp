@@ -14,6 +14,7 @@ class JarvisBrain(context: Context) {
     private val webResearch = HybridWebResearchClient(registryStore)
     private val deepSeek = DeepSeekClient(integrationStore)
     private val youtube = YouTubeDataClient(integrationStore)
+    private val capabilityRouter = FridayCapabilityRouter(appContext)
     private val keyguard =
         appContext.getSystemService(Context.KEYGUARD_SERVICE) as KeyguardManager
 
@@ -32,6 +33,7 @@ class JarvisBrain(context: Context) {
             append(" // DeepSeek ${if (deepSeek.isConfigured()) "ready" else "offline"}")
             append(" // web ${if (webResearch.isConfigured()) "ready" else "offline"}")
             append(" // YouTube ${if (youtube.isConfigured()) "ready" else "offline"}")
+            append(" // ${capabilityRouter.statusLabel()}")
         }
     }
 
@@ -77,7 +79,7 @@ class JarvisBrain(context: Context) {
         if (lower in setOf("who are you", "tell me about yourself", "what are you")) {
             return localResponse(
                 spoken = "I am FRIDAY, your private personal intelligence, Sir. You built me to know your world, protect your privacy, remember what matters, research what you ask, and act across this phone.",
-                display = "F.R.I.D.A.Y. // SEONGJA'S PRIVATE INTELLIGENCE\nVOICE // MEMORY // LIVE RESEARCH // VERIFIED ANDROID ACTIONS\nOPERATIONS CORE // 0.9.22",
+                display = "F.R.I.D.A.Y. // SEONGJA'S PRIVATE INTELLIGENCE\nVOICE // MEMORY // LIVE RESEARCH // VERIFIED ANDROID ACTIONS\nOPERATIONS CORE // 0.9.24",
                 intent = "dialogue/self_identity"
             )
         }
@@ -118,6 +120,7 @@ class JarvisBrain(context: Context) {
         localMemoryCommand(input)?.let { return it }
         localMeshCommand(input)?.let { return it }
 
+        capabilityRouter.intercept(input, memory.summary(), onCortexToken)?.let { return it }
         YouTubeDataClient.commandFor(input)?.let { command ->
             return youtubeResponse(command, onCortexToken)
         }
