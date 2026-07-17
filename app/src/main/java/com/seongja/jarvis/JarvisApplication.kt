@@ -45,6 +45,12 @@ class JarvisApplication : Application(), Application.ActivityLifecycleCallbacks 
         OwnerAccessController.protect(activity)
         if (OwnerAccessController.requireAuthentication(activity)) return
         if (activity !is MainActivity) return
+        if (
+            BuildConfig.DEBUG &&
+            activity.intent.getBooleanExtra(EXTRA_SKIP_ONBOARDING_FOR_TESTS, false)
+        ) {
+            return
+        }
 
         attachSetupBridge(activity)
         WeatherRuntime.refresh()
@@ -165,6 +171,8 @@ class JarvisApplication : Application(), Application.ActivityLifecycleCallbacks 
     override fun onActivityDestroyed(activity: Activity) = Unit
 
     companion object {
+        internal const val EXTRA_SKIP_ONBOARDING_FOR_TESTS =
+            "com.seongja.jarvis.extra.SKIP_ONBOARDING_FOR_TESTS"
         private const val SETUP_BRIDGE_NAME = "JarvisCommandBridge"
         private const val INITIAL_SETUP_DELAY_MS = 650L
         private const val WEATHER_SETUP_DELAY_MS = 550L
