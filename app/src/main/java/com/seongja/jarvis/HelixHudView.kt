@@ -115,7 +115,7 @@ class HelixHudView(context: Context) : WebView(context) {
             setSupportZoom(false)
             setGeolocationEnabled(false)
             databaseEnabled = false
-            userAgentString = "$userAgentString FridayHelix/0.9.22"
+            userAgentString = "$userAgentString FridayHelix/0.9.31"
             @Suppress("DEPRECATION") saveFormData = false
             @Suppress("DEPRECATION") allowFileAccessFromFileURLs = true
             @Suppress("DEPRECATION") allowUniversalAccessFromFileURLs = false
