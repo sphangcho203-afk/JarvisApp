@@ -3,21 +3,55 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
+val releaseStorePath = providers.environmentVariable("FRIDAY_KEYSTORE_PATH").orNull
+val releaseStorePassword = providers.environmentVariable("FRIDAY_KEYSTORE_PASSWORD").orNull
+val releaseKeyAlias = providers.environmentVariable("FRIDAY_KEY_ALIAS").orNull
+val releaseKeyPassword = providers.environmentVariable("FRIDAY_KEY_PASSWORD").orNull
+val releaseSigningConfigured = listOf(
+    releaseStorePath,
+    releaseStorePassword,
+    releaseKeyAlias,
+    releaseKeyPassword
+).all { !it.isNullOrBlank() }
+
 android {
     namespace = "com.seongja.jarvis"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.seongja.jarvis"
         minSdk = 28
-        targetSdk = 35
-        versionCode = 40
-        versionName = "0.9.30-owner-voice"
+        targetSdk = 36
+        versionCode = 41
+        versionName = "0.9.31-hardening"
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    signingConfigs {
+        if (releaseSigningConfigured) {
+            create("release") {
+                storeFile = file(requireNotNull(releaseStorePath))
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+                enableV4Signing = true
+            }
+        }
     }
 
     buildTypes {
+        debug {
+            versionNameSuffix = "-debug"
+        }
         release {
+            isDebuggable = false
             isMinifyEnabled = false
+            if (releaseSigningConfigured) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -33,10 +67,28 @@ android {
     kotlinOptions {
         jvmTarget = "17"
     }
+
+    lint {
+        abortOnError = true
+        checkReleaseBuilds = true
+        htmlReport = true
+        xmlReport = true
+    }
+
+    testOptions {
+        animationsDisabled = true
+    }
 }
 
 dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.android.gms:play-services-auth:21.6.0")
+    implementation("androidx.biometric:biometric:1.1.0")
+
     testImplementation("junit:junit:4.13.2")
+
+    androidTestImplementation("androidx.test:core-ktx:1.6.1")
+    androidTestImplementation("androidx.test.ext:junit:1.2.1")
+    androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("androidx.test:rules:1.6.1")
 }
