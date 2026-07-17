@@ -125,7 +125,7 @@ class OnDeviceSpeechInput(
         if (!isAvailable()) return null
         val useDedicated = hasDedicatedOnDeviceRecognizer()
         val created = runCatching {
-            if (useDedicated && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (useDedicated) {
                 SpeechRecognizer.createOnDeviceSpeechRecognizer(activity)
             } else {
                 SpeechRecognizer.createSpeechRecognizer(activity)
