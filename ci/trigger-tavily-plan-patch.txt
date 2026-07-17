@@ -1,1 +1,0 @@
-Trigger the one-shot FRIDAY 0.9.24 Tavily standard-plan source patch.
