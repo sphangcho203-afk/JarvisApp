@@ -22,8 +22,8 @@ android {
         applicationId = "com.seongja.jarvis"
         minSdk = 28
         targetSdk = 36
-        versionCode = 41
-        versionName = "0.9.31-hardening"
+        versionCode = 42
+        versionName = "0.10.0-sensory-core"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -84,6 +84,13 @@ dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.google.android.gms:play-services-auth:21.6.0")
     implementation("androidx.biometric:biometric:1.1.0")
+    implementation("androidx.activity:activity-ktx:1.13.0")
+
+    val cameraXVersion = "1.6.1"
+    implementation("androidx.camera:camera-core:$cameraXVersion")
+    implementation("androidx.camera:camera-camera2:$cameraXVersion")
+    implementation("androidx.camera:camera-lifecycle:$cameraXVersion")
+    implementation("androidx.camera:camera-view:$cameraXVersion")
 
     testImplementation("junit:junit:4.13.2")
 
