@@ -1,12 +1,12 @@
 {
   "system": "F.R.I.D.A.Y. APK FACTORY",
   "version": "0.9.26-waapi-direct",
-  "source_sha": "0e59469bc70f6f0b2789c5a67c87786547eb9896",
+  "source_sha": "89aaba9ee3ef82659dccd90629b96a82c296bebd",
   "source_branch": "agent/complete-hardening-0.9.31",
-  "event": "push",
-  "conclusion": "failure",
-  "run_id": "29621744842",
-  "run_number": "307",
+  "event": "pull_request",
+  "conclusion": "cancelled",
+  "run_id": "29621731880",
+  "run_number": "306",
   "artifact": "FRIDAY-Helix-0.9.26-WaAPI-Direct-apk",
   "release_tag": "v0.9.26-waapi-direct"
 }
