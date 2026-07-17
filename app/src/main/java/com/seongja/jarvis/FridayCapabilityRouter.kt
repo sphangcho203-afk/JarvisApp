@@ -19,6 +19,7 @@ class FridayCapabilityRouter(context: Context) {
         append(" // WhatsApp ")
         append(waapi.statusLabel())
         append(" // diary encrypted")
+        append(" // memory owner-controlled")
     }
 
     fun intercept(
@@ -28,6 +29,10 @@ class FridayCapabilityRouter(context: Context) {
     ): BrainResponse? {
         PrivateDiaryCommandParser.parse(input)?.let { command ->
             return handleDiaryCommand(command, memorySummary, onToken)
+        }
+
+        MemoryVaultCommandParser.parse(input)?.let { command ->
+            return handleMemoryVaultCommand(command, memorySummary, onToken)
         }
 
         waapi.intercept(input, memorySummary, onToken)?.let { return it }
@@ -120,7 +125,7 @@ class FridayCapabilityRouter(context: Context) {
         memorySummary: String,
         onToken: ((String) -> Unit)?
     ): BrainResponse {
-        val (spoken, display, intent, decision) = when (command) {
+        val result = when (command) {
             PrivateDiaryCommand.Open -> {
                 PrivateDiaryActivity.launch(appContext)
                 DiaryRouteResult(
@@ -130,7 +135,6 @@ class FridayCapabilityRouter(context: Context) {
                     "launch_private_diary"
                 )
             }
-
             PrivateDiaryCommand.NewEntry -> {
                 PrivateDiaryActivity.launch(appContext, newEntry = true)
                 DiaryRouteResult(
@@ -140,7 +144,6 @@ class FridayCapabilityRouter(context: Context) {
                     "launch_new_diary_entry"
                 )
             }
-
             is PrivateDiaryCommand.Search -> {
                 PrivateDiaryActivity.launch(appContext, search = command.query)
                 DiaryRouteResult(
@@ -150,7 +153,6 @@ class FridayCapabilityRouter(context: Context) {
                     "launch_owner_diary_search"
                 )
             }
-
             PrivateDiaryCommand.SecureVault -> {
                 val secured = PrivateDiaryRuntime.secureActive("OWNER COMMAND")
                 DiaryRouteResult(
@@ -164,12 +166,12 @@ class FridayCapabilityRouter(context: Context) {
             }
         }
 
-        JarvisOperationBus.publish("PRIVATE DIARY", display.lineSequence().firstOrNull().orEmpty(), 1f)
-        onToken?.invoke(spoken)
+        JarvisOperationBus.publish("PRIVATE DIARY", result.display.lineSequence().firstOrNull().orEmpty(), 1f)
+        onToken?.invoke(result.spoken)
         return BrainResponse(
-            spoken = spoken,
-            display = display,
-            intent = intent,
+            spoken = result.spoken,
+            display = result.display,
+            intent = result.intent,
             confidence = 1f,
             mode = BrainMode.EXECUTING,
             trace = listOf(
@@ -183,7 +185,45 @@ class FridayCapabilityRouter(context: Context) {
                 "The diary route protects entries from assistant access unless the owner selects a readable mode."
             ),
             entities = listOf("workspace=private_diary_vault"),
-            decision = decision,
+            decision = result.decision,
+            action = BrainAction()
+        )
+    }
+
+    private fun handleMemoryVaultCommand(
+        command: MemoryVaultCommand,
+        memorySummary: String,
+        onToken: ((String) -> Unit)?
+    ): BrainResponse {
+        MemoryVaultActivity.launch(appContext)
+        val detail = when (command) {
+            MemoryVaultCommand.Open -> "OWNER REVIEW // OPENING"
+            MemoryVaultCommand.ReviewPending -> "APPROVAL QUEUE // OPENING"
+            is MemoryVaultCommand.Search -> "SEARCH REQUEST // ${command.query.take(180)}"
+        }
+        val spoken = when (command) {
+            MemoryVaultCommand.Open -> "Opening the Memory Vault, Sir. Owner authentication is required."
+            MemoryVaultCommand.ReviewPending -> "Opening the memory approval queue, Sir."
+            is MemoryVaultCommand.Search -> "Opening the Memory Vault for your search, Sir."
+        }
+        onToken?.invoke(spoken)
+        JarvisOperationBus.publish("MEMORY VAULT", detail, .95f)
+        return BrainResponse(
+            spoken = spoken,
+            display = "MEMORY VAULT // AUTHENTICATION REQUIRED\n$detail\nCONTROL // REVIEW + CORRECT + DELETE + ENCRYPTED TRANSFER",
+            intent = "memory/vault",
+            confidence = 1f,
+            mode = BrainMode.EXECUTING,
+            trace = listOf(
+                "workspace=memory_vault",
+                "storage=android_keystore_aes_gcm",
+                "owner_review=required",
+                "diary_transfer=approval_queue_only"
+            ),
+            memory = memorySummary,
+            thoughts = listOf("Personal memory controls remain local and owner-authenticated."),
+            entities = listOf("workspace=memory_vault"),
+            decision = "launch_memory_vault",
             action = BrainAction()
         )
     }
