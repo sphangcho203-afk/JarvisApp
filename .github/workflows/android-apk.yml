@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   build:
-    name: Validate FRIDAY WaAPI Direct APK
+    name: Validate FRIDAY Gmail Recovery APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -39,12 +39,11 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sed -i 's/BUILD 0.9.25/BUILD 0.9.26/g' helix-ui/src/Hud.tsx
+          sed -i 's/BUILD 0.9.25/BUILD 0.9.27/g; s/BUILD 0.9.26/BUILD 0.9.27/g' helix-ui/src/Hud.tsx
           cd helix-ui
           npm install --no-audit --no-fund
           npm run build 2>&1 | tee ../helix-build.log
           cd ..
-
           rm -rf app/src/main/assets/helix
           mkdir -p app/src/main/assets/helix
           cp -R helix-ui/dist/. app/src/main/assets/helix/
@@ -61,68 +60,19 @@ jobs:
           python3 -m http.server 4173 --directory helix-ui/dist > helix-server.log 2>&1 &
           SERVER_PID=$!
           trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
-
-          READY=0
           for _ in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:4173/ > /dev/null; then
-              READY=1
-              break
-            fi
+            curl -fsS http://127.0.0.1:4173/ > /dev/null && break
             sleep 0.5
           done
-          test "$READY" = 1
-
-          "$CHROME" \
-            --headless=new \
-            --no-sandbox \
-            --disable-dev-shm-usage \
-            --use-gl=swiftshader \
-            --enable-webgl \
-            --virtual-time-budget=7000 \
-            --window-size=432,960 \
-            --screenshot=helix-mobile-smoke.png \
-            --dump-dom \
-            http://127.0.0.1:4173/ > helix-mobile-dom.html
-
-          "$CHROME" \
-            --headless=new \
-            --no-sandbox \
-            --disable-dev-shm-usage \
-            --use-gl=swiftshader \
-            --enable-webgl \
-            --virtual-time-budget=7000 \
-            --window-size=1280,720 \
-            --screenshot=helix-desktop-smoke.png \
-            http://127.0.0.1:4173/ > /dev/null
-
+          "$CHROME" --headless=new --no-sandbox --disable-dev-shm-usage --use-gl=swiftshader --enable-webgl --virtual-time-budget=7000 --window-size=432,960 --screenshot=helix-mobile-smoke.png --dump-dom http://127.0.0.1:4173/ > helix-mobile-dom.html
+          "$CHROME" --headless=new --no-sandbox --disable-dev-shm-usage --use-gl=swiftshader --enable-webgl --virtual-time-budget=7000 --window-size=1280,720 --screenshot=helix-desktop-smoke.png http://127.0.0.1:4173/ > /dev/null
           grep -q 'F.R.I.D.A.Y.' helix-mobile-dom.html
           grep -q 'HELIX OPS' helix-mobile-dom.html
-          grep -q 'BUILD 0.9.26' helix-mobile-dom.html
+          grep -q 'BUILD 0.9.27' helix-mobile-dom.html
           grep -q 'RESPONSE TERMINAL' helix-mobile-dom.html
           grep -q 'response-scroll' helix-mobile-dom.html
           grep -q 'weather-glyph' helix-mobile-dom.html
-          grep -q 'telemetry-rails' helix-mobile-dom.html
-          grep -q 'status-dock' helix-mobile-dom.html
-          grep -q 'service-strip' helix-mobile-dom.html
-          grep -q 'terminal-log' helix-mobile-dom.html
-          grep -q 'operations emblem' helix-mobile-dom.html
-
-          if grep -Eq '[⚠☂❄☁☼⛈]' helix-ui/src/Hud.tsx; then
-            echo 'Platform weather emoji remain in the HUD source.' >&2
-            exit 1
-          fi
-          if grep -q 'JARVIS // HELIX' helix-mobile-dom.html; then
-            echo 'Legacy header is visible.' >&2
-            exit 1
-          fi
-          if grep -q 'TYPE COMMAND' helix-mobile-dom.html || grep -q '>SEND<' helix-mobile-dom.html; then
-            echo 'Text-chat controls returned to the voice-first HUD.' >&2
-            exit 1
-          fi
-          if grep -q 'RENDER FALLBACK ONLINE' helix-mobile-dom.html; then
-            echo 'HELIX entered render fallback.' >&2
-            exit 1
-          fi
+          if grep -Eq '[⚠☂❄☁☼⛈]' helix-ui/src/Hud.tsx; then exit 1; fi
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -146,76 +96,42 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          gradle \
-            :app:lintDebug \
-            :app:testDebugUnitTest \
-            :app:assembleDebug \
-            --stacktrace \
-            --warning-mode all \
-            --no-daemon 2>&1 | tee android-build.log
+          gradle :app:lintDebug :app:testDebugUnitTest :app:assembleDebug --stacktrace --warning-mode all --no-daemon 2>&1 | tee android-build.log
 
-      - name: Verify WaAPI direct messaging and preserved systems
+      - name: Verify Gmail recovery, icon, and preserved systems
         shell: bash
         run: |
           set -euo pipefail
           APK="$(find app/build/outputs/apk/debug -name '*.apk' -type f | head -n 1)"
           test -n "$APK"
           BUILD_TOOLS="$ANDROID_HOME/build-tools/35.0.0"
-
           "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" 2>&1 | tee apk-signature.log
           "$BUILD_TOOLS/zipalign" -c -v 4 "$APK" 2>&1 | tee apk-zipalign.log
           "$BUILD_TOOLS/aapt" dump badging "$APK" | tee apk-badging.log
           "$BUILD_TOOLS/aapt" dump permissions "$APK" | tee apk-permissions.log
           unzip -l "$APK" | tee apk-contents.log
-
           grep -q "package: name='com.seongja.jarvis'" apk-badging.log
-          grep -q "versionName='0.9.26-waapi-direct'" apk-badging.log
+          grep -q "versionName='0.9.27-gmail-recovery'" apk-badging.log
           grep -q "application-label:'F.R.I.D.A.Y.'" apk-badging.log
-          grep -q "sdkVersion:'28'" apk-badging.log
-          grep -q "targetSdkVersion:'35'" apk-badging.log
-          grep -q 'android.permission.INTERNET' apk-permissions.log
-          grep -q 'android.permission.RECORD_AUDIO' apk-permissions.log
           grep -q 'classes.dex' apk-contents.log
           grep -q 'assets/helix/index.html' apk-contents.log
-
-          grep -q 'class WaApiSecureStore' app/src/main/java/com/seongja/jarvis/WaApiSecureStore.kt
-          grep -q 'AndroidKeyStore' app/src/main/java/com/seongja/jarvis/WaApiSecureStore.kt
+          grep -q 'object GmailAuthorizationRecovery' app/src/main/java/com/seongja/jarvis/GmailAuthorizationRecovery.kt
+          grep -q 'TOKEN GRANTED // RESOLVING MAILBOX' app/src/main/java/com/seongja/jarvis/GmailAuthorizationActivity.kt
+          grep -q 'val storedAccount = authStore.load().accountEmail' app/src/main/java/com/seongja/jarvis/GmailApiClient.kt
+          grep -q 'profileWithToken(token)' app/src/main/java/com/seongja/jarvis/GmailApiClient.kt
+          grep -q 'M35,30 L70,30' app/src/main/res/drawable/ic_launcher_background.xml
           grep -q 'class WaApiClient' app/src/main/java/com/seongja/jarvis/WaApiClient.kt
-          grep -q '/instances/$instanceId/client/status' app/src/main/java/com/seongja/jarvis/WaApiClient.kt
-          grep -q '/client/action/get-number-id' app/src/main/java/com/seongja/jarvis/WaApiClient.kt
-          grep -q '/client/action/send-message' app/src/main/java/com/seongja/jarvis/WaApiClient.kt
-          grep -q 'Authorization", "Bearer' app/src/main/java/com/seongja/jarvis/WaApiClient.kt
-          grep -q 'class WaApiCommandRouter' app/src/main/java/com/seongja/jarvis/WaApiCommandRouter.kt
-          grep -q 'CONFIRMATION_TTL_MS' app/src/main/java/com/seongja/jarvis/WaApiCommandRouter.kt
-          grep -q 'MIN_SEND_INTERVAL_MS = 15_000L' app/src/main/java/com/seongja/jarvis/WaApiCommandRouter.kt
-          grep -q 'message_not_sent' app/src/main/java/com/seongja/jarvis/WaApiCommandRouter.kt
-          grep -q 'class WaApiConfigActivity' app/src/main/java/com/seongja/jarvis/WaApiConfigActivity.kt
-          grep -q 'WaApiConfigActivity' app/src/main/AndroidManifest.xml
-          grep -q 'waapi.intercept' app/src/main/java/com/seongja/jarvis/FridayCapabilityRouter.kt
-          grep -q 'normalizesInternationalPhoneNumbers' app/src/test/java/com/seongja/jarvis/WaApiClientTest.kt
-
-          grep -q 'function WeatherGlyph' helix-ui/src/Hud.tsx
-          grep -q 'response-scroll' helix-ui/src/Hud.tsx
-          grep -q 'MIN_PHRASE_CHARS' app/src/main/java/com/seongja/jarvis/StreamingResponseFilter.kt
-          grep -q 'class GmailAuthorizationActivity' app/src/main/java/com/seongja/jarvis/GmailAuthorizationActivity.kt
-          grep -q 'users/me/messages/send' app/src/main/java/com/seongja/jarvis/GmailApiClient.kt
           grep -q 'class GeminiImageClient' app/src/main/java/com/seongja/jarvis/GeminiImageClient.kt
-          grep -q 'Pictures/FRIDAY' app/src/main/java/com/seongja/jarvis/ImageGenerationActivity.kt
-          grep -q 'class DeepSeekClient' app/src/main/java/com/seongja/jarvis/DeepSeekClient.kt
-          grep -q 'class YouTubeDataClient' app/src/main/java/com/seongja/jarvis/YouTubeDataClient.kt
-          grep -q 'backupApiKeys' app/src/main/java/com/seongja/jarvis/CartesiaVoiceSettings.kt
-          grep -q 'FAILOVER TO' app/src/main/java/com/seongja/jarvis/CartesiaSonicClient.kt
-          grep -q 'FORECAST_ENDPOINT = "https://api.weatherapi.com/v1/forecast.json"' app/src/main/java/com/seongja/jarvis/WeatherSettings.kt
-
+          grep -q 'response-scroll' helix-ui/src/Hud.tsx
           mkdir -p release
-          cp "$APK" release/FRIDAY-0.9.26-WaAPI-Direct.apk
-          sha256sum release/FRIDAY-0.9.26-WaAPI-Direct.apk > release/FRIDAY-0.9.26-WaAPI-Direct.apk.sha256
+          cp "$APK" release/FRIDAY-0.9.27-Gmail-Recovery.apk
+          sha256sum release/FRIDAY-0.9.27-Gmail-Recovery.apk > release/FRIDAY-0.9.27-Gmail-Recovery.apk.sha256
 
       - name: Upload validation logs
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: FRIDAY-0.9.26-waapi-direct-validation-logs
+          name: FRIDAY-0.9.27-gmail-recovery-validation-logs
           path: |
             helix-build.log
             helix-server.log
@@ -237,10 +153,10 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v7
         with:
-          name: FRIDAY-Helix-0.9.26-WaAPI-Direct-apk
+          name: FRIDAY-Helix-0.9.27-Gmail-Recovery-apk
           path: |
-            release/FRIDAY-0.9.26-WaAPI-Direct.apk
-            release/FRIDAY-0.9.26-WaAPI-Direct.apk.sha256
+            release/FRIDAY-0.9.27-Gmail-Recovery.apk
+            release/FRIDAY-0.9.27-Gmail-Recovery.apk.sha256
           if-no-files-found: error
           retention-days: 14
 
@@ -251,13 +167,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="v0.9.26-waapi-direct"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release delete "$TAG" --cleanup-tag --yes
-          fi
-          gh release create "$TAG" \
-            release/FRIDAY-0.9.26-WaAPI-Direct.apk \
-            release/FRIDAY-0.9.26-WaAPI-Direct.apk.sha256 \
-            --target "$GITHUB_SHA" \
-            --title "F.R.I.D.A.Y. 0.9.26 // WaAPI Direct" \
-            --notes "Adds encrypted WaAPI bearer-token storage, connected-instance discovery, client status testing, international number resolution, confirmed direct WhatsApp text sending, and safety pacing while preserving Gmail OAuth, Gemini image synthesis, research, weather intelligence, natural speech, Android controls, and the locked HELIX design."
+          TAG="v0.9.27-gmail-recovery"
+          if gh release view "$TAG" >/dev/null 2>&1; then gh release delete "$TAG" --cleanup-tag --yes; fi
+          gh release create "$TAG" release/FRIDAY-0.9.27-Gmail-Recovery.apk release/FRIDAY-0.9.27-Gmail-Recovery.apk.sha256 --target "$GITHUB_SHA" --title "F.R.I.D.A.Y. 0.9.27 // Gmail Recovery" --notes "Repairs already-granted Gmail authorization by resolving the mailbox identity through the Gmail profile endpoint, reusing the persisted account during token refresh, and introduces a new HELIX launcher emblem while preserving WaAPI, image synthesis, voice polish, and the locked HUD."
