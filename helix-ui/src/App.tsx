@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { Hud } from './Hud'
+import { WorkspaceRail } from './WorkspaceRail'
 import { useNativeBridge } from './nativeBridge'
 
 interface BoundaryProps { children: ReactNode }
@@ -42,6 +43,7 @@ export default function App() {
   const bridge = useNativeBridge()
   return (
     <HelixErrorBoundary>
+      <WorkspaceRail />
       <Hud
         mode={bridge.mode}
         audioRef={bridge.metricsRef}
