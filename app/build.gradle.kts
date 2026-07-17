@@ -11,8 +11,8 @@ android {
         applicationId = "com.seongja.jarvis"
         minSdk = 28
         targetSdk = 35
-        versionCode = 34
-        versionName = "0.9.24-gmail-image"
+        versionCode = 35
+        versionName = "0.9.25-hud-voice-polish"
     }
 
     buildTypes {
