@@ -54,6 +54,7 @@
         <activity android:name=".ImageGenerationActivity" android:exported="false" android:label="FRIDAY Image Synthesis" android:theme="@style/Theme.Jarvis" />
         <activity android:name=".PrivateDiaryActivity" android:exported="false" android:excludeFromRecents="true" android:label="FRIDAY Private Diary" android:theme="@style/Theme.Jarvis" />
         <activity android:name=".MemoryVaultActivity" android:exported="false" android:excludeFromRecents="true" android:label="FRIDAY Memory Vault" android:theme="@style/Theme.Jarvis" />
+        <activity android:name=".OwnerVoiceEnrollmentActivity" android:exported="false" android:excludeFromRecents="true" android:label="FRIDAY Owner Voice Lab" android:theme="@style/Theme.Jarvis" />
         <activity android:name=".WaApiConfigActivity" android:exported="false" android:label="FRIDAY WaAPI Direct" android:theme="@style/Theme.Jarvis" />
         <activity android:name=".WeatherSetupActivity" android:exported="false" android:label="FRIDAY Weather Core" android:theme="@style/Theme.Jarvis" />
         <activity android:name=".PermissionCenterActivity" android:exported="false" android:label="FRIDAY Permission Center" android:theme="@style/Theme.Jarvis" />

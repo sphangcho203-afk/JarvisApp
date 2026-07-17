@@ -10,6 +10,7 @@ class FridayCapabilityRouter(context: Context) {
     private val gmailAuth = GmailAuthStore(appContext)
     private val images = GeminiImageClient(appContext)
     private val waapi = WaApiCommandRouter(appContext)
+    private val ownerVoice = OwnerVoiceProfileStore(appContext)
 
     fun statusLabel(): String = buildString {
         append("Gmail ")
@@ -20,11 +21,14 @@ class FridayCapabilityRouter(context: Context) {
         append(waapi.statusLabel())
         append(" // diary encrypted")
         append(" // memory owner-controlled")
+        append(" // voice ")
+        append(if (ownerVoice.load().enrolled) "familiarity enrolled" else "enrollment required")
     }
 
     fun intercept(input: String, memorySummary: String, onToken: ((String) -> Unit)? = null): BrainResponse? {
         PrivateDiaryCommandParser.parse(input)?.let { return handleDiaryCommand(it, memorySummary, onToken) }
         MemoryVaultCommandParser.parse(input)?.let { return handleMemoryVaultCommand(it, memorySummary, onToken) }
+        OwnerVoiceCommandParser.parse(input)?.let { return handleOwnerVoiceCommand(it, memorySummary, onToken) }
         waapi.intercept(input, memorySummary, onToken)?.let { return it }
 
         ImageCommandIntent.promptFor(input)?.let { prompt ->
@@ -223,6 +227,57 @@ class FridayCapabilityRouter(context: Context) {
             memory = memorySummary,
             thoughts = listOf("Personal memory controls remain local and owner-authenticated."),
             entities = listOf("workspace=memory_vault"),
+            decision = result.decision,
+            action = BrainAction()
+        )
+    }
+
+    private fun handleOwnerVoiceCommand(command: OwnerVoiceCommand, memorySummary: String, onToken: ((String) -> Unit)?): BrainResponse {
+        val profile = ownerVoice.load()
+        val result = when (command) {
+            OwnerVoiceCommand.Status -> RouteResult(
+                spoken = if (profile.enrolled) {
+                    "Your owner voice familiarity profile is enrolled with ${profile.sampleCount} verified acoustic samples, Sir. It does not replace Android authentication."
+                } else {
+                    "The owner voice familiarity profile is not enrolled yet, Sir."
+                },
+                display = buildString {
+                    appendLine("OWNER VOICE // ${profile.statusLabel()}")
+                    appendLine("LAST FAMILIARITY // ${(profile.lastMatchScore * 100).toInt()}%")
+                    appendLine("RAW AUDIO STORAGE // DISABLED")
+                    append("AUTHORIZATION POWER // NONE")
+                },
+                intent = "voice_identity/status",
+                decision = "report_owner_voice_status"
+            )
+            OwnerVoiceCommand.OpenLab,
+            OwnerVoiceCommand.Enroll -> {
+                OwnerVoiceEnrollmentActivity.launch(appContext)
+                RouteResult(
+                    spoken = "Opening the Owner Voice Lab, Sir. Android owner authentication is required before enrollment.",
+                    display = "OWNER VOICE LAB // AUTHENTICATION REQUIRED\nRAW AUDIO STORAGE // DISABLED\nPROFILE // ENCRYPTED ACOUSTIC FEATURES\nSENSITIVE AUTHORIZATION // ANDROID CREDENTIAL STILL REQUIRED",
+                    intent = "voice_identity/enroll",
+                    decision = "launch_owner_voice_lab"
+                )
+            }
+        }
+        JarvisOperationBus.publish("OWNER VOICE", result.display.lineSequence().firstOrNull().orEmpty(), .9f)
+        onToken?.invoke(result.spoken)
+        return BrainResponse(
+            spoken = result.spoken,
+            display = result.display,
+            intent = result.intent,
+            confidence = 1f,
+            mode = BrainMode.EXECUTING,
+            trace = listOf(
+                "voice_profile=android_keystore_encrypted",
+                "raw_audio_persistence=disabled",
+                "continuous_adaptation=high_match_and_unlocked_only",
+                "sensitive_authorization=android_owner_required"
+            ),
+            memory = memorySummary,
+            thoughts = listOf("Voice familiarity improves personalization but never grants privileged access by itself."),
+            entities = listOf("workspace=owner_voice_lab"),
             decision = result.decision,
             action = BrainAction()
         )

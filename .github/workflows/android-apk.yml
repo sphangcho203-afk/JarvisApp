@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   build:
-    name: Validate FRIDAY Memory Vault APK
+    name: Validate FRIDAY Owner Voice APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -39,7 +39,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sed -i 's/BUILD 0.9.25/BUILD 0.9.29/g; s/BUILD 0.9.26/BUILD 0.9.29/g; s/BUILD 0.9.27/BUILD 0.9.29/g; s/BUILD 0.9.28/BUILD 0.9.29/g' helix-ui/src/Hud.tsx
+          sed -i 's/BUILD 0.9.25/BUILD 0.9.30/g; s/BUILD 0.9.26/BUILD 0.9.30/g; s/BUILD 0.9.27/BUILD 0.9.30/g; s/BUILD 0.9.28/BUILD 0.9.30/g; s/BUILD 0.9.29/BUILD 0.9.30/g' helix-ui/src/Hud.tsx
           cd helix-ui
           npm install --no-audit --no-fund
           npm run build 2>&1 | tee ../helix-build.log
@@ -68,7 +68,7 @@ jobs:
           "$CHROME" --headless=new --no-sandbox --disable-dev-shm-usage --use-gl=swiftshader --enable-webgl --virtual-time-budget=7000 --window-size=1280,720 --screenshot=helix-desktop-smoke.png http://127.0.0.1:4173/ > /dev/null
           grep -q 'F.R.I.D.A.Y.' helix-mobile-dom.html
           grep -q 'HELIX OPS' helix-mobile-dom.html
-          grep -q 'BUILD 0.9.29' helix-mobile-dom.html
+          grep -q 'BUILD 0.9.30' helix-mobile-dom.html
           grep -q 'RESPONSE TERMINAL' helix-mobile-dom.html
           grep -q 'response-scroll' helix-mobile-dom.html
           grep -q 'weather-glyph' helix-mobile-dom.html
@@ -98,7 +98,7 @@ jobs:
           set -o pipefail
           gradle :app:lintDebug :app:testDebugUnitTest :app:assembleDebug --stacktrace --warning-mode all --no-daemon 2>&1 | tee android-build.log
 
-      - name: Verify Memory Vault, diary, and preserved systems
+      - name: Verify owner voice, Memory Vault, diary, and preserved systems
         shell: bash
         run: |
           set -euo pipefail
@@ -111,41 +111,44 @@ jobs:
           "$BUILD_TOOLS/aapt" dump permissions "$APK" | tee apk-permissions.log
           unzip -l "$APK" | tee apk-contents.log
           grep -q "package: name='com.seongja.jarvis'" apk-badging.log
-          grep -q "versionName='0.9.29-memory-vault'" apk-badging.log
+          grep -q "versionName='0.9.30-owner-voice'" apk-badging.log
           grep -q "application-label:'F.R.I.D.A.Y.'" apk-badging.log
+          grep -q 'android.permission.RECORD_AUDIO' apk-permissions.log
           grep -q 'android.permission.USE_BIOMETRIC' apk-permissions.log
           grep -q 'classes.dex' apk-contents.log
           grep -q 'assets/helix/index.html' apk-contents.log
+          grep -q 'data class OwnerVoiceProfile' app/src/main/java/com/seongja/jarvis/OwnerVoiceProfile.kt
+          grep -q 'class PcmFeatureAccumulator' app/src/main/java/com/seongja/jarvis/OwnerVoiceProfile.kt
+          grep -q 'AndroidKeyStore' app/src/main/java/com/seongja/jarvis/OwnerVoiceProfile.kt
+          grep -q 'MIN_ENROLLMENT_SAMPLES = 4' app/src/main/java/com/seongja/jarvis/OwnerVoiceProfile.kt
+          grep -q 'ADAPTATION_MATCH_THRESHOLD = .82f' app/src/main/java/com/seongja/jarvis/OwnerVoiceProfile.kt
+          grep -q 'class OwnerVoiceRuntime' app/src/main/java/com/seongja/jarvis/OwnerVoiceRuntime.kt
+          grep -q 'mayAuthorizeSensitiveAction(): Boolean = false' app/src/main/java/com/seongja/jarvis/OwnerVoiceRuntime.kt
+          grep -q 'class OwnerVoiceEnrollmentActivity' app/src/main/java/com/seongja/jarvis/OwnerVoiceEnrollmentActivity.kt
+          grep -q 'RAW AUDIO STORAGE // DISABLED' app/src/main/java/com/seongja/jarvis/OwnerVoiceEnrollmentActivity.kt
+          grep -q 'pcmObserver: PcmCaptureObserver' app/src/main/java/com/seongja/jarvis/JarvisVoiceGateway.kt
+          grep -q 'onPcmChunk' app/src/main/java/com/seongja/jarvis/JarvisVoiceGateway.kt
+          grep -q 'completeTranscript' app/src/main/java/com/seongja/jarvis/JarvisVoiceGateway.kt
+          grep -q 'OwnerVoiceCommandParser.parse' app/src/main/java/com/seongja/jarvis/FridayCapabilityRouter.kt
+          grep -q 'class OwnerVoiceProfileTest' app/src/test/java/com/seongja/jarvis/OwnerVoiceProfileTest.kt
+          grep -q 'android:name=".OwnerVoiceEnrollmentActivity"' app/src/main/AndroidManifest.xml
           grep -q 'class StructuredMemoryStore' app/src/main/java/com/seongja/jarvis/StructuredMemoryStore.kt
-          grep -q 'AndroidKeyStore' app/src/main/java/com/seongja/jarvis/StructuredMemoryStore.kt
-          grep -q 'PENDING_OWNER_REVIEW' app/src/main/java/com/seongja/jarvis/StructuredMemoryStore.kt
-          grep -q 'queueDiaryCandidate' app/src/main/java/com/seongja/jarvis/StructuredMemoryStore.kt
-          grep -q 'exportEncryptedPayload' app/src/main/java/com/seongja/jarvis/StructuredMemoryStore.kt
+          grep -q 'object MemorySecretGuard' app/src/main/java/com/seongja/jarvis/MemorySecretGuard.kt
           grep -q 'class MemoryVaultActivity' app/src/main/java/com/seongja/jarvis/MemoryVaultActivity.kt
-          grep -q 'FLAG_SECURE' app/src/main/java/com/seongja/jarvis/MemoryVaultActivity.kt
-          grep -q 'IMPORT FROM APPROVED DIARY' app/src/main/java/com/seongja/jarvis/MemoryVaultActivity.kt
-          grep -q 'CONVERSATION ARCHIVE' app/src/main/java/com/seongja/jarvis/MemoryVaultActivity.kt
-          grep -q 'MemoryVaultCommandParser.parse' app/src/main/java/com/seongja/jarvis/FridayCapabilityRouter.kt
-          grep -q 'OWNER-VERIFIED STRUCTURED MEMORY' app/src/main/java/com/seongja/jarvis/MemoryVault.kt
-          grep -q 'Pending, rejected, session-only, private' app/src/main/java/com/seongja/jarvis/MemoryVault.kt
-          grep -q 'class StructuredMemoryTest' app/src/test/java/com/seongja/jarvis/StructuredMemoryTest.kt
-          grep -q 'android:name=".MemoryVaultActivity"' app/src/main/AndroidManifest.xml
-          grep -q 'android:excludeFromRecents="true"' app/src/main/AndroidManifest.xml
           grep -q 'class PrivateDiaryActivity' app/src/main/java/com/seongja/jarvis/PrivateDiaryActivity.kt
-          grep -q 'enum class DiaryAiAccess' app/src/main/java/com/seongja/jarvis/PrivateDiaryStore.kt
           grep -q 'object GmailAuthorizationRecovery' app/src/main/java/com/seongja/jarvis/GmailAuthorizationRecovery.kt
           grep -q 'class WaApiClient' app/src/main/java/com/seongja/jarvis/WaApiClient.kt
           grep -q 'class GeminiImageClient' app/src/main/java/com/seongja/jarvis/GeminiImageClient.kt
           grep -q 'response-scroll' helix-ui/src/Hud.tsx
           mkdir -p release
-          cp "$APK" release/FRIDAY-0.9.29-Memory-Vault.apk
-          sha256sum release/FRIDAY-0.9.29-Memory-Vault.apk > release/FRIDAY-0.9.29-Memory-Vault.apk.sha256
+          cp "$APK" release/FRIDAY-0.9.30-Owner-Voice.apk
+          sha256sum release/FRIDAY-0.9.30-Owner-Voice.apk > release/FRIDAY-0.9.30-Owner-Voice.apk.sha256
 
       - name: Upload validation logs
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: FRIDAY-0.9.29-memory-vault-validation-logs
+          name: FRIDAY-0.9.30-owner-voice-validation-logs
           path: |
             helix-build.log
             helix-server.log
@@ -167,10 +170,10 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v7
         with:
-          name: FRIDAY-Helix-0.9.29-Memory-Vault-apk
+          name: FRIDAY-Helix-0.9.30-Owner-Voice-apk
           path: |
-            release/FRIDAY-0.9.29-Memory-Vault.apk
-            release/FRIDAY-0.9.29-Memory-Vault.apk.sha256
+            release/FRIDAY-0.9.30-Owner-Voice.apk
+            release/FRIDAY-0.9.30-Owner-Voice.apk.sha256
           if-no-files-found: error
           retention-days: 14
 
@@ -181,6 +184,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="v0.9.29-memory-vault"
+          TAG="v0.9.30-owner-voice"
           if gh release view "$TAG" >/dev/null 2>&1; then gh release delete "$TAG" --cleanup-tag --yes; fi
-          gh release create "$TAG" release/FRIDAY-0.9.29-Memory-Vault.apk release/FRIDAY-0.9.29-Memory-Vault.apk.sha256 --target "$GITHUB_SHA" --title "F.R.I.D.A.Y. 0.9.29 // Memory Vault" --notes "Adds owner-reviewed structured memory, encrypted import/export, correction and retention controls, conversation archive access, double-confirmed diary transfer, and cloud-safe memory filtering while preserving the Private Diary, Gmail recovery, WaAPI, image synthesis, research, weather intelligence, voice, and Android controls."
+          gh release create "$TAG" release/FRIDAY-0.9.30-Owner-Voice.apk release/FRIDAY-0.9.30-Owner-Voice.apk.sha256 --target "$GITHUB_SHA" --title "F.R.I.D.A.Y. 0.9.30 // Owner Voice" --notes "Adds encrypted owner voice feature enrollment, continuous high-confidence acoustic adaptation, language-pattern familiarity, explicit raw-audio deletion, and a strict rule that voice familiarity never authorizes sensitive actions while preserving the Memory Vault, Private Diary, Gmail recovery, WaAPI, image synthesis, research, weather, and Android controls."
