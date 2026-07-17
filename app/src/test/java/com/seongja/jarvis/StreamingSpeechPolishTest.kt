@@ -54,4 +54,16 @@ class StreamingSpeechPolishTest {
         assertTrue(spoken.contains("WhatsApp"))
         assertFalse(spoken.contains("F.R.I.D.A.Y."))
     }
+
+    @Test
+    fun visibleResponseRemovesPlatformEmoji() {
+        val visible = JarvisResponseSanitizer.clean(
+            "Weather alert active. ⚠ Nearby rain ☂ with a provider emoji 😀."
+        )
+
+        assertTrue(visible.contains("Weather alert active."))
+        assertFalse(visible.contains("⚠"))
+        assertFalse(visible.contains("☂"))
+        assertFalse(visible.contains("😀"))
+    }
 }
