@@ -1,0 +1,142 @@
+.workspace-rail {
+  position: fixed;
+  z-index: 32;
+  top: 76px;
+  left: 10px;
+  right: 10px;
+  height: 58px;
+  display: grid;
+  grid-template-columns: 92px minmax(0, 1fr);
+  gap: 6px;
+  padding: 5px;
+  border: 1px solid rgba(55, 126, 255, .4);
+  background:
+    linear-gradient(180deg, rgba(4, 13, 29, .96), rgba(1, 6, 15, .93)),
+    radial-gradient(circle at 50% 0, rgba(var(--accent-rgb, 72 137 255) / .12), transparent 60%);
+  box-shadow: inset 0 0 28px rgba(35, 103, 222, .06), 0 9px 28px rgba(0, 0, 0, .28);
+  clip-path: polygon(0 9px, 9px 0, calc(100% - 9px) 0, 100% 9px, 100% calc(100% - 9px), calc(100% - 9px) 100%, 9px 100%, 0 calc(100% - 9px));
+  pointer-events: none;
+}
+
+.workspace-rail::before {
+  content: "";
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  top: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(79, 147, 255, .92), transparent);
+  box-shadow: 0 0 12px rgba(79, 147, 255, .48);
+}
+
+.workspace-rail-label {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 7px;
+  border-right: 1px solid rgba(68, 136, 255, .19);
+  font-family: "Roboto Mono", ui-monospace, monospace;
+  overflow: hidden;
+}
+
+.workspace-rail-label b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 7px;
+  letter-spacing: .13em;
+  color: rgba(215, 232, 255, .72);
+}
+
+.workspace-rail-label span {
+  margin-top: 5px;
+  font-size: 5.5px;
+  letter-spacing: .15em;
+  color: rgba(75, 145, 255, .75);
+}
+
+.workspace-rail-track {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(74px, 1fr));
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.workspace-rail-track::-webkit-scrollbar { display: none; }
+
+.workspace-capability {
+  position: relative;
+  min-width: 74px;
+  padding: 5px 6px;
+  overflow: hidden;
+  border: 1px solid rgba(63, 132, 255, .2);
+  background: linear-gradient(180deg, rgba(43, 101, 218, .08), rgba(1, 7, 17, .48));
+  font-family: "Roboto Mono", ui-monospace, monospace;
+}
+
+.workspace-capability::after {
+  content: "";
+  position: absolute;
+  right: -16px;
+  bottom: -24px;
+  width: 46px;
+  height: 46px;
+  border: 1px solid rgba(72, 142, 255, .18);
+  transform: rotate(45deg);
+}
+
+.workspace-capability-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 4px;
+  font-size: 4.8px;
+  letter-spacing: .1em;
+  color: rgba(129, 176, 255, .58);
+}
+
+.workspace-capability-head i {
+  font-style: normal;
+  color: rgba(84, 222, 178, .72);
+}
+
+.workspace-capability strong {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 7px;
+  font-weight: 500;
+  letter-spacing: .09em;
+  color: rgba(232, 241, 255, .84);
+}
+
+.workspace-capability small {
+  display: block;
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 4.8px;
+  letter-spacing: .07em;
+  color: rgba(79, 151, 255, .7);
+}
+
+/* Reserve room beneath the fixed header and capability rail. */
+.ops-main {
+  padding-top: 70px !important;
+}
+
+@media (max-width: 390px) {
+  .workspace-rail {
+    grid-template-columns: 68px minmax(0, 1fr);
+    height: 54px;
+    left: 7px;
+    right: 7px;
+  }
+  .workspace-rail-label b { font-size: 5.8px; }
+  .workspace-capability { min-width: 70px; }
+  .ops-main { padding-top: 64px !important; }
+}
