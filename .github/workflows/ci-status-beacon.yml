@@ -52,15 +52,15 @@ jobs:
           cat > "status/${SOURCE_SHA}.json" <<EOF
           {
             "system": "F.R.I.D.A.Y. APK FACTORY",
-            "version": "0.9.25-hud-voice-polish",
+            "version": "0.9.26-waapi-direct",
             "source_sha": "${SOURCE_SHA}",
             "source_branch": "${SOURCE_BRANCH}",
             "event": "${EVENT_NAME}",
             "conclusion": "${BUILD_RESULT}",
             "run_id": "${RUN_ID}",
             "run_number": "${RUN_NUMBER}",
-            "artifact": "FRIDAY-Helix-0.9.25-Hud-Voice-Polish-apk",
-            "release_tag": "v0.9.25-hud-voice-polish"
+            "artifact": "FRIDAY-Helix-0.9.26-WaAPI-Direct-apk",
+            "release_tag": "v0.9.26-waapi-direct"
           }
           EOF
 
