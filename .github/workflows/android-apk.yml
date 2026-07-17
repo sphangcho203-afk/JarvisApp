@@ -1,10 +1,6 @@
 name: Build FRIDAY APK
 
 on:
-  workflow_dispatch:
-  push:
-    branches:
-      - main
   pull_request:
     branches:
       - main
@@ -13,300 +9,34 @@ permissions:
   contents: write
 
 concurrency:
-  group: friday-android-${{ github.workflow }}-${{ github.ref }}
+  group: friday-hud-voice-integration-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  build:
-    name: Validate FRIDAY Gmail OAuth + image APK
+  integrate:
+    name: Integrate custom HUD glyphs and natural speech
     runs-on: ubuntu-latest
-    timeout-minutes: 45
-    env:
-      CI: true
-
+    timeout-minutes: 10
     steps:
-      - name: Checkout repository
+      - name: Checkout polish branch
         uses: actions/checkout@v7
-
-      - name: Set up Node 22
-        uses: actions/setup-node@v7
         with:
-          node-version: '22'
-          cache: npm
-          cache-dependency-path: helix-ui/package.json
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+          token: ${{ github.token }}
 
-      - name: Build FRIDAY Helix locked interface
-        shell: bash
-        run: |
-          set -euo pipefail
-          cd helix-ui
-          npm install --no-audit --no-fund
-          npm run build 2>&1 | tee ../helix-build.log
-          cd ..
-
-          rm -rf app/src/main/assets/helix
-          mkdir -p app/src/main/assets/helix
-          cp -R helix-ui/dist/. app/src/main/assets/helix/
-          test -s app/src/main/assets/helix/index.html
-          test -n "$(find app/src/main/assets/helix/assets -name '*.js' -type f -print -quit)"
-          test -n "$(find app/src/main/assets/helix/assets -name '*.css' -type f -print -quit)"
-
-      - name: Smoke-test locked mobile and desktop interface
-        shell: bash
-        run: |
-          set -euo pipefail
-          CHROME="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
-          test -n "$CHROME"
-          python3 -m http.server 4173 --directory helix-ui/dist > helix-server.log 2>&1 &
-          SERVER_PID=$!
-          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
-          READY=0
-          for _ in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:4173/ > /dev/null; then
-              READY=1
-              break
-            fi
-            sleep 0.5
-          done
-          test "$READY" = 1
-
-          "$CHROME" \
-            --headless=new \
-            --no-sandbox \
-            --disable-dev-shm-usage \
-            --use-gl=swiftshader \
-            --enable-webgl \
-            --virtual-time-budget=7000 \
-            --window-size=432,960 \
-            --screenshot=helix-mobile-smoke.png \
-            --dump-dom \
-            http://127.0.0.1:4173/ > helix-mobile-dom.html
-
-          "$CHROME" \
-            --headless=new \
-            --no-sandbox \
-            --disable-dev-shm-usage \
-            --use-gl=swiftshader \
-            --enable-webgl \
-            --virtual-time-budget=7000 \
-            --window-size=1280,720 \
-            --screenshot=helix-desktop-smoke.png \
-            http://127.0.0.1:4173/ > /dev/null
-
-          grep -q 'F.R.I.D.A.Y.' helix-mobile-dom.html
-          grep -q 'HELIX OPS' helix-mobile-dom.html
-          grep -q 'BUILD 0.9.24' helix-mobile-dom.html
-          grep -q 'RESPONSE TERMINAL' helix-mobile-dom.html
-          grep -q 'LATENCY' helix-mobile-dom.html
-          grep -q 'WEATHER CORE' helix-mobile-dom.html
-          grep -q 'VOICE LINK' helix-mobile-dom.html
-          grep -q 'telemetry-rails' helix-mobile-dom.html
-          grep -q 'status-dock' helix-mobile-dom.html
-          grep -q 'service-strip' helix-mobile-dom.html
-          grep -q 'terminal-log' helix-mobile-dom.html
-          grep -q 'operations emblem' helix-mobile-dom.html
-
-          if grep -q 'JARVIS // HELIX' helix-mobile-dom.html; then
-            echo 'Legacy Jarvis header is still visible.' >&2
-            exit 1
-          fi
-          if grep -q 'TYPE COMMAND' helix-mobile-dom.html || grep -q '>SEND<' helix-mobile-dom.html; then
-            echo 'Chat input controls are still present.' >&2
-            exit 1
-          fi
-          if grep -q 'RENDER FALLBACK ONLINE' helix-mobile-dom.html; then
-            echo 'Helix entered render fallback.' >&2
-            exit 1
-          fi
-
-      - name: Set up JDK 17
-        uses: actions/setup-java@v5
-        with:
-          distribution: temurin
-          java-version: '17'
-
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v4
-
-      - name: Install Android SDK 35
-        shell: bash
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
-
-      - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
-        with:
-          gradle-version: 8.10.2
-
-      - name: Lint, test, and build debug APK
-        shell: bash
-        run: |
-          set -o pipefail
-          gradle \
-            :app:lintDebug \
-            :app:testDebugUnitTest \
-            :app:assembleDebug \
-            --stacktrace \
-            --warning-mode all \
-            --no-daemon 2>&1 | tee android-build.log
-
-      - name: Verify Gmail OAuth, image intelligence, and locked systems
-        shell: bash
-        run: |
-          set -euo pipefail
-          APK="$(find app/build/outputs/apk/debug -name '*.apk' -type f | head -n 1)"
-          test -n "$APK"
-          BUILD_TOOLS="$ANDROID_HOME/build-tools/35.0.0"
-
-          "$BUILD_TOOLS/apksigner" verify --verbose --print-certs "$APK" 2>&1 | tee apk-signature.log
-          "$BUILD_TOOLS/zipalign" -c -v 4 "$APK" 2>&1 | tee apk-zipalign.log
-          "$BUILD_TOOLS/aapt" dump badging "$APK" | tee apk-badging.log
-          "$BUILD_TOOLS/aapt" dump permissions "$APK" | tee apk-permissions.log
-          unzip -l "$APK" | tee apk-contents.log
-
-          grep -q "package: name='com.seongja.jarvis'" apk-badging.log
-          grep -q "versionName='0.9.24-gmail-image'" apk-badging.log
-          grep -q "application-label:'F.R.I.D.A.Y.'" apk-badging.log
-          grep -q "sdkVersion:'28'" apk-badging.log
-          grep -q "targetSdkVersion:'35'" apk-badging.log
-          grep -q "android.permission.INTERNET" apk-permissions.log
-          grep -q "android.permission.RECORD_AUDIO" apk-permissions.log
-          grep -q 'classes.dex' apk-contents.log
-          grep -q 'assets/helix/index.html' apk-contents.log
-
-          grep -q 'FridayMark' helix-ui/src/Hud.tsx
-          grep -q 'telemetry-rails' helix-ui/src/Hud.tsx
-          grep -q 'status-dock' helix-ui/src/Hud.tsx
-          grep -q 'service-strip' helix-ui/src/Hud.tsx
-          grep -q 'terminal-log' helix-ui/src/Hud.tsx
-          grep -q 'compactLogs' helix-ui/src/Hud.tsx
-          grep -q 'normalizeOperationalEvent' helix-ui/src/nativeBridge.ts
-          grep -q 'core-state-title' helix-ui/src/styles.css
-          grep -q 'helix-mobile-smoke.png' .github/workflows/android-apk.yml
-          grep -q "type: 'operation'" helix-ui/src/types.ts
-
-          grep -q 'play-services-auth:21.6.0' app/build.gradle.kts
-          grep -q 'class GmailAuthorizationActivity' app/src/main/java/com/seongja/jarvis/GmailAuthorizationActivity.kt
-          grep -q 'AuthorizationRequest.builder' app/src/main/java/com/seongja/jarvis/GmailAuthorizationActivity.kt
-          grep -q 'class GmailAuthStore' app/src/main/java/com/seongja/jarvis/GmailAuthStore.kt
-          grep -q 'gmail.modify' app/src/main/java/com/seongja/jarvis/GmailAuthStore.kt
-          grep -q 'users/me/messages/send' app/src/main/java/com/seongja/jarvis/GmailApiClient.kt
-          grep -q 'users/me/drafts' app/src/main/java/com/seongja/jarvis/GmailApiClient.kt
-          grep -q 'token_not_persisted' app/src/main/java/com/seongja/jarvis/FridayCapabilityRouter.kt
-          grep -q 'CONNECT / MANAGE GMAIL OAUTH' app/src/main/java/com/seongja/jarvis/CloudConfigActivity.kt
-          grep -q 'GmailAuthorizationActivity' app/src/main/AndroidManifest.xml
-
-          grep -q 'class GeminiImageClient' app/src/main/java/com/seongja/jarvis/GeminiImageClient.kt
-          grep -q 'gemini-3.1-flash-lite-image' app/src/main/java/com/seongja/jarvis/GeminiImageClient.kt
-          grep -q 'gemini-2.5-flash-image' app/src/main/java/com/seongja/jarvis/GeminiImageClient.kt
-          grep -q 'class ImageGenerationActivity' app/src/main/java/com/seongja/jarvis/ImageGenerationActivity.kt
-          grep -q 'Pictures/FRIDAY' app/src/main/java/com/seongja/jarvis/ImageGenerationActivity.kt
-          grep -q 'capabilityRouter.intercept' app/src/main/java/com/seongja/jarvis/JarvisBrain.kt
-          grep -q 'ImageGenerationActivity' app/src/main/AndroidManifest.xml
-
-          grep -q 'class NetworkHealthMonitor' app/src/main/java/com/seongja/jarvis/NetworkHealthMonitor.kt
-          grep -q 'LIVE WEB SEARCH' app/src/main/java/com/seongja/jarvis/JarvisBrain.kt
-          grep -q 'Searching the web, Sir.' app/src/main/java/com/seongja/jarvis/JarvisBrain.kt
-          grep -q 'class DeepSeekClient' app/src/main/java/com/seongja/jarvis/DeepSeekClient.kt
-          grep -q 'class YouTubeDataClient' app/src/main/java/com/seongja/jarvis/YouTubeDataClient.kt
-          grep -q 'backupApiKeys' app/src/main/java/com/seongja/jarvis/CartesiaVoiceSettings.kt
-          grep -q 'FAILOVER TO' app/src/main/java/com/seongja/jarvis/CartesiaSonicClient.kt
-          grep -q 'FORECAST_ENDPOINT = "https://api.weatherapi.com/v1/forecast.json"' app/src/main/java/com/seongja/jarvis/WeatherSettings.kt
-          grep -q 'class PermissionCenterActivity' app/src/main/java/com/seongja/jarvis/PermissionCenterActivity.kt
-          grep -q 'MODEL_ID = "sonic-3"' app/src/main/java/com/seongja/jarvis/CartesiaVoiceSettings.kt
-          grep -q 'AudioTrack.MODE_STREAM' app/src/main/java/com/seongja/jarvis/CartesiaSonicClient.kt
-          grep -q 'streamGenerateContent?alt=sse' app/src/main/java/com/seongja/jarvis/CortexStreamingTransport.kt
-
-          mkdir -p release
-          cp "$APK" release/FRIDAY-0.9.24-Gmail-Image.apk
-          sha256sum release/FRIDAY-0.9.24-Gmail-Image.apk > release/FRIDAY-0.9.24-Gmail-Image.apk.sha256
-
-      - name: Upload validation logs
-        if: always()
-        uses: actions/upload-artifact@v7
-        with:
-          name: FRIDAY-0.9.24-gmail-image-validation-logs
-          path: |
-            helix-build.log
-            helix-server.log
-            helix-mobile-dom.html
-            helix-mobile-smoke.png
-            helix-desktop-smoke.png
-            android-build.log
-            apk-signature.log
-            apk-zipalign.log
-            apk-badging.log
-            apk-permissions.log
-            apk-contents.log
-            app/build/reports/lint-results-debug.html
-            app/build/reports/tests/testDebugUnitTest/
-          if-no-files-found: warn
-          retention-days: 14
-
-      - name: Upload verified APK artifact
-        if: success()
-        uses: actions/upload-artifact@v7
-        with:
-          name: FRIDAY-Helix-0.9.24-Gmail-Image-apk
-          path: |
-            release/FRIDAY-0.9.24-Gmail-Image.apk
-            release/FRIDAY-0.9.24-Gmail-Image.apk.sha256
-          if-no-files-found: error
-          retention-days: 14
-
-      - name: Publish stable FRIDAY release
-        if: success() && github.event_name == 'push' && github.ref == 'refs/heads/main'
+      - name: Restore factory and apply production patch
         shell: bash
         env:
-          GH_TOKEN: ${{ github.token }}
+          HEAD_BRANCH: ${{ github.head_ref }}
         run: |
           set -euo pipefail
-          TAG="v0.9.24-gmail-image"
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release delete "$TAG" --cleanup-tag --yes
-          fi
-          gh release create "$TAG" \
-            release/FRIDAY-0.9.24-Gmail-Image.apk \
-            release/FRIDAY-0.9.24-Gmail-Image.apk.sha256 \
-            --target "$GITHUB_SHA" \
-            --title "F.R.I.D.A.Y. 0.9.24 // Gmail + Image Intelligence" \
-            --notes "Verified Android build preserving the locked premium HELIX interface while adding Google Identity Services Gmail authorization, private mailbox commands, and Gemini image synthesis with preview, gallery save, regeneration, and sharing. Existing network, research, voice failover, DeepSeek, YouTube, weather, and Android systems remain intact."
+          git fetch origin main
+          git show origin/main:.github/workflows/android-apk.yml > .github/workflows/android-apk.yml
+          python3 ci/apply_0_9_25_hud_voice_patch.py
 
-      - name: Publish failed build diagnostics
-        if: failure()
-        shell: bash
-        env:
-          SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
-          BUILD_RUN_ID: ${{ github.run_id }}
-        run: |
-          set -euo pipefail
-          mkdir -p /tmp/friday-failed
-          for candidate in \
-            helix-build.log helix-server.log helix-mobile-dom.html android-build.log \
-            apk-signature.log apk-zipalign.log apk-badging.log apk-permissions.log apk-contents.log; do
-            if test -f "$candidate"; then
-              cp "$candidate" "/tmp/friday-failed/$candidate"
-            fi
-          done
-          cat > /tmp/friday-failed/summary.json <<EOF
-          {
-            "source_sha": "$SOURCE_SHA",
-            "run_id": "$BUILD_RUN_ID",
-            "event": "$GITHUB_EVENT_NAME",
-            "result": "failure"
-          }
-          EOF
-
-          git config user.name "FRIDAY Diagnostic Core"
+          git config user.name "FRIDAY Interface Core"
           git config user.email "actions@users.noreply.github.com"
-          if git fetch origin ci-diagnostics:refs/remotes/origin/ci-diagnostics 2>/dev/null; then
-            git checkout -B ci-diagnostics-work refs/remotes/origin/ci-diagnostics
-          else
-            git checkout --orphan ci-diagnostics-work
-            git rm -rf . >/dev/null 2>&1 || true
-          fi
-          rm -rf "diagnostics/$SOURCE_SHA"
-          mkdir -p "diagnostics/$SOURCE_SHA"
-          cp -R /tmp/friday-failed/. "diagnostics/$SOURCE_SHA/"
-          git add diagnostics
-          git commit -m "Record failed FRIDAY build ${SOURCE_SHA:0:12}" || true
-          git push --force origin HEAD:ci-diagnostics
+          git add -A
+          git commit -m "Integrate custom HUD glyphs and natural speech"
+          git push origin "HEAD:${HEAD_BRANCH}"
