@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!--
+      FRIDAY is a private, owner-specific English tactical interface. Its status
+      panels intentionally assemble live telemetry, provider names, counters,
+      and diagnostic codes at runtime rather than presenting translatable copy.
+    -->
+    <issue id="SetTextI18n" severity="ignore" />
+</lint>
