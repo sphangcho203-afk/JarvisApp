@@ -12,11 +12,12 @@
   position: absolute;
   z-index: 1;
   left: 50%;
-  top: 50%;
+  top: 52%;
+  right: auto;
+  bottom: auto;
   width: min(55vw, 315px);
   aspect-ratio: 1;
   transform: translate(-50%, -50%);
-  inset: auto;
   border: 1px solid rgba(var(--accent-rgb) / .58);
   border-radius: 999px;
   background:
@@ -54,11 +55,12 @@
   position: absolute;
   z-index: 2;
   left: 50%;
-  top: 50%;
+  top: 52%;
+  right: auto;
+  bottom: auto;
   width: min(62vw, 355px);
   aspect-ratio: 1;
   transform: translate(-50%, -50%);
-  inset: auto;
   border: 1px solid rgba(var(--accent-rgb) / .3);
   border-radius: 999px;
   background:
