@@ -30,11 +30,11 @@ private data class ProviderSearchResponse(
 )
 
 /**
- * JARVIS Search Grid
+ * F.R.I.D.A.Y. Search Grid.
  *
- * Tavily handles current web discovery and news. Exa handles semantic retrieval
- * and deep-page evidence. Results are normalized, deduplicated, then passed to
- * the existing cortex mesh for grounded synthesis with numbered citations.
+ * Tavily handles current web discovery and news. Exa provides semantic retrieval
+ * and deep-page evidence. Provider results are normalized, deduplicated, and
+ * passed to the cortex mesh for grounded synthesis with numbered citations.
  */
 class SearchGridResearchClient(
     private val searchStore: SecureSearchGridRegistry,
@@ -111,7 +111,8 @@ class SearchGridResearchClient(
 
         if (evidence.isEmpty()) {
             throw SearchGridException(
-                "Search providers returned no usable evidence. ${failures.joinToString(" | ").take(360)}"
+                "Search providers returned no usable evidence. " +
+                    failures.joinToString(" | ").take(360)
             )
         }
 
@@ -185,7 +186,8 @@ class SearchGridResearchClient(
                 put("include_images", false)
                 put("include_favicon", false)
                 put("auto_parameters", false)
-                put("safe_search", true)
+                // safe_search is intentionally omitted. Tavily restricts it to
+                // Gold and Silver Enterprise plans, so standard plans return 403.
                 if (plan.news) put("time_range", if (plan.deep) "week" else "day")
                 if (plan.deep) put("chunks_per_source", 3)
             }
@@ -325,8 +327,10 @@ class SearchGridResearchClient(
             lower.contains("investigate") ||
             lower.contains("full report")
         val news = WebResearchIntent.isWorldBrief(clean) ||
-            Regex("\\b(news|latest|today|current|recent|breaking|update)\\b", RegexOption.IGNORE_CASE)
-                .containsMatchIn(clean)
+            Regex(
+                "\\b(news|latest|today|current|recent|breaking|update)\\b",
+                RegexOption.IGNORE_CASE
+            ).containsMatchIn(clean)
         val technical = Regex(
             "\\b(api|android|kotlin|java|python|code|documentation|library|framework|research paper|arxiv|github|software|technical)\\b",
             RegexOption.IGNORE_CASE
@@ -376,8 +380,8 @@ class SearchGridResearchClient(
         appendLine("When evidence conflicts, describe the conflict and reduce confidence.")
         appendLine("Do not print raw URLs because the Android client attaches them below the answer.")
         appendLine("Speak directly to Seongja as you or Sir. Never call him the user or operator.")
-        appendLine("Return only the final intelligence brief. Never output <think>, <analysis>, scratchpad, or preparation text.")
-        appendLine("Start with the actual answer. Do not say that you can provide a summary or mention a knowledge cutoff.")
+        appendLine("Return only the final intelligence brief. Never output scratchpad or preparation text.")
+        appendLine("Start with the actual answer. Do not mention a knowledge cutoff.")
         appendLine()
         appendLine("EVIDENCE PACKET")
         evidence.forEachIndexed { index, source ->
@@ -395,7 +399,8 @@ class SearchGridResearchClient(
         input.forEach { candidate ->
             val key = canonicalUrl(candidate.url)
             val previous = byUrl[key]
-            if (previous == null || candidate.relevance > previous.relevance ||
+            if (previous == null ||
+                candidate.relevance > previous.relevance ||
                 candidate.snippet.length > previous.snippet.length
             ) {
                 byUrl[key] = candidate
@@ -473,7 +478,7 @@ class SearchGridResearchClient(
             useCaches = false
             setRequestProperty("Content-Type", "application/json; charset=utf-8")
             setRequestProperty("Accept", "application/json")
-            setRequestProperty("User-Agent", "Jarvis-Android/0.9.5")
+            setRequestProperty("User-Agent", "FRIDAY-Android/0.9.24")
             headers.forEach { (name, value) -> setRequestProperty(name, value) }
         }
 
@@ -546,7 +551,10 @@ class SearchGridResearchClient(
 
     private fun redact(value: String): String = value
         .replace(Regex("tvly-[A-Za-z0-9_-]+"), "[redacted]")
-        .replace(Regex("(?i)(x-api-key|authorization)\\s*[:=]\\s*[^\\s,;]+"), "$1=[redacted]")
+        .replace(
+            Regex("(?i)(x-api-key|authorization)\\s*[:=]\\s*[^\\s,;]+"),
+            "$1=[redacted]"
+        )
         .replace(Regex("\\s+"), " ")
         .trim()
 
