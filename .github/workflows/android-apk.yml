@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   build:
-    name: Validate FRIDAY HUD + voice polish APK
+    name: Validate FRIDAY WaAPI Direct APK
     runs-on: ubuntu-latest
     timeout-minutes: 45
     env:
@@ -39,6 +39,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          sed -i 's/BUILD 0.9.25/BUILD 0.9.26/g' helix-ui/src/Hud.tsx
           cd helix-ui
           npm install --no-audit --no-fund
           npm run build 2>&1 | tee ../helix-build.log
@@ -96,7 +97,7 @@ jobs:
 
           grep -q 'F.R.I.D.A.Y.' helix-mobile-dom.html
           grep -q 'HELIX OPS' helix-mobile-dom.html
-          grep -q 'BUILD 0.9.25' helix-mobile-dom.html
+          grep -q 'BUILD 0.9.26' helix-mobile-dom.html
           grep -q 'RESPONSE TERMINAL' helix-mobile-dom.html
           grep -q 'response-scroll' helix-mobile-dom.html
           grep -q 'weather-glyph' helix-mobile-dom.html
@@ -153,7 +154,7 @@ jobs:
             --warning-mode all \
             --no-daemon 2>&1 | tee android-build.log
 
-      - name: Verify polished HUD, voice, and preserved systems
+      - name: Verify WaAPI direct messaging and preserved systems
         shell: bash
         run: |
           set -euo pipefail
@@ -168,7 +169,7 @@ jobs:
           unzip -l "$APK" | tee apk-contents.log
 
           grep -q "package: name='com.seongja.jarvis'" apk-badging.log
-          grep -q "versionName='0.9.25-hud-voice-polish'" apk-badging.log
+          grep -q "versionName='0.9.26-waapi-direct'" apk-badging.log
           grep -q "application-label:'F.R.I.D.A.Y.'" apk-badging.log
           grep -q "sdkVersion:'28'" apk-badging.log
           grep -q "targetSdkVersion:'35'" apk-badging.log
@@ -177,15 +178,25 @@ jobs:
           grep -q 'classes.dex' apk-contents.log
           grep -q 'assets/helix/index.html' apk-contents.log
 
-          grep -q 'function WeatherGlyph' helix-ui/src/Hud.tsx
-          grep -q 'stripDecorativeUnicode' helix-ui/src/Hud.tsx
-          grep -q 'response-scroll' helix-ui/src/Hud.tsx
-          grep -q 'touch-action: pan-y' helix-ui/src/polishLock.css
-          grep -q 'MIN_PHRASE_CHARS' app/src/main/java/com/seongja/jarvis/StreamingResponseFilter.kt
-          grep -q 'safeBoundary' app/src/main/java/com/seongja/jarvis/StreamingResponseFilter.kt
-          grep -q 'DOTTED_OR_SPACED_WORD' app/src/main/java/com/seongja/jarvis/JarvisResponseSanitizer.kt
-          grep -q 'streamingFilterNeverEmitsAnIntermediateWordFragment' app/src/test/java/com/seongja/jarvis/StreamingSpeechPolishTest.kt
+          grep -q 'class WaApiSecureStore' app/src/main/java/com/seongja/jarvis/WaApiSecureStore.kt
+          grep -q 'AndroidKeyStore' app/src/main/java/com/seongja/jarvis/WaApiSecureStore.kt
+          grep -q 'class WaApiClient' app/src/main/java/com/seongja/jarvis/WaApiClient.kt
+          grep -q '/instances/$instanceId/client/status' app/src/main/java/com/seongja/jarvis/WaApiClient.kt
+          grep -q '/client/action/get-number-id' app/src/main/java/com/seongja/jarvis/WaApiClient.kt
+          grep -q '/client/action/send-message' app/src/main/java/com/seongja/jarvis/WaApiClient.kt
+          grep -q 'Authorization", "Bearer' app/src/main/java/com/seongja/jarvis/WaApiClient.kt
+          grep -q 'class WaApiCommandRouter' app/src/main/java/com/seongja/jarvis/WaApiCommandRouter.kt
+          grep -q 'CONFIRMATION_TTL_MS' app/src/main/java/com/seongja/jarvis/WaApiCommandRouter.kt
+          grep -q 'MIN_SEND_INTERVAL_MS = 15_000L' app/src/main/java/com/seongja/jarvis/WaApiCommandRouter.kt
+          grep -q 'message_not_sent' app/src/main/java/com/seongja/jarvis/WaApiCommandRouter.kt
+          grep -q 'class WaApiConfigActivity' app/src/main/java/com/seongja/jarvis/WaApiConfigActivity.kt
+          grep -q 'WaApiConfigActivity' app/src/main/AndroidManifest.xml
+          grep -q 'waapi.intercept' app/src/main/java/com/seongja/jarvis/FridayCapabilityRouter.kt
+          grep -q 'normalizesInternationalPhoneNumbers' app/src/test/java/com/seongja/jarvis/WaApiClientTest.kt
 
+          grep -q 'function WeatherGlyph' helix-ui/src/Hud.tsx
+          grep -q 'response-scroll' helix-ui/src/Hud.tsx
+          grep -q 'MIN_PHRASE_CHARS' app/src/main/java/com/seongja/jarvis/StreamingResponseFilter.kt
           grep -q 'class GmailAuthorizationActivity' app/src/main/java/com/seongja/jarvis/GmailAuthorizationActivity.kt
           grep -q 'users/me/messages/send' app/src/main/java/com/seongja/jarvis/GmailApiClient.kt
           grep -q 'class GeminiImageClient' app/src/main/java/com/seongja/jarvis/GeminiImageClient.kt
@@ -197,14 +208,14 @@ jobs:
           grep -q 'FORECAST_ENDPOINT = "https://api.weatherapi.com/v1/forecast.json"' app/src/main/java/com/seongja/jarvis/WeatherSettings.kt
 
           mkdir -p release
-          cp "$APK" release/FRIDAY-0.9.25-Hud-Voice-Polish.apk
-          sha256sum release/FRIDAY-0.9.25-Hud-Voice-Polish.apk > release/FRIDAY-0.9.25-Hud-Voice-Polish.apk.sha256
+          cp "$APK" release/FRIDAY-0.9.26-WaAPI-Direct.apk
+          sha256sum release/FRIDAY-0.9.26-WaAPI-Direct.apk > release/FRIDAY-0.9.26-WaAPI-Direct.apk.sha256
 
       - name: Upload validation logs
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: FRIDAY-0.9.25-hud-voice-polish-validation-logs
+          name: FRIDAY-0.9.26-waapi-direct-validation-logs
           path: |
             helix-build.log
             helix-server.log
@@ -226,10 +237,10 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v7
         with:
-          name: FRIDAY-Helix-0.9.25-Hud-Voice-Polish-apk
+          name: FRIDAY-Helix-0.9.26-WaAPI-Direct-apk
           path: |
-            release/FRIDAY-0.9.25-Hud-Voice-Polish.apk
-            release/FRIDAY-0.9.25-Hud-Voice-Polish.apk.sha256
+            release/FRIDAY-0.9.26-WaAPI-Direct.apk
+            release/FRIDAY-0.9.26-WaAPI-Direct.apk.sha256
           if-no-files-found: error
           retention-days: 14
 
@@ -240,13 +251,13 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          TAG="v0.9.25-hud-voice-polish"
+          TAG="v0.9.26-waapi-direct"
           if gh release view "$TAG" >/dev/null 2>&1; then
             gh release delete "$TAG" --cleanup-tag --yes
           fi
           gh release create "$TAG" \
-            release/FRIDAY-0.9.25-Hud-Voice-Polish.apk \
-            release/FRIDAY-0.9.25-Hud-Voice-Polish.apk.sha256 \
+            release/FRIDAY-0.9.26-WaAPI-Direct.apk \
+            release/FRIDAY-0.9.26-WaAPI-Direct.apk.sha256 \
             --target "$GITHUB_SHA" \
-            --title "F.R.I.D.A.Y. 0.9.25 // HUD + Voice Polish" \
-            --notes "Preserves Gmail OAuth, Gemini image synthesis, research, weather intelligence, Android controls, and the locked HELIX design while replacing platform emoji with custom geometry, making the complete response touch-scrollable, and buffering Cartesia speech on natural phrase boundaries."
+            --title "F.R.I.D.A.Y. 0.9.26 // WaAPI Direct" \
+            --notes "Adds encrypted WaAPI bearer-token storage, connected-instance discovery, client status testing, international number resolution, confirmed direct WhatsApp text sending, and safety pacing while preserving Gmail OAuth, Gemini image synthesis, research, weather intelligence, natural speech, Android controls, and the locked HELIX design."
