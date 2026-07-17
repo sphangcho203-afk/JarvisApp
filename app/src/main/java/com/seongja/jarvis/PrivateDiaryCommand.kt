@@ -15,6 +15,11 @@ object PrivateDiaryCommandParser {
         RegexOption.IGNORE_CASE
     )
 
+    private val relativeTime = Regex(
+        "\\b(today|yesterday|this week|last week|this month|last month|last (monday|tuesday|wednesday|thursday|friday|saturday|sunday))\\b",
+        RegexOption.IGNORE_CASE
+    )
+
     fun parse(raw: String): PrivateDiaryCommand? {
         val clean = normalize(raw)
         if (clean.isBlank()) return null
@@ -28,6 +33,20 @@ object PrivateDiaryCommandParser {
             return PrivateDiaryCommand.SecureVault
         }
 
+        if (
+            Regex("\\b(what|show|find|search|read|look)\\b").containsMatchIn(clean) &&
+            Regex("\\b(i wrote|i recorded|my entries|my notes|diary|journal)\\b").containsMatchIn(clean)
+        ) {
+            val period = relativeTime.find(clean)?.value
+            if (!period.isNullOrBlank()) return PrivateDiaryCommand.Search(period)
+
+            val topic = Regex(
+                "(?:about|for|containing|on)\\s+(.+)",
+                RegexOption.IGNORE_CASE
+            ).find(clean)?.groupValues?.getOrNull(1)?.trim()
+            if (!topic.isNullOrBlank()) return PrivateDiaryCommand.Search(topic.take(240))
+        }
+
         if (!diaryNouns.containsMatchIn(clean)) return null
 
         if (
@@ -38,11 +57,17 @@ object PrivateDiaryCommandParser {
         }
 
         val searchMatch = Regex(
-            "(?:find|search|show|look for)\\s+(?:my\\s+)?(?:private\\s+)?(?:diary(?:\\s+entries?)?|journal(?:\\s+entries?)?|notes?|entries)\\s+(?:for|about|containing)\\s+(.+)",
+            "(?:find|search|show|look for|read)\\s+(?:my\\s+)?(?:private\\s+)?(?:diary(?:\\s+entries?)?|journal(?:\\s+entries?)?|notes?|entries)\\s+(?:for|about|containing|on)\\s+(.+)",
             RegexOption.IGNORE_CASE
         ).find(clean)
         if (searchMatch != null) {
             return PrivateDiaryCommand.Search(searchMatch.groupValues[1].trim().take(240))
+        }
+
+        relativeTime.find(clean)?.value?.let { period ->
+            if (Regex("\\b(show|find|search|read|what)\\b").containsMatchIn(clean)) {
+                return PrivateDiaryCommand.Search(period)
+            }
         }
 
         if (
