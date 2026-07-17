@@ -11,8 +11,8 @@ android {
         applicationId = "com.seongja.jarvis"
         minSdk = 28
         targetSdk = 35
-        versionCode = 36
-        versionName = "0.9.26-waapi-direct"
+        versionCode = 37
+        versionName = "0.9.27-gmail-recovery"
     }
 
     buildTypes {
