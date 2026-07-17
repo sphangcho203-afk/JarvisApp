@@ -38,7 +38,7 @@ object PrivateDiaryCommandParser {
         }
 
         val searchMatch = Regex(
-            "(?:find|search|show|look for)\\s+(?:my\\s+)?(?:private\\s+)?(?:diary|journal|notes?|entries)\\s+(?:for|about|containing)\\s+(.+)",
+            "(?:find|search|show|look for)\\s+(?:my\\s+)?(?:private\\s+)?(?:diary(?:\\s+entries?)?|journal(?:\\s+entries?)?|notes?|entries)\\s+(?:for|about|containing)\\s+(.+)",
             RegexOption.IGNORE_CASE
         ).find(clean)
         if (searchMatch != null) {
