@@ -2,6 +2,8 @@ package com.seongja.jarvis
 
 import android.Manifest
 import android.content.ComponentName
+import android.content.Context
+import android.content.Intent
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -21,7 +23,12 @@ class RuntimeSmokeTest {
 
     @Test
     fun mainActivityCreatesARealAndroidWindow() {
-        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val intent = Intent(context, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            .putExtra(JarvisApplication.EXTRA_SKIP_ONBOARDING_FOR_TESTS, true)
+
+        ActivityScenario.launch<MainActivity>(intent).use { scenario ->
             scenario.onActivity { activity ->
                 assertFalse(activity.isFinishing)
                 assertNotNull(activity.window)
@@ -33,7 +40,7 @@ class RuntimeSmokeTest {
 
     @Test
     fun protectedConsolesAreNotExported() {
-        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        val context = ApplicationProvider.getApplicationContext<Context>()
         val packageManager = context.packageManager
         listOf(
             CloudConfigActivity::class.java,
