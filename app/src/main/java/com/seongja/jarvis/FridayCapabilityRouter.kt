@@ -9,12 +9,15 @@ class FridayCapabilityRouter(context: Context) {
     private val gmail = GmailApiClient(appContext)
     private val gmailAuth = GmailAuthStore(appContext)
     private val images = GeminiImageClient(appContext)
+    private val waapi = WaApiCommandRouter(appContext)
 
     fun statusLabel(): String = buildString {
         append("Gmail ")
         append(if (gmailAuth.load().isAuthorized()) "authorized" else "consent")
         append(" // image ")
         append(if (images.isConfigured()) "ready" else "key required")
+        append(" // WhatsApp ")
+        append(waapi.statusLabel())
     }
 
     fun intercept(
@@ -22,6 +25,8 @@ class FridayCapabilityRouter(context: Context) {
         memorySummary: String,
         onToken: ((String) -> Unit)? = null
     ): BrainResponse? {
+        waapi.intercept(input, memorySummary, onToken)?.let { return it }
+
         ImageCommandIntent.promptFor(input)?.let { prompt ->
             JarvisOperationBus.publish("IMAGE SYNTHESIS", "OPENING GEMINI VISUAL STUDIO", .08f)
             onToken?.invoke("Opening image synthesis, Sir. ")
