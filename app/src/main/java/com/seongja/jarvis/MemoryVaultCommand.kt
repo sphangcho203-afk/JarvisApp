@@ -17,8 +17,9 @@ object MemoryVaultCommandParser {
             .trim()
         if (clean.isBlank()) return null
 
-        val namesVault = Regex("\\b(memory vault|memory center|memory settings|saved memories|long term memory)\\b")
-            .containsMatchIn(clean)
+        val namesVault = Regex(
+            "\\b(memory vault|memory center|memory settings|saved memories|long term memory|memory queue)\\b"
+        ).containsMatchIn(clean)
         if (!namesVault) return null
 
         if (Regex("\\b(conversation archive|conversation history|old conversations)\\b").containsMatchIn(clean)) {
