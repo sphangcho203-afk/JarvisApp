@@ -114,43 +114,4 @@ replace_once(
     '        versionCode = 35\n        versionName = "0.9.25-hud-voice-polish"',
 )
 
-# Upgrade the restored production factory and its status beacon.
-workflow = Path(".github/workflows/android-apk.yml")
-workflow_text = workflow.read_text(encoding="utf-8")
-workflow_text = workflow_text.replace("Validate FRIDAY Gmail OAuth + image APK", "Validate FRIDAY HUD + voice polish APK")
-workflow_text = workflow_text.replace("BUILD 0.9.24", "BUILD 0.9.25")
-workflow_text = workflow_text.replace("0.9.24-gmail-image", "0.9.25-hud-voice-polish")
-workflow_text = workflow_text.replace("0.9.24-Gmail-Image", "0.9.25-Hud-Voice-Polish")
-workflow_text = workflow_text.replace(
-    "F.R.I.D.A.Y. 0.9.24 // Gmail + Image Intelligence",
-    "F.R.I.D.A.Y. 0.9.25 // HUD + Voice Polish",
-)
-workflow_text = workflow_text.replace(
-    "Verified Android build preserving the locked premium HELIX composition while adding Google Identity Services Gmail authorization, private mailbox commands, and Gemini image synthesis with gallery preview and sharing. Existing network, research, voice failover, DeepSeek, YouTube, weather, and Android systems remain intact.",
-    "Verified Android build preserving Gmail OAuth, Gemini image synthesis, research, voice failover, and Android controls while replacing platform weather emoji with custom HELIX geometry, making the complete response independently scrollable, and buffering natural speech at phrase boundaries.",
-)
-check_anchor = "          grep -q 'capabilityRouter.intercept' app/src/main/java/com/seongja/jarvis/JarvisBrain.kt\n"
-checks = check_anchor + """          grep -q 'function WeatherGlyph' helix-ui/src/Hud.tsx
-          grep -q 'stripDecorativeUnicode' helix-ui/src/Hud.tsx
-          grep -q 'response-scroll' helix-ui/src/Hud.tsx
-          grep -q 'touch-action: pan-y' helix-ui/src/polishLock.css
-          grep -q 'MIN_PHRASE_CHARS' app/src/main/java/com/seongja/jarvis/StreamingResponseFilter.kt
-          grep -q 'DOTTED_OR_SPACED_WORD' app/src/main/java/com/seongja/jarvis/JarvisResponseSanitizer.kt
-          if grep -Eq '[⚠☂❄☁☼⛈]' helix-ui/src/Hud.tsx; then
-            echo 'Platform weather emoji remain in the locked HUD.' >&2
-            exit 1
-          fi
-"""
-if "function WeatherGlyph" not in workflow_text:
-    if check_anchor not in workflow_text:
-        raise SystemExit("Production workflow capability anchor missing")
-    workflow_text = workflow_text.replace(check_anchor, checks, 1)
-workflow.write_text(workflow_text, encoding="utf-8")
-
-beacon = Path(".github/workflows/ci-status-beacon.yml")
-beacon_text = beacon.read_text(encoding="utf-8")
-beacon_text = beacon_text.replace("0.9.24-gmail-image", "0.9.25-hud-voice-polish")
-beacon_text = beacon_text.replace("0.9.24-Gmail-Image", "0.9.25-Hud-Voice-Polish")
-beacon.write_text(beacon_text, encoding="utf-8")
-
 Path(__file__).unlink()
