@@ -27,6 +27,7 @@ import java.util.UUID
 class MemoryVaultActivity : Activity() {
     private lateinit var store: StructuredMemoryStore
     private lateinit var legacy: MemoryVault
+    private lateinit var diary: PrivateDiaryStore
     private var unlocked = false
     private var externalFlow = false
     private var initialQuery = ""
@@ -37,6 +38,7 @@ class MemoryVaultActivity : Activity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
         store = StructuredMemoryStore(this)
         legacy = MemoryVault(this)
+        diary = PrivateDiaryStore(this)
         initialQuery = intent.getStringExtra(EXTRA_QUERY).orEmpty().trim()
         initialScreen = intent.getStringExtra(EXTRA_SCREEN).orEmpty().ifBlank { SCREEN_HOME }
         showLocked()
@@ -65,6 +67,7 @@ class MemoryVaultActivity : Activity() {
                     when (initialScreen) {
                         SCREEN_PENDING -> showPending()
                         SCREEN_ARCHIVE -> showArchive()
+                        SCREEN_DIARY -> showDiaryTransfer()
                         else -> showHome(initialQuery)
                     }
                     initialQuery = ""
@@ -124,6 +127,7 @@ class MemoryVaultActivity : Activity() {
         root.addView(button("SEARCH MEMORY", BLUE) { showHome(search.text.toString()) }, params(bottom = 6))
         root.addView(button("CREATE CONFIRMED MEMORY", GREEN) { showEditor(null) }, params(bottom = 6))
         root.addView(button("REVIEW APPROVAL QUEUE", GOLD) { showPending() }, params(bottom = 6))
+        root.addView(button("IMPORT FROM APPROVED DIARY", GREEN) { showDiaryTransfer() }, params(bottom = 6))
         root.addView(button("CONVERSATION ARCHIVE", CYAN) { showArchive() }, params(bottom = 11))
 
         root.addView(label(if (query.isBlank()) "MEMORY RECORDS" else "SEARCH RESULTS // ${records.size}", 12f, CYAN, true), params(bottom = 7))
@@ -168,6 +172,57 @@ class MemoryVaultActivity : Activity() {
         setContentView(ScrollView(this).apply { addView(root) })
     }
 
+    private fun showDiaryTransfer() {
+        if (!unlocked) return
+        val approved = diary.listEntries().filter { it.aiAccess == DiaryAiAccess.MEMORY_APPROVED }
+        val root = page()
+        root.addView(title("MEMORY VAULT // DIARY TRANSFER"), params(bottom = 10))
+        root.addView(label("Only entries you marked Memory Approved appear here. You must select and submit the exact text, then confirm it again in the approval queue.", 11f, SOFT, false), params(bottom = 10))
+        if (approved.isEmpty()) {
+            root.addView(panel().apply {
+                addView(label("No diary entries are marked Memory Approved.", 11f, MUTED, false))
+            }, params(bottom = 9))
+        } else {
+            approved.forEach { entry ->
+                root.addView(panel().apply {
+                    addView(label(entry.title.ifBlank { "UNTITLED ENTRY" }, 12f, Color.WHITE, true), params(bottom = 4))
+                    addView(label(entry.body.replace(Regex("\\s+"), " ").take(220), 10f, SOFT, false), params(bottom = 7))
+                    addView(button("SELECT FACT FROM ENTRY", GREEN) { showDiaryCandidateEditor(entry) })
+                }, params(bottom = 7))
+            }
+        }
+        root.addView(button("BACK TO MEMORY", BLUE) { showHome() })
+        setContentView(ScrollView(this).apply { addView(root) })
+    }
+
+    private fun showDiaryCandidateEditor(entry: PrivateDiaryEntry) {
+        if (!unlocked || entry.aiAccess != DiaryAiAccess.MEMORY_APPROVED) return
+        val root = page()
+        root.addView(title("DIARY // SELECT MEMORY CANDIDATE"), params(bottom = 10))
+        root.addView(label("ENTRY // ${entry.title}", 11f, CYAN, true), params(bottom = 6))
+        root.addView(panel().apply {
+            addView(label(entry.body.take(6_000), 10f, SOFT, false))
+        }, params(bottom = 8))
+        val candidate = input("Type or paste only the exact fact F.R.I.D.A.Y. may remember", "", false).apply {
+            minLines = 4
+            maxLines = 10
+            gravity = Gravity.TOP or Gravity.START
+        }
+        root.addView(candidate, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(170)).apply { bottomMargin = dp(8) })
+        root.addView(button("QUEUE FOR FINAL OWNER REVIEW", GOLD) {
+            val fact = candidate.text.toString().trim()
+            if (fact.isBlank()) {
+                Toast.makeText(this, "Select an exact fact first.", Toast.LENGTH_SHORT).show()
+                return@button
+            }
+            store.queueDiaryCandidate(entry.id, fact)
+            Toast.makeText(this, "Candidate queued. Final confirmation is still required.", Toast.LENGTH_LONG).show()
+            showPending()
+        }, params(bottom = 6))
+        root.addView(button("CANCEL", BLUE) { showDiaryTransfer() })
+        setContentView(ScrollView(this).apply { addView(root) })
+    }
+
     private fun showArchive() {
         if (!unlocked) return
         val root = page()
@@ -202,9 +257,7 @@ class MemoryVaultActivity : Activity() {
         val root = page()
         root.addView(title(if (existing == null) "MEMORY // NEW RECORD" else "MEMORY // EDIT RECORD"), params(bottom = 10))
         val value = input("What should F.R.I.D.A.Y. remember?", existing?.value.orEmpty(), false).apply {
-            minLines = 5
-            maxLines = 12
-            gravity = Gravity.TOP or Gravity.START
+            minLines = 5; maxLines = 12; gravity = Gravity.TOP or Gravity.START
         }
         val namespace = input("Namespace, such as friday or school", existing?.namespace ?: "general", true)
         val kinds = MemoryKind.values().toList()
@@ -251,8 +304,7 @@ class MemoryVaultActivity : Activity() {
     private fun beginExport() {
         externalFlow = true
         startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE)
-            type = "application/octet-stream"
+            addCategory(Intent.CATEGORY_OPENABLE); type = "application/octet-stream"
             putExtra(Intent.EXTRA_TITLE, "FRIDAY-memory-${System.currentTimeMillis()}.fridaymem")
         }, REQUEST_EXPORT)
     }
@@ -260,8 +312,7 @@ class MemoryVaultActivity : Activity() {
     private fun beginImport() {
         externalFlow = true
         startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE)
-            type = "application/octet-stream"
+            addCategory(Intent.CATEGORY_OPENABLE); type = "application/octet-stream"
         }, REQUEST_IMPORT)
     }
 
@@ -289,37 +340,28 @@ class MemoryVaultActivity : Activity() {
     }
 
     private fun page() = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(dp(14), dp(20), dp(14), dp(28))
-        setBackgroundColor(BG)
+        orientation = LinearLayout.VERTICAL; setPadding(dp(14), dp(20), dp(14), dp(28)); setBackgroundColor(BG)
     }
-
     private fun panel() = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        setPadding(dp(12), dp(12), dp(12), dp(12))
+        orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(12), dp(12), dp(12))
         background = GradientDrawable().apply { setColor(Color.rgb(4, 12, 28)); setStroke(dp(1), BLUE); cornerRadius = dp(8).toFloat() }
     }
-
     private fun input(hint: String, value: String, singleLine: Boolean) = EditText(this).apply {
         this.hint = hint; setText(value); setSingleLine(singleLine); setTextColor(Color.WHITE); setHintTextColor(MUTED)
         background = fieldBackground(); setPadding(dp(10), dp(9), dp(10), dp(9))
     }
-
     private fun spinner(values: List<String>, selection: Int) = Spinner(this).apply {
         adapter = ArrayAdapter(this@MemoryVaultActivity, android.R.layout.simple_spinner_dropdown_item, values)
         setSelection(selection.coerceAtLeast(0)); background = fieldBackground()
     }
-
     private fun fieldBackground() = GradientDrawable().apply {
         setColor(Color.rgb(3, 10, 24)); setStroke(dp(1), Color.rgb(42, 93, 151)); cornerRadius = dp(6).toFloat()
     }
-
     private fun title(text: String) = center(text, 21f, CYAN, true).apply { letterSpacing = .08f }
     private fun center(text: String, size: Float, color: Int, bold: Boolean) = label(text, size, color, bold).apply { gravity = Gravity.CENTER_HORIZONTAL }
     private fun label(text: String, size: Float, color: Int, bold: Boolean) = TextView(this).apply {
         this.text = text; textSize = size; setTextColor(color)
-        typeface = Typeface.create("sans-serif", if (bold) Typeface.BOLD else Typeface.NORMAL)
-        setLineSpacing(0f, 1.15f)
+        typeface = Typeface.create("sans-serif", if (bold) Typeface.BOLD else Typeface.NORMAL); setLineSpacing(0f, 1.15f)
     }
     private fun button(text: String, accent: Int, action: () -> Unit) = Button(this).apply {
         this.text = text; textSize = 10f; letterSpacing = .06f; setTextColor(Color.WHITE)
@@ -330,9 +372,7 @@ class MemoryVaultActivity : Activity() {
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
     private fun formatTime(value: Long) = if (value <= 0L) "NOT VERIFIED" else SimpleDateFormat("dd MMM yyyy // hh:mm a", Locale.getDefault()).format(Date(value))
     private fun sensitivityColor(value: MemorySensitivity) = when (value) {
-        MemorySensitivity.NORMAL -> GREEN
-        MemorySensitivity.PRIVATE -> GOLD
-        MemorySensitivity.HIGHLY_SENSITIVE -> RED
+        MemorySensitivity.NORMAL -> GREEN; MemorySensitivity.PRIVATE -> GOLD; MemorySensitivity.HIGHLY_SENSITIVE -> RED
     }
 
     companion object {
@@ -344,6 +384,7 @@ class MemoryVaultActivity : Activity() {
         private const val SCREEN_HOME = "home"
         private const val SCREEN_PENDING = "pending"
         private const val SCREEN_ARCHIVE = "archive"
+        private const val SCREEN_DIARY = "diary"
         private val BG = Color.rgb(1, 5, 14)
         private val CYAN = Color.rgb(110, 224, 255)
         private val BLUE = Color.rgb(54, 132, 255)
@@ -355,11 +396,11 @@ class MemoryVaultActivity : Activity() {
 
         fun launch(context: Context, query: String = "", screen: String = SCREEN_HOME) {
             context.startActivity(Intent(context, MemoryVaultActivity::class.java)
-                .putExtra(EXTRA_QUERY, query.trim())
-                .putExtra(EXTRA_SCREEN, screen)
+                .putExtra(EXTRA_QUERY, query.trim()).putExtra(EXTRA_SCREEN, screen)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
         }
         fun launchPending(context: Context) = launch(context, screen = SCREEN_PENDING)
         fun launchArchive(context: Context) = launch(context, screen = SCREEN_ARCHIVE)
+        fun launchDiaryTransfer(context: Context) = launch(context, screen = SCREEN_DIARY)
     }
 }
