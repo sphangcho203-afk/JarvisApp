@@ -14,7 +14,6 @@ import android.os.Build
 import android.os.Bundle
 import android.os.CancellationSignal
 import android.view.Gravity
-import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.ArrayAdapter
@@ -29,6 +28,7 @@ import java.lang.ref.WeakReference
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import java.util.UUID
 import java.util.concurrent.Executor
 
 class PrivateDiaryActivity : Activity() {
@@ -36,8 +36,9 @@ class PrivateDiaryActivity : Activity() {
     private var unlocked = false
     private var authenticationInProgress = false
     private var cancellationSignal: CancellationSignal? = null
-    private var requestedSearch: String = ""
+    private var requestedSearch = ""
     private var requestedNewEntry = false
+    private var secureFinishStarted = false
     private val mainExecutor = Executor { command -> runOnUiThread(command) }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -57,14 +58,18 @@ class PrivateDiaryActivity : Activity() {
         setIntent(intent)
         if (intent?.getBooleanExtra(EXTRA_SECURE_NOW, false) == true) {
             finishSecurely("OWNER COMMAND")
+            return
         }
+        requestedSearch = intent?.getStringExtra(EXTRA_SEARCH).orEmpty().trim()
+        requestedNewEntry = intent?.getBooleanExtra(EXTRA_NEW_ENTRY, false) == true
+        if (unlocked) showVaultHome()
     }
 
     override fun onStop() {
-        super.onStop()
-        if (unlocked && !authenticationInProgress && !isChangingConfigurations) {
+        if (unlocked && !authenticationInProgress && !isChangingConfigurations && !secureFinishStarted) {
             finishSecurely("BACKGROUND AUTO-LOCK")
         }
+        super.onStop()
     }
 
     override fun onDestroy() {
@@ -75,13 +80,18 @@ class PrivateDiaryActivity : Activity() {
     }
 
     fun finishSecurely(reason: String) {
+        if (secureFinishStarted) return
+        secureFinishStarted = true
         unlocked = false
+        authenticationInProgress = false
         requestedSearch = ""
+        requestedNewEntry = false
+        cancellationSignal?.cancel()
         clearClipboard()
         store.recordAccess(VAULT_EVENT_ID, "VAULT_LOCK", reason)
         notifySecureSurface(false)
         setContentView(buildLockedPanel("DIARY SEALED // $reason"))
-        window.decorView.postDelayed({ finish() }, 120L)
+        window.decorView.postDelayed({ finishAndRemoveTask() }, 160L)
     }
 
     private fun showLockedSurface() {
@@ -89,71 +99,62 @@ class PrivateDiaryActivity : Activity() {
     }
 
     private fun buildLockedPanel(status: String): ScrollView {
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
+        val root = pageRoot().apply {
             gravity = Gravity.CENTER_HORIZONTAL
             setPadding(dp(18), dp(36), dp(18), dp(30))
-            setBackgroundColor(BG)
         }
-        root.addView(label("F.R.I.D.A.Y. // PRIVATE DIARY", 22f, CYAN, true).apply {
+        root.addView(title("F.R.I.D.A.Y. // PRIVATE DIARY", 22f), params(bottom = 8))
+        root.addView(centerLabel("ENCRYPTED OWNER VAULT", 10f, MUTED, true), params(bottom = 22))
+        root.addView(panel().apply {
             gravity = Gravity.CENTER_HORIZONTAL
-            letterSpacing = .08f
-        }, params(bottom = 8))
-        root.addView(label("ENCRYPTED OWNER VAULT", 10f, MUTED, true).apply {
-            gravity = Gravity.CENTER_HORIZONTAL
-            letterSpacing = .15f
-        }, params(bottom = 22))
-
-        val panel = panel().apply {
-            gravity = Gravity.CENTER_HORIZONTAL
-            addView(label("VAULT LOCKED", 18f, GREEN, true).apply {
-                gravity = Gravity.CENTER_HORIZONTAL
-            }, params(bottom = 10))
-            addView(label(status, 11f, SOFT, false).apply {
-                gravity = Gravity.CENTER_HORIZONTAL
-            }, params(bottom = 14))
-            addView(label(
-                "Diary pages remain encrypted and are not available to F.R.I.D.A.Y. unless each entry permits access.",
-                12f,
-                MUTED,
-                false
-            ).apply { gravity = Gravity.CENTER_HORIZONTAL }, params(bottom = 18))
+            addView(centerLabel("VAULT LOCKED", 18f, GREEN, true), params(bottom = 10))
+            addView(centerLabel(status, 11f, SOFT, false), params(bottom = 14))
+            addView(
+                centerLabel(
+                    "Diary pages remain encrypted and unavailable to F.R.I.D.A.Y. unless each entry explicitly permits access.",
+                    12f,
+                    MUTED,
+                    false
+                ),
+                params(bottom = 18)
+            )
             addView(button("AUTHENTICATE OWNER", CYAN) { authenticateOwner() }, params(bottom = 8))
             addView(button("RETURN TO F.R.I.D.A.Y.", BLUE) { finishSecurely("OWNER EXIT") })
-        }
-        root.addView(panel, params())
+        }, params())
         return ScrollView(this).apply { addView(root) }
     }
 
     private fun authenticateOwner() {
-        if (authenticationInProgress || unlocked) return
+        if (authenticationInProgress || unlocked || secureFinishStarted) return
         authenticationInProgress = true
+        val signal = CancellationSignal()
         cancellationSignal?.cancel()
-        cancellationSignal = CancellationSignal()
-
+        cancellationSignal = signal
         val keyguard = getSystemService(KeyguardManager::class.java)
+
         val builder = BiometricPrompt.Builder(this)
             .setTitle("Unlock F.R.I.D.A.Y. Private Diary")
             .setSubtitle("Owner authentication")
-            .setDescription("Protected entries remain encrypted until Android verifies the device owner.")
+            .setDescription("Android must verify the device owner before encrypted entries are shown.")
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q && keyguard?.isDeviceSecure == true) {
             builder.setDeviceCredentialAllowed(true)
         } else {
             builder.setNegativeButton("Cancel", mainExecutor) { _, _ ->
                 authenticationInProgress = false
-                cancellationSignal?.cancel()
+                signal.cancel()
             }
         }
 
         runCatching {
             builder.build().authenticate(
-                cancellationSignal,
+                signal,
                 mainExecutor,
                 object : BiometricPrompt.AuthenticationCallback() {
                     override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
                         authenticationInProgress = false
                         unlocked = true
+                        secureFinishStarted = false
                         store.recordAccess(VAULT_EVENT_ID, "VAULT_UNLOCK", "ANDROID OWNER AUTHENTICATED")
                         showVaultHome()
                     }
@@ -168,10 +169,7 @@ class PrivateDiaryActivity : Activity() {
 
                     override fun onAuthenticationError(errorCode: Int, errString: CharSequence) {
                         authenticationInProgress = false
-                        if (errorCode != BiometricPrompt.BIOMETRIC_ERROR_USER_CANCELED &&
-                            errorCode != BiometricPrompt.BIOMETRIC_ERROR_CANCELED &&
-                            errorCode != BiometricPrompt.BIOMETRIC_ERROR_NEGATIVE_BUTTON
-                        ) {
+                        if (errorCode !in SILENT_AUTH_ERROR_CODES) {
                             Toast.makeText(
                                 this@PrivateDiaryActivity,
                                 "Authentication unavailable: $errString",
@@ -188,6 +186,7 @@ class PrivateDiaryActivity : Activity() {
                 "Confirm the device owner to open the encrypted vault."
             )
             if (fallback != null) {
+                authenticationInProgress = true
                 startActivityForResult(fallback, REQUEST_DEVICE_CREDENTIAL)
             } else {
                 Toast.makeText(
@@ -202,18 +201,18 @@ class PrivateDiaryActivity : Activity() {
     @Deprecated("Android credential confirmation callback")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (requestCode == REQUEST_DEVICE_CREDENTIAL) {
-            authenticationInProgress = false
-            if (resultCode == RESULT_OK) {
-                unlocked = true
-                store.recordAccess(VAULT_EVENT_ID, "VAULT_UNLOCK", "DEVICE CREDENTIAL AUTHENTICATED")
-                showVaultHome()
-            }
+        if (requestCode != REQUEST_DEVICE_CREDENTIAL) return
+        authenticationInProgress = false
+        if (resultCode == RESULT_OK) {
+            unlocked = true
+            secureFinishStarted = false
+            store.recordAccess(VAULT_EVENT_ID, "VAULT_UNLOCK", "DEVICE CREDENTIAL AUTHENTICATED")
+            showVaultHome()
         }
     }
 
     private fun showVaultHome(searchOverride: String = requestedSearch) {
-        if (!unlocked) return
+        if (!unlocked || secureFinishStarted) return
         requestedSearch = ""
         if (requestedNewEntry) {
             requestedNewEntry = false
@@ -221,39 +220,25 @@ class PrivateDiaryActivity : Activity() {
             return
         }
 
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(18), dp(14), dp(28))
-            setBackgroundColor(BG)
-        }
-        root.addView(label("F.R.I.D.A.Y. // PRIVATE DIARY", 21f, CYAN, true).apply {
-            gravity = Gravity.CENTER_HORIZONTAL
-            letterSpacing = .08f
-        }, params(bottom = 4))
-        root.addView(label("LOCAL ENCRYPTION // OWNER CONTROLLED AI VISIBILITY", 9f, MUTED, true).apply {
-            gravity = Gravity.CENTER_HORIZONTAL
-            letterSpacing = .11f
-        }, params(bottom = 14))
+        val root = pageRoot()
+        root.addView(title("F.R.I.D.A.Y. // PRIVATE DIARY", 21f), params(bottom = 4))
+        root.addView(
+            centerLabel("LOCAL ENCRYPTION // OWNER-CONTROLLED AI VISIBILITY", 9f, MUTED, true),
+            params(bottom = 14)
+        )
+        root.addView(panel().apply {
+            addView(label("VAULT OPEN // SCREEN CAPTURE BLOCKED", 12f, GREEN, true), params(bottom = 6))
+            addView(
+                label(
+                    "Diary content is separate from long-term memory. Owner Only entries remain unreadable to F.R.I.D.A.Y.",
+                    11f,
+                    SOFT,
+                    false
+                )
+            )
+        }, params(bottom = 10))
 
-        val statusPanel = panel()
-        statusPanel.addView(label("VAULT OPEN // SCREEN CAPTURE BLOCKED", 12f, GREEN, true), params(bottom = 6))
-        statusPanel.addView(label(
-            "Diary content is separate from long-term memory. Entries marked Owner Only remain unreadable to F.R.I.D.A.Y.",
-            11f,
-            SOFT,
-            false
-        ))
-        root.addView(statusPanel, params(bottom = 10))
-
-        val searchField = EditText(this).apply {
-            hint = "Search your diary"
-            setHintTextColor(MUTED)
-            setTextColor(Color.WHITE)
-            setText(searchOverride)
-            setSingleLine(true)
-            background = inputBackground()
-            setPadding(dp(11), dp(10), dp(11), dp(10))
-        }
+        val searchField = input("Search your diary", searchOverride, singleLine = true)
         root.addView(searchField, params(bottom = 7))
         root.addView(button("SEARCH OWNER VIEW", BLUE) {
             showVaultHome(searchField.text.toString())
@@ -262,26 +247,29 @@ class PrivateDiaryActivity : Activity() {
 
         val query = searchOverride.trim()
         val entries = if (query.isBlank()) store.listEntries() else store.searchOwnerView(query)
-        root.addView(label(
-            if (query.isBlank()) "ENTRIES // ${entries.size}" else "SEARCH RESULTS // ${entries.size}",
-            12f,
-            CYAN,
-            true
-        ), params(bottom = 7))
+        root.addView(
+            label(
+                if (query.isBlank()) "ENTRIES // ${entries.size}" else "SEARCH RESULTS // ${entries.size}",
+                12f,
+                CYAN,
+                true
+            ),
+            params(bottom = 7)
+        )
 
         if (entries.isEmpty()) {
             root.addView(panel().apply {
-                addView(label(
-                    if (query.isBlank()) "No diary entries yet." else "No matching entries were found.",
-                    12f,
-                    MUTED,
-                    false
-                ))
+                addView(
+                    label(
+                        if (query.isBlank()) "No diary entries yet." else "No matching entries were found.",
+                        12f,
+                        MUTED,
+                        false
+                    )
+                )
             }, params(bottom = 10))
         } else {
-            entries.forEach { entry ->
-                root.addView(entryPanel(entry), params(bottom = 8))
-            }
+            entries.forEach { entry -> root.addView(entryPanel(entry), params(bottom = 8)) }
         }
 
         root.addView(button("ACCESS HISTORY", CYAN) { showAudit() }, params(bottom = 7))
@@ -303,64 +291,37 @@ class PrivateDiaryActivity : Activity() {
     }
 
     private fun showEditor(existing: PrivateDiaryEntry?) {
-        if (!unlocked) return
+        if (!unlocked || secureFinishStarted) return
         existing?.let { store.recordAccess(it.id, "OWNER_OPEN") }
-
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(18), dp(14), dp(28))
-            setBackgroundColor(BG)
-        }
-        root.addView(label(
-            if (existing == null) "PRIVATE DIARY // NEW ENTRY" else "PRIVATE DIARY // EDIT ENTRY",
-            20f,
-            CYAN,
-            true
-        ).apply { gravity = Gravity.CENTER_HORIZONTAL }, params(bottom = 12))
+        val root = pageRoot()
+        root.addView(
+            title(if (existing == null) "PRIVATE DIARY // NEW ENTRY" else "PRIVATE DIARY // EDIT ENTRY", 20f),
+            params(bottom = 12)
+        )
 
         root.addView(label("TITLE", 10f, MUTED, true), params(bottom = 4))
-        val titleField = EditText(this).apply {
-            setText(existing?.title.orEmpty())
-            hint = "Entry title"
-            setTextColor(Color.WHITE)
-            setHintTextColor(MUTED)
-            setSingleLine(true)
-            background = inputBackground()
-            setPadding(dp(11), dp(10), dp(11), dp(10))
-        }
+        val titleField = input("Entry title", existing?.title.orEmpty(), singleLine = true)
         root.addView(titleField, params(bottom = 10))
 
         root.addView(label("ENTRY", 10f, MUTED, true), params(bottom = 4))
-        val bodyField = EditText(this).apply {
-            setText(existing?.body.orEmpty())
-            hint = "Write privately..."
-            setTextColor(Color.WHITE)
-            setHintTextColor(MUTED)
+        val bodyField = input("Write privately...", existing?.body.orEmpty(), singleLine = false).apply {
             gravity = Gravity.TOP or Gravity.START
             minLines = 12
             maxLines = 28
-            background = inputBackground()
-            setPadding(dp(11), dp(11), dp(11), dp(11))
         }
-        root.addView(bodyField, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(310)
-        ).apply { bottomMargin = dp(10) })
+        root.addView(
+            bodyField,
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(310)).apply {
+                bottomMargin = dp(10)
+            }
+        )
 
         root.addView(label("TAGS", 10f, MUTED, true), params(bottom = 4))
-        val tagsField = EditText(this).apply {
-            setText(existing?.tags?.joinToString(", ").orEmpty())
-            hint = "project, school, idea"
-            setTextColor(Color.WHITE)
-            setHintTextColor(MUTED)
-            setSingleLine(true)
-            background = inputBackground()
-            setPadding(dp(11), dp(10), dp(11), dp(10))
-        }
+        val tagsField = input("project, school, idea", existing?.tags?.joinToString(", ").orEmpty(), true)
         root.addView(tagsField, params(bottom = 10))
 
         root.addView(label("F.R.I.D.A.Y. ACCESS", 10f, MUTED, true), params(bottom = 4))
-        val accessValues = DiaryAiAccess.entries
+        val accessValues = DiaryAiAccess.values().toList()
         val accessSpinner = Spinner(this).apply {
             adapter = ArrayAdapter(
                 this@PrivateDiaryActivity,
@@ -371,26 +332,26 @@ class PrivateDiaryActivity : Activity() {
             background = inputBackground()
         }
         root.addView(accessSpinner, params(bottom = 8))
-        root.addView(label(
-            "Owner Only blocks AI reading. Ask Each Time requires temporary approval. Session Readable permits help without memory. Memory Approved still requires confirmation before facts are saved.",
-            10f,
-            MUTED,
-            false
-        ), params(bottom = 12))
+        root.addView(
+            label(
+                "Owner Only blocks AI reading. Ask Each Time requires temporary approval. Session Readable allows help without memory. Memory Approved still requires a separate owner confirmation before facts are saved.",
+                10f,
+                MUTED,
+                false
+            ),
+            params(bottom = 12)
+        )
 
         root.addView(button("SAVE ENCRYPTED ENTRY", GREEN) {
-            val title = titleField.text.toString().trim().ifBlank { "Untitled entry" }
-            val body = bodyField.text.toString()
-            val tags = tagsField.text.toString().split(',')
             val selectedAccess = accessValues.getOrElse(accessSpinner.selectedItemPosition) {
                 DiaryAiAccess.OWNER_ONLY
             }
             val saved = store.upsert(
                 PrivateDiaryEntry(
-                    id = existing?.id ?: java.util.UUID.randomUUID().toString(),
-                    title = title,
-                    body = body,
-                    tags = tags,
+                    id = existing?.id ?: UUID.randomUUID().toString(),
+                    title = titleField.text.toString().trim().ifBlank { "Untitled entry" },
+                    body = bodyField.text.toString(),
+                    tags = tagsField.text.toString().split(','),
                     aiAccess = selectedAccess,
                     createdAtMs = existing?.createdAtMs ?: System.currentTimeMillis()
                 )
@@ -413,16 +374,10 @@ class PrivateDiaryActivity : Activity() {
     }
 
     private fun showAudit() {
-        if (!unlocked) return
+        if (!unlocked || secureFinishStarted) return
         val events = store.auditFor().take(100)
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(14), dp(18), dp(14), dp(28))
-            setBackgroundColor(BG)
-        }
-        root.addView(label("PRIVATE DIARY // ACCESS HISTORY", 20f, CYAN, true).apply {
-            gravity = Gravity.CENTER_HORIZONTAL
-        }, params(bottom = 12))
+        val root = pageRoot()
+        root.addView(title("PRIVATE DIARY // ACCESS HISTORY", 20f), params(bottom = 12))
         if (events.isEmpty()) {
             root.addView(label("No vault access events recorded.", 12f, MUTED, false), params(bottom = 12))
         } else {
@@ -433,9 +388,7 @@ class PrivateDiaryActivity : Activity() {
                     if (event.entryId != VAULT_EVENT_ID) {
                         addView(label("ENTRY // ${event.entryId.take(12)}", 9f, SOFT, false), params(bottom = 4))
                     }
-                    if (event.detail.isNotBlank()) {
-                        addView(label(event.detail, 10f, SOFT, false))
-                    }
+                    if (event.detail.isNotBlank()) addView(label(event.detail, 10f, SOFT, false))
                 }, params(bottom = 7))
             }
         }
@@ -458,15 +411,11 @@ class PrivateDiaryActivity : Activity() {
         }
     }
 
-    private fun accessColor(access: DiaryAiAccess): Int = when (access) {
-        DiaryAiAccess.OWNER_ONLY -> RED
-        DiaryAiAccess.ASK_EVERY_TIME -> GOLD
-        DiaryAiAccess.SESSION_READABLE -> CYAN
-        DiaryAiAccess.MEMORY_APPROVED -> GREEN
+    private fun pageRoot(): LinearLayout = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(14), dp(18), dp(14), dp(28))
+        setBackgroundColor(BG)
     }
-
-    private fun formatTime(value: Long): String =
-        SimpleDateFormat("dd MMM yyyy // hh:mm a", Locale.getDefault()).format(Date(value))
 
     private fun panel(): LinearLayout = LinearLayout(this).apply {
         orientation = LinearLayout.VERTICAL
@@ -478,11 +427,28 @@ class PrivateDiaryActivity : Activity() {
         }
     }
 
+    private fun input(hint: String, value: String, singleLine: Boolean): EditText = EditText(this).apply {
+        this.hint = hint
+        setText(value)
+        setHintTextColor(MUTED)
+        setTextColor(Color.WHITE)
+        setSingleLine(singleLine)
+        background = inputBackground()
+        setPadding(dp(11), dp(10), dp(11), dp(10))
+    }
+
     private fun inputBackground(): GradientDrawable = GradientDrawable().apply {
         setColor(Color.rgb(3, 10, 24))
         setStroke(dp(1), Color.rgb(42, 93, 151))
         cornerRadius = dp(6).toFloat()
     }
+
+    private fun title(text: String, size: Float): TextView = centerLabel(text, size, CYAN, true).apply {
+        letterSpacing = .08f
+    }
+
+    private fun centerLabel(text: String, size: Float, color: Int, bold: Boolean): TextView =
+        label(text, size, color, bold).apply { gravity = Gravity.CENTER_HORIZONTAL }
 
     private fun label(text: String, size: Float, color: Int, bold: Boolean): TextView =
         TextView(this).apply {
@@ -512,6 +478,16 @@ class PrivateDiaryActivity : Activity() {
             ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply { bottomMargin = dp(bottom) }
 
+    private fun accessColor(access: DiaryAiAccess): Int = when (access) {
+        DiaryAiAccess.OWNER_ONLY -> RED
+        DiaryAiAccess.ASK_EVERY_TIME -> GOLD
+        DiaryAiAccess.SESSION_READABLE -> CYAN
+        DiaryAiAccess.MEMORY_APPROVED -> GREEN
+    }
+
+    private fun formatTime(value: Long): String =
+        SimpleDateFormat("dd MMM yyyy // hh:mm a", Locale.getDefault()).format(Date(value))
+
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     companion object {
@@ -522,6 +498,12 @@ class PrivateDiaryActivity : Activity() {
         private const val EXTRA_SECURE_NOW = "friday_diary_secure_now"
         private const val REQUEST_DEVICE_CREDENTIAL = 6102
         private const val VAULT_EVENT_ID = "__VAULT__"
+        private const val AUTH_ERROR_NEGATIVE_BUTTON = 13
+        private val SILENT_AUTH_ERROR_CODES = setOf(
+            BiometricPrompt.BIOMETRIC_ERROR_USER_CANCELED,
+            BiometricPrompt.BIOMETRIC_ERROR_CANCELED,
+            AUTH_ERROR_NEGATIVE_BUTTON
+        )
 
         private val BG = Color.rgb(1, 5, 14)
         private val CYAN = Color.rgb(110, 224, 255)
@@ -542,7 +524,7 @@ class PrivateDiaryActivity : Activity() {
         }
 
         fun secure(context: Context) {
-            PrivateDiaryRuntime.secureActive("OWNER COMMAND")
+            if (PrivateDiaryRuntime.secureActive("OWNER COMMAND")) return
             context.startActivity(
                 Intent(context, PrivateDiaryActivity::class.java)
                     .putExtra(EXTRA_SECURE_NOW, true)
