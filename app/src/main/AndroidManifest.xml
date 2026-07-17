@@ -84,6 +84,12 @@
             android:theme="@style/Theme.Jarvis" />
 
         <activity
+            android:name=".WaApiConfigActivity"
+            android:exported="false"
+            android:label="FRIDAY WaAPI Direct"
+            android:theme="@style/Theme.Jarvis" />
+
+        <activity
             android:name=".WeatherSetupActivity"
             android:exported="false"
             android:label="FRIDAY Weather Core"
