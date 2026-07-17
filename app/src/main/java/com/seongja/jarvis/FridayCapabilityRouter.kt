@@ -18,6 +18,7 @@ class FridayCapabilityRouter(context: Context) {
         append(if (images.isConfigured()) "ready" else "key required")
         append(" // WhatsApp ")
         append(waapi.statusLabel())
+        append(" // diary encrypted")
     }
 
     fun intercept(
@@ -25,6 +26,10 @@ class FridayCapabilityRouter(context: Context) {
         memorySummary: String,
         onToken: ((String) -> Unit)? = null
     ): BrainResponse? {
+        PrivateDiaryCommandParser.parse(input)?.let { command ->
+            return handleDiaryCommand(command, memorySummary, onToken)
+        }
+
         waapi.intercept(input, memorySummary, onToken)?.let { return it }
 
         ImageCommandIntent.promptFor(input)?.let { prompt ->
@@ -110,6 +115,79 @@ class FridayCapabilityRouter(context: Context) {
             ).also { JarvisOperationBus.clear("GMAIL CYCLE COMPLETE") }
     }
 
+    private fun handleDiaryCommand(
+        command: PrivateDiaryCommand,
+        memorySummary: String,
+        onToken: ((String) -> Unit)?
+    ): BrainResponse {
+        val (spoken, display, intent, decision) = when (command) {
+            PrivateDiaryCommand.Open -> {
+                PrivateDiaryActivity.launch(appContext)
+                DiaryRouteResult(
+                    "The private diary is opening, Sir. Android owner authentication is required.",
+                    "PRIVATE DIARY // AUTHENTICATION REQUIRED\nAI VISIBILITY // CONTROLLED PER ENTRY\nSCREEN CAPTURE // BLOCKED IN VAULT",
+                    "diary/open",
+                    "launch_private_diary"
+                )
+            }
+
+            PrivateDiaryCommand.NewEntry -> {
+                PrivateDiaryActivity.launch(appContext, newEntry = true)
+                DiaryRouteResult(
+                    "Opening a new encrypted diary entry, Sir.",
+                    "PRIVATE DIARY // NEW ENTRY\nSTORAGE // LOCAL ENCRYPTED\nDEFAULT AI ACCESS // OWNER ONLY",
+                    "diary/new",
+                    "launch_new_diary_entry"
+                )
+            }
+
+            is PrivateDiaryCommand.Search -> {
+                PrivateDiaryActivity.launch(appContext, search = command.query)
+                DiaryRouteResult(
+                    "The private diary search is opening, Sir. I will not read protected pages.",
+                    "PRIVATE DIARY // OWNER SEARCH\nQUERY // ${command.query.take(240)}\nPROTECTED CONTENT // NOT EXPOSED TO ASSISTANT",
+                    "diary/search",
+                    "launch_owner_diary_search"
+                )
+            }
+
+            PrivateDiaryCommand.SecureVault -> {
+                val secured = PrivateDiaryRuntime.secureActive("OWNER COMMAND")
+                DiaryRouteResult(
+                    if (secured) "Diary sealed. Temporary vault context has been cleared, Sir."
+                    else "The private diary is already sealed, Sir.",
+                    if (secured) "PRIVATE DIARY // SEALED\nTEMPORARY CONTEXT // CLEARED"
+                    else "PRIVATE DIARY // ALREADY SEALED",
+                    "diary/secure",
+                    if (secured) "secure_active_diary" else "diary_already_secure"
+                )
+            }
+        }
+
+        JarvisOperationBus.publish("PRIVATE DIARY", display.lineSequence().firstOrNull().orEmpty(), 1f)
+        onToken?.invoke(spoken)
+        return BrainResponse(
+            spoken = spoken,
+            display = display,
+            intent = intent,
+            confidence = 1f,
+            mode = BrainMode.EXECUTING,
+            trace = listOf(
+                "storage=android_keystore_aes_gcm",
+                "authentication=android_owner",
+                "screen_capture=flag_secure",
+                "diary_memory_separation=enforced"
+            ),
+            memory = memorySummary,
+            thoughts = listOf(
+                "The diary route protects entries from assistant access unless the owner selects a readable mode."
+            ),
+            entities = listOf("workspace=private_diary_vault"),
+            decision = decision,
+            action = BrainAction()
+        )
+    }
+
     private fun launchGmailAuthorization() {
         appContext.startActivity(
             Intent(appContext, GmailAuthorizationActivity::class.java)
@@ -136,6 +214,13 @@ class FridayCapabilityRouter(context: Context) {
             decision = "launch_gmail_authorization",
             action = BrainAction()
         )
+
+    private data class DiaryRouteResult(
+        val spoken: String,
+        val display: String,
+        val intent: String,
+        val decision: String
+    )
 }
 
 object ImageCommandIntent {
