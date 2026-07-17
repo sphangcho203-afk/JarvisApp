@@ -25,12 +25,11 @@ data class VoiceFamiliarityResult(
 class OwnerVoiceRuntime(context: Context) : PcmCaptureObserver {
     private val store = OwnerVoiceProfileStore(context.applicationContext)
     private var accumulator: PcmFeatureAccumulator? = null
-    private var pendingSample: VoiceFeatureVector? = null
+    private var lastResult = VoiceFamiliarityResult(false, 0f, "not_enrolled")
 
     @Synchronized
     override fun onCaptureStarted(sampleRate: Int) {
         accumulator = PcmFeatureAccumulator(sampleRate)
-        pendingSample = null
     }
 
     @Synchronized
@@ -40,32 +39,49 @@ class OwnerVoiceRuntime(context: Context) : PcmCaptureObserver {
 
     @Synchronized
     override fun onCaptureFinished() {
-        pendingSample = accumulator?.finish()
+        val sample = accumulator?.finish()
         accumulator = null
+        lastResult = evaluateAndAdapt(sample, phrase = "")
     }
 
     @Synchronized
     fun completeTranscript(transcript: String): VoiceFamiliarityResult {
-        val base = pendingSample
-        pendingSample = null
+        val current = store.load()
+        if (!current.enrolled || transcript.isBlank()) return lastResult
+        if (store.deviceIsUnlocked() && lastResult.score >= OwnerVoiceMatcher.ADAPTATION_MATCH_THRESHOLD) {
+            store.save(
+                current.copy(
+                    commonPhrases = (current.commonPhrases + transcript.trim().lowercase())
+                        .map { it.replace(Regex("\\s+"), " ").take(100) }
+                        .filter { it.length >= 2 }
+                        .distinct()
+                        .takeLast(40),
+                    updatedAtMs = System.currentTimeMillis(),
+                    lastMatchScore = lastResult.score
+                )
+            )
+        }
+        return lastResult
+    }
+
+    @Synchronized
+    fun latestResult(): VoiceFamiliarityResult = lastResult
+
+    fun profile(): OwnerVoiceProfile = store.load()
+
+    /** Voice familiarity is never authorization. */
+    fun mayAuthorizeSensitiveAction(): Boolean = false
+
+    private fun evaluateAndAdapt(sample: VoiceFeatureVector?, phrase: String): VoiceFamiliarityResult {
         val profile = store.load()
-        if (base == null || !base.isUsable()) {
+        if (sample == null || !sample.isUsable()) {
             return VoiceFamiliarityResult(profile.enrolled, 0f, "insufficient_audio")
         }
-        val words = transcript.trim().split(Regex("\\s+")).count(String::isNotBlank)
-        val pace = if (base.durationMs >= 300L && words > 0) {
-            (words * 60_000f / base.durationMs).coerceIn(0f, 300f)
-        } else {
-            0f
-        }
-        val sample = base.copy(wordsPerMinute = pace)
-        if (!profile.enrolled) {
-            return VoiceFamiliarityResult(false, 0f, "not_enrolled")
-        }
+        if (!profile.enrolled) return VoiceFamiliarityResult(false, 0f, "not_enrolled")
         val score = OwnerVoiceMatcher.similarity(profile, sample)
         val canAdapt = store.deviceIsUnlocked() && score >= OwnerVoiceMatcher.ADAPTATION_MATCH_THRESHOLD
         if (canAdapt) {
-            store.save(OwnerVoiceMatcher.adapt(profile, sample, transcript, score))
+            store.save(OwnerVoiceMatcher.adapt(profile, sample, phrase, score))
         } else {
             store.save(profile.copy(lastMatchScore = score))
         }
@@ -76,12 +92,4 @@ class OwnerVoiceRuntime(context: Context) : PcmCaptureObserver {
         }
         return VoiceFamiliarityResult(true, score, label, canAdapt)
     }
-
-    fun profile(): OwnerVoiceProfile = store.load()
-
-    /**
-     * Voice familiarity is never authorization. Sensitive actions still require
-     * Android owner authentication, regardless of this score.
-     */
-    fun mayAuthorizeSensitiveAction(): Boolean = false
 }
