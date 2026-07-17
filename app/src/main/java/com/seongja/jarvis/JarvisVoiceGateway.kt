@@ -26,7 +26,7 @@ class JarvisVoiceGateway(
     context: Context,
     private val listener: Listener,
     private val endpoint: String = DEFAULT_ENDPOINT,
-    private val pcmObserver: PcmCaptureObserver? = null
+    private val pcmObserver: PcmCaptureObserver? = OwnerVoiceRuntime(context.applicationContext)
 ) : WebSocketListener() {
 
     interface Listener {
@@ -56,31 +56,19 @@ class JarvisVoiceGateway(
     private val recording = AtomicBoolean(false)
     private val speaking = AtomicBoolean(false)
 
-    @Volatile
-    private var socket: WebSocket? = null
-
-    @Volatile
-    private var audioRecord: AudioRecord? = null
-
-    @Volatile
-    private var recordingThread: Thread? = null
-
-    @Volatile
-    private var audioTrack: AudioTrack? = null
-
-    @Volatile
-    private var wantsListening = false
-
-    @Volatile
-    private var pendingSpeech: String? = null
+    @Volatile private var socket: WebSocket? = null
+    @Volatile private var audioRecord: AudioRecord? = null
+    @Volatile private var recordingThread: Thread? = null
+    @Volatile private var audioTrack: AudioTrack? = null
+    @Volatile private var wantsListening = false
+    @Volatile private var pendingSpeech: String? = null
 
     fun isReady(): Boolean = connected.get()
 
     fun connect() {
         if (destroyed.get() || connected.get() || socket != null) return
         listener.onDiagnostic("VOICE BACKEND -> CONNECTING $endpoint")
-        val request = Request.Builder().url(endpoint).build()
-        socket = client.newWebSocket(request, this)
+        socket = client.newWebSocket(Request.Builder().url(endpoint).build(), this)
     }
 
     fun startListening() {
@@ -115,12 +103,7 @@ class JarvisVoiceGateway(
             return
         }
         pendingSpeech = null
-        socket?.send(
-            JSONObject()
-                .put("type", "speak")
-                .put("text", clean)
-                .toString()
-        )
+        socket?.send(JSONObject().put("type", "speak").put("text", clean).toString())
     }
 
     fun stopSpeech() {
@@ -164,9 +147,7 @@ class JarvisVoiceGateway(
         if (!speaking.get()) return
         val data = bytes.toByteArray()
         val written = track.write(data, 0, data.size, AudioTrack.WRITE_BLOCKING)
-        if (written < 0) {
-            listener.onError("PCM playback failed with code $written")
-        }
+        if (written < 0) listener.onError("PCM playback failed with code $written")
     }
 
     override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
@@ -201,35 +182,30 @@ class JarvisVoiceGateway(
                 }
                 if (wantsListening) sendJson("start_input")
             }
-
             "state" -> when (payload.optString("value")) {
                 "listening" -> startRecorder()
                 "transcribing" -> mainHandler.post(listener::onTranscribing)
                 "speaking" -> listener.onDiagnostic("VOICE OUTPUT -> SYNTHESIZING")
                 "idle" -> Unit
             }
-
             "transcript" -> {
                 val text = payload.optString("text").trim()
+                (pcmObserver as? OwnerVoiceRuntime)?.completeTranscript(text)?.let {
+                    listener.onDiagnostic(it.diagnostic())
+                }
                 mainHandler.post { listener.onTranscript(text) }
             }
-
             "audio_start" -> {
                 val sampleRate = payload.optInt("sample_rate_hz", OUTPUT_SAMPLE_RATE)
-                    .takeIf { it in 8_000..48_000 }
-                    ?: OUTPUT_SAMPLE_RATE
+                    .takeIf { it in 8_000..48_000 } ?: OUTPUT_SAMPLE_RATE
                 val provider = payload.optString("provider", "streaming")
                 startAudioTrack(sampleRate)
                 mainHandler.post { listener.onSpeechOutputStarted(provider) }
             }
-
             "audio_segment" -> {
                 val preview = payload.optString("text").take(80)
-                if (preview.isNotBlank()) {
-                    listener.onDiagnostic("VOICE SEGMENT -> $preview")
-                }
+                if (preview.isNotBlank()) listener.onDiagnostic("VOICE SEGMENT -> $preview")
             }
-
             "audio_end" -> stopSpeechInternal(notify = true)
             "error" -> listener.onError(payload.optString("message", "Voice backend error"))
             "pong" -> Unit
@@ -270,9 +246,7 @@ class JarvisVoiceGateway(
         mainHandler.post(listener::onListening)
         listener.onDiagnostic("VOICE INPUT -> PCM16 16000HZ")
 
-        recordingThread = Thread({
-            captureLoop(recorder, bufferSize)
-        }, "jarvis-pcm-capture").apply {
+        recordingThread = Thread({ captureLoop(recorder, bufferSize) }, "jarvis-pcm-capture").apply {
             isDaemon = true
             start()
         }
@@ -287,7 +261,6 @@ class JarvisVoiceGateway(
         while (recording.get() && !destroyed.get()) {
             val count = recorder.read(buffer, 0, buffer.size, AudioRecord.READ_BLOCKING)
             if (count <= 0) continue
-
             socket?.send(buffer.toByteString(0, count))
             runCatching { pcmObserver?.onPcmChunk(buffer, count) }
             val rms = pcmRms(buffer, count)
@@ -298,11 +271,10 @@ class JarvisVoiceGateway(
                 speechDetected = true
                 lastVoiceAt = now
             }
-
-            val silenceReached = speechDetected && now - lastVoiceAt >= END_SILENCE_MS
-            val noSpeechTimeout = !speechDetected && now - startedAt >= NO_SPEECH_TIMEOUT_MS
-            val maximumReached = now - startedAt >= MAX_CAPTURE_MS
-            if (silenceReached || noSpeechTimeout || maximumReached) {
+            val shouldStop = (speechDetected && now - lastVoiceAt >= END_SILENCE_MS) ||
+                (!speechDetected && now - startedAt >= NO_SPEECH_TIMEOUT_MS) ||
+                now - startedAt >= MAX_CAPTURE_MS
+            if (shouldStop) {
                 recording.set(false)
                 runCatching { recorder.stop() }
                 runCatching { recorder.release() }
@@ -367,9 +339,7 @@ class JarvisVoiceGateway(
         runCatching { track?.flush() }
         runCatching { track?.stop() }
         runCatching { track?.release() }
-        if (notify && wasSpeaking) {
-            mainHandler.post(listener::onSpeechOutputCompleted)
-        }
+        if (notify && wasSpeaking) mainHandler.post(listener::onSpeechOutputCompleted)
     }
 
     private fun sendJson(type: String) {
@@ -395,8 +365,7 @@ class JarvisVoiceGateway(
             samples++
             index += 2
         }
-        if (samples == 0) return 0f
-        return sqrt(sum / samples).toFloat().coerceIn(0f, 1f)
+        return if (samples == 0) 0f else sqrt(sum / samples).toFloat().coerceIn(0f, 1f)
     }
 
     companion object {
