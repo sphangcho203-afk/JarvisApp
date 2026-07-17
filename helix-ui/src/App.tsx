@@ -1,6 +1,7 @@
-import { Component, type ErrorInfo, type ReactNode } from 'react'
-import { Hud } from './Hud'
+import { Component, useMemo, type ErrorInfo, type ReactNode } from 'react'
+import { AdaptiveHud } from './AdaptiveHud'
 import { useNativeBridge } from './nativeBridge'
+import { workspaceFromText } from './workspaces'
 
 interface BoundaryProps { children: ReactNode }
 interface BoundaryState { error: Error | null }
@@ -40,10 +41,27 @@ class HelixErrorBoundary extends Component<BoundaryProps, BoundaryState> {
 
 export default function App() {
   const bridge = useNativeBridge()
+  const workspace = useMemo(() => {
+    const missionText = [
+      bridge.transcript,
+      bridge.response,
+      bridge.operation.active ? bridge.operation.stage : '',
+      bridge.operation.active ? bridge.operation.detail : '',
+    ].join(' ')
+    return workspaceFromText(missionText, 'CORE')
+  }, [
+    bridge.operation.active,
+    bridge.operation.detail,
+    bridge.operation.stage,
+    bridge.response,
+    bridge.transcript,
+  ])
+
   return (
     <HelixErrorBoundary>
-      <Hud
+      <AdaptiveHud
         mode={bridge.mode}
+        workspace={workspace}
         audioRef={bridge.metricsRef}
         metrics={bridge.metrics}
         transcript={bridge.transcript}
