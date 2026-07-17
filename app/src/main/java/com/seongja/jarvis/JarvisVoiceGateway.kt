@@ -25,7 +25,8 @@ import kotlin.math.sqrt
 class JarvisVoiceGateway(
     context: Context,
     private val listener: Listener,
-    private val endpoint: String = DEFAULT_ENDPOINT
+    private val endpoint: String = DEFAULT_ENDPOINT,
+    private val pcmObserver: PcmCaptureObserver? = null
 ) : WebSocketListener() {
 
     interface Listener {
@@ -230,9 +231,7 @@ class JarvisVoiceGateway(
             }
 
             "audio_end" -> stopSpeechInternal(notify = true)
-
             "error" -> listener.onError(payload.optString("message", "Voice backend error"))
-
             "pong" -> Unit
         }
     }
@@ -267,6 +266,7 @@ class JarvisVoiceGateway(
 
         audioRecord = recorder
         recorder.startRecording()
+        runCatching { pcmObserver?.onCaptureStarted(INPUT_SAMPLE_RATE) }
         mainHandler.post(listener::onListening)
         listener.onDiagnostic("VOICE INPUT -> PCM16 16000HZ")
 
@@ -289,6 +289,7 @@ class JarvisVoiceGateway(
             if (count <= 0) continue
 
             socket?.send(buffer.toByteString(0, count))
+            runCatching { pcmObserver?.onPcmChunk(buffer, count) }
             val rms = pcmRms(buffer, count)
             mainHandler.post { listener.onRms(rms) }
 
@@ -306,6 +307,8 @@ class JarvisVoiceGateway(
                 runCatching { recorder.stop() }
                 runCatching { recorder.release() }
                 audioRecord = null
+                recordingThread = null
+                runCatching { pcmObserver?.onCaptureFinished() }
                 mainHandler.post { listener.onRms(0f) }
                 if (connected.get()) {
                     sendJson("stop_input")
@@ -322,6 +325,7 @@ class JarvisVoiceGateway(
         runCatching { audioRecord?.release() }
         audioRecord = null
         recordingThread = null
+        runCatching { pcmObserver?.onCaptureFinished() }
         mainHandler.post { listener.onRms(0f) }
     }
 
