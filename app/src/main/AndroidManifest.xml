@@ -84,6 +84,13 @@
             android:theme="@style/Theme.Jarvis" />
 
         <activity
+            android:name=".PrivateDiaryActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:label="FRIDAY Private Diary"
+            android:theme="@style/Theme.Jarvis" />
+
+        <activity
             android:name=".WaApiConfigActivity"
             android:exported="false"
             android:label="FRIDAY WaAPI Direct"
