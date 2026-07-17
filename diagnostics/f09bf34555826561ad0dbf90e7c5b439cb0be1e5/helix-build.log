@@ -1,0 +1,13 @@
+
+> friday-helix-android-hud@0.9.23 build
+> tsc -b && vite build
+
+[36mvite v7.3.6 [32mbuilding client environment for production...[36m[39m
+transforming...
+[32m✓[39m 474 modules transformed.
+rendering chunks...
+computing gzip size...
+[2mdist/[22m[32mindex.html                 [39m[1m[2m    0.50 kB[22m[1m[22m[2m │ gzip:   0.32 kB[22m
+[2mdist/[22m[2massets/[22m[35mindex-BjZx2iRH.css  [39m[1m[2m   24.43 kB[22m[1m[22m[2m │ gzip:   6.42 kB[22m
+[2mdist/[22m[2massets/[22m[36mindex-C-IVYYXh.js   [39m[1m[2m1,283.66 kB[22m[1m[22m[2m │ gzip: 362.52 kB[22m
+[32m✓ built in 3.09s[39m
