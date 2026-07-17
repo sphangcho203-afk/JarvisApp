@@ -11,13 +11,14 @@ class OwnerVoiceProfileTest {
     fun extractsUsableFeaturesWithoutKeepingRawAudio() {
         val accumulator = PcmFeatureAccumulator(16_000)
         val pcm = ByteArray(16_000 * 2) { index ->
-            if ((index / 2) % 20 < 10) 40 else (-40).toByte()
+            if ((index / 2) % 20 < 10) 40.toByte() else (-40).toByte()
         }
         accumulator.accept(pcm)
         val sample = accumulator.finish("wake up jarvis")
         assertTrue(sample.durationMs >= 900L)
         assertTrue(sample.zeroCrossingRate >= 0f)
-        assertTrue(sample.values().size == 7)
+        assertEquals(7, sample.values().size)
+        assertTrue(sample.isUsable())
     }
 
     @Test
@@ -36,10 +37,7 @@ class OwnerVoiceProfileTest {
     fun similarSamplesScoreHigherThanDifferentSamples() {
         val base = VoiceFeatureVector(.12f, .08f, .11f, .2f, .72f, 1_200L, 115f)
         val profile = OwnerVoiceMatcher.build(listOf(base, base, base, base), listOf("sample"))
-        val similar = OwnerVoiceMatcher.similarity(
-            profile,
-            base.copy(rms = .125f, wordsPerMinute = 118f)
-        )
+        val similar = OwnerVoiceMatcher.similarity(profile, base.copy(rms = .125f, wordsPerMinute = 118f))
         val different = OwnerVoiceMatcher.similarity(
             profile,
             VoiceFeatureVector(.5f, .45f, .8f, .9f, .05f, 8_000L, 280f)
@@ -50,7 +48,7 @@ class OwnerVoiceProfileTest {
 
     @Test
     fun familiarityNeverAuthorizesSensitiveActions() {
-        assertFalse(OwnerVoiceRuntime::mayAuthorizeSensitiveAction.isLateinit)
+        assertFalse(OwnerVoiceAuthorizationPolicy.mayAuthorizeSensitiveAction())
     }
 
     @Test
