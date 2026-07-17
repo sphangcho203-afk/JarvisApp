@@ -1,8 +1,8 @@
 const CAPABILITIES = [
   { id: 'VISION', title: 'X-CAMERA', command: 'OPEN YOUR EYES', state: 'NATIVE' },
   { id: 'CREATE', title: 'VISUAL LAB', command: 'VISUALIZE...', state: 'GEMINI' },
-  { id: 'PRIVATE', title: 'DIARY', command: 'OPEN MY DIARY', state: 'LOCKED' },
-  { id: 'MEMORY', title: 'VAULT', command: 'OPEN MEMORY VAULT', state: 'LOCAL' },
+  { id: 'PRIVATE', title: 'PRIVATE DIARY', command: 'OPEN MY DIARY', state: 'LOCKED' },
+  { id: 'MEMORY', title: 'MEMORY VAULT', command: 'OPEN MEMORY VAULT', state: 'LOCAL' },
   { id: 'ANDROID', title: 'CONTROL', command: 'ENABLE CONTROL', state: 'SYSTEM' },
 ]
 
