@@ -257,7 +257,9 @@ class MemoryVaultActivity : Activity() {
         val root = page()
         root.addView(title(if (existing == null) "MEMORY // NEW RECORD" else "MEMORY // EDIT RECORD"), params(bottom = 10))
         val value = input("What should F.R.I.D.A.Y. remember?", existing?.value.orEmpty(), false).apply {
-            minLines = 5; maxLines = 12; gravity = Gravity.TOP or Gravity.START
+            minLines = 5
+            maxLines = 12
+            gravity = Gravity.TOP or Gravity.START
         }
         val namespace = input("Namespace, such as friday or school", existing?.namespace ?: "general", true)
         val kinds = MemoryKind.values().toList()
@@ -269,10 +271,14 @@ class MemoryVaultActivity : Activity() {
 
         root.addView(label("MEMORY", 9f, MUTED, true), params(bottom = 3))
         root.addView(value, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(190)).apply { bottomMargin = dp(8) })
-        root.addView(label("NAMESPACE", 9f, MUTED, true), params(bottom = 3)); root.addView(namespace, params(bottom = 8))
-        root.addView(label("TYPE", 9f, MUTED, true), params(bottom = 3)); root.addView(kind, params(bottom = 8))
-        root.addView(label("SENSITIVITY", 9f, MUTED, true), params(bottom = 3)); root.addView(sensitivity, params(bottom = 8))
-        root.addView(label("RETENTION", 9f, MUTED, true), params(bottom = 3)); root.addView(retention, params(bottom = 10))
+        root.addView(label("NAMESPACE", 9f, MUTED, true), params(bottom = 3))
+        root.addView(namespace, params(bottom = 8))
+        root.addView(label("TYPE", 9f, MUTED, true), params(bottom = 3))
+        root.addView(kind, params(bottom = 8))
+        root.addView(label("SENSITIVITY", 9f, MUTED, true), params(bottom = 3))
+        root.addView(sensitivity, params(bottom = 8))
+        root.addView(label("RETENTION", 9f, MUTED, true), params(bottom = 3))
+        root.addView(retention, params(bottom = 10))
         root.addView(button("SAVE CONFIRMED MEMORY", GREEN) {
             val text = value.text.toString().trim()
             if (text.isBlank()) {
@@ -304,7 +310,8 @@ class MemoryVaultActivity : Activity() {
     private fun beginExport() {
         externalFlow = true
         startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE); type = "application/octet-stream"
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "application/octet-stream"
             putExtra(Intent.EXTRA_TITLE, "FRIDAY-memory-${System.currentTimeMillis()}.fridaymem")
         }, REQUEST_EXPORT)
     }
@@ -312,7 +319,8 @@ class MemoryVaultActivity : Activity() {
     private fun beginImport() {
         externalFlow = true
         startActivityForResult(Intent(Intent.ACTION_OPEN_DOCUMENT).apply {
-            addCategory(Intent.CATEGORY_OPENABLE); type = "application/octet-stream"
+            addCategory(Intent.CATEGORY_OPENABLE)
+            type = "application/octet-stream"
         }, REQUEST_IMPORT)
     }
 
@@ -321,8 +329,11 @@ class MemoryVaultActivity : Activity() {
             runCatching {
                 contentResolver.openOutputStream(uri)?.bufferedWriter()?.use { it.write(store.exportEncryptedPayload()) }
                     ?: error("Export destination unavailable")
-            }.onSuccess { Toast.makeText(this, "Encrypted memory export created.", Toast.LENGTH_LONG).show() }
-                .onFailure { Toast.makeText(this, "Export failed: ${it.message}", Toast.LENGTH_LONG).show() }
+            }.onSuccess {
+                Toast.makeText(this, "Encrypted memory export created.", Toast.LENGTH_LONG).show()
+            }.onFailure {
+                Toast.makeText(this, "Export failed: ${it.message}", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
@@ -335,44 +346,99 @@ class MemoryVaultActivity : Activity() {
                 val count = store.importEncryptedPayload(payload)
                 Toast.makeText(this, "Imported $count records.", Toast.LENGTH_LONG).show()
                 showHome()
-            }.onFailure { Toast.makeText(this, "Import failed: ${it.message}", Toast.LENGTH_LONG).show() }
+            }.onFailure {
+                Toast.makeText(this, "Import failed: ${it.message}", Toast.LENGTH_LONG).show()
+            }
         }
     }
 
     private fun page() = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL; setPadding(dp(14), dp(20), dp(14), dp(28)); setBackgroundColor(BG)
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(14), dp(20), dp(14), dp(28))
+        setBackgroundColor(BG)
     }
+
     private fun panel() = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL; setPadding(dp(12), dp(12), dp(12), dp(12))
-        background = GradientDrawable().apply { setColor(Color.rgb(4, 12, 28)); setStroke(dp(1), BLUE); cornerRadius = dp(8).toFloat() }
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(12), dp(12), dp(12), dp(12))
+        background = GradientDrawable().apply {
+            setColor(Color.rgb(4, 12, 28))
+            setStroke(dp(1), BLUE)
+            cornerRadius = dp(8).toFloat()
+        }
     }
+
     private fun input(hint: String, value: String, singleLine: Boolean) = EditText(this).apply {
-        this.hint = hint; setText(value); setSingleLine(singleLine); setTextColor(Color.WHITE); setHintTextColor(MUTED)
-        background = fieldBackground(); setPadding(dp(10), dp(9), dp(10), dp(9))
+        this.hint = hint
+        setText(value)
+        setSingleLine(singleLine)
+        setTextColor(Color.WHITE)
+        setHintTextColor(MUTED)
+        background = fieldBackground()
+        setPadding(dp(10), dp(9), dp(10), dp(9))
     }
+
     private fun spinner(values: List<String>, selection: Int) = Spinner(this).apply {
         adapter = ArrayAdapter(this@MemoryVaultActivity, android.R.layout.simple_spinner_dropdown_item, values)
-        setSelection(selection.coerceAtLeast(0)); background = fieldBackground()
+        setSelection(selection.coerceAtLeast(0))
+        background = fieldBackground()
     }
+
     private fun fieldBackground() = GradientDrawable().apply {
-        setColor(Color.rgb(3, 10, 24)); setStroke(dp(1), Color.rgb(42, 93, 151)); cornerRadius = dp(6).toFloat()
+        setColor(Color.rgb(3, 10, 24))
+        setStroke(dp(1), Color.rgb(42, 93, 151))
+        cornerRadius = dp(6).toFloat()
     }
+
     private fun title(text: String) = center(text, 21f, CYAN, true).apply { letterSpacing = .08f }
-    private fun center(text: String, size: Float, color: Int, bold: Boolean) = label(text, size, color, bold).apply { gravity = Gravity.CENTER_HORIZONTAL }
+
+    private fun center(text: String, size: Float, color: Int, bold: Boolean) =
+        label(text, size, color, bold).apply { gravity = Gravity.CENTER_HORIZONTAL }
+
     private fun label(text: String, size: Float, color: Int, bold: Boolean) = TextView(this).apply {
-        this.text = text; textSize = size; setTextColor(color)
-        typeface = Typeface.create("sans-serif", if (bold) Typeface.BOLD else Typeface.NORMAL); setLineSpacing(0f, 1.15f)
+        this.text = text
+        textSize = size
+        setTextColor(color)
+        typeface = Typeface.create("sans-serif", if (bold) Typeface.BOLD else Typeface.NORMAL)
+        setLineSpacing(0f, 1.15f)
     }
+
     private fun button(text: String, accent: Int, action: () -> Unit) = Button(this).apply {
-        this.text = text; textSize = 10f; letterSpacing = .06f; setTextColor(Color.WHITE)
-        background = GradientDrawable().apply { setColor(Color.rgb(7, 18, 39)); setStroke(dp(1), accent); cornerRadius = dp(5).toFloat() }
-        setOnClickListener { action() }
+        this.text = text
+        textSize = 10f
+        letterSpacing = .06f
+        setTextColor(Color.WHITE)
+        background = GradientDrawable().apply {
+            setColor(Color.rgb(7, 18, 39))
+            setStroke(dp(1), accent)
+            cornerRadius = dp(5).toFloat()
+        }
+        setOnClickListener {
+            try {
+                action()
+            } catch (error: MemoryPolicyException) {
+                Toast.makeText(this@MemoryVaultActivity, error.message, Toast.LENGTH_LONG).show()
+            }
+        }
     }
-    private fun params(bottom: Int = 0) = LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT).apply { bottomMargin = dp(bottom) }
+
+    private fun params(bottom: Int = 0) = LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.WRAP_CONTENT
+    ).apply { bottomMargin = dp(bottom) }
+
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
-    private fun formatTime(value: Long) = if (value <= 0L) "NOT VERIFIED" else SimpleDateFormat("dd MMM yyyy // hh:mm a", Locale.getDefault()).format(Date(value))
+
+    private fun formatTime(value: Long) = if (value <= 0L) {
+        "NOT VERIFIED"
+    } else {
+        SimpleDateFormat("dd MMM yyyy // hh:mm a", Locale.getDefault()).format(Date(value))
+    }
+
     private fun sensitivityColor(value: MemorySensitivity) = when (value) {
-        MemorySensitivity.NORMAL -> GREEN; MemorySensitivity.PRIVATE -> GOLD; MemorySensitivity.HIGHLY_SENSITIVE -> RED
+        MemorySensitivity.NORMAL -> GREEN
+        MemorySensitivity.PRIVATE -> GOLD
+        MemorySensitivity.HIGHLY_SENSITIVE -> RED
     }
 
     companion object {
@@ -395,10 +461,14 @@ class MemoryVaultActivity : Activity() {
         private val MUTED = Color.rgb(116, 144, 178)
 
         fun launch(context: Context, query: String = "", screen: String = SCREEN_HOME) {
-            context.startActivity(Intent(context, MemoryVaultActivity::class.java)
-                .putExtra(EXTRA_QUERY, query.trim()).putExtra(EXTRA_SCREEN, screen)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+            context.startActivity(
+                Intent(context, MemoryVaultActivity::class.java)
+                    .putExtra(EXTRA_QUERY, query.trim())
+                    .putExtra(EXTRA_SCREEN, screen)
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            )
         }
+
         fun launchPending(context: Context) = launch(context, screen = SCREEN_PENDING)
         fun launchArchive(context: Context) = launch(context, screen = SCREEN_ARCHIVE)
         fun launchDiaryTransfer(context: Context) = launch(context, screen = SCREEN_DIARY)
