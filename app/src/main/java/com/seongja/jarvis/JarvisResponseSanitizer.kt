@@ -46,13 +46,56 @@ object JarvisResponseSanitizer {
         }
     }
 
-    fun spoken(raw: String): String = clean(raw)
-        .replace(Regex("```[\\s\\S]*?```"), " Code is displayed on screen. ")
-        .replace(Regex("https?://\\S+"), "")
-        .replace(Regex("\\[(\\d+)]"), "")
-        .replace(Regex("[*_#>`]"), " ")
-        .replace(Regex("\\s+"), " ")
-        .trim()
+    fun spoken(raw: String): String {
+        var value = clean(raw)
+            .replace(Regex("```[\\s\\S]*?```"), " Code is displayed on screen. ")
+            .replace(Regex("https?://\\S+"), "")
+            .replace(Regex("\\[(\\d+)]"), "")
+            .replace(Regex("[*_#>`]"), " ")
+            .replace(Regex("\\s*//+\\s*"), ". ")
+            .replace(Regex("\\s*(?:->|→)\\s*"), ". ")
+            .replace(DECORATIVE_UNICODE, " ")
+
+        value = DOTTED_OR_SPACED_WORD.replace(value) { match ->
+            val joined = match.value.filter(Char::isLetter)
+            naturalWord(joined)
+        }
+
+        value = ALL_CAPS_WORD.replace(value) { match ->
+            naturalWord(match.value)
+        }
+
+        return value
+            .replace(Regex("\\s+([,.;:!?])"), "$1")
+            .replace(Regex("([.!?]){2,}"), "$1")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+    }
+
+    private fun naturalWord(raw: String): String {
+        val upper = raw.uppercase()
+        return when (upper) {
+            "FRIDAY" -> "Friday"
+            "GMAIL" -> "Gmail"
+            "WHATSAPP" -> "WhatsApp"
+            "CARTESIA" -> "Cartesia"
+            "DEEPSEEK" -> "DeepSeek"
+            "GEMINI" -> "Gemini"
+            "YOUTUBE" -> "YouTube"
+            "HELIX" -> "Helix"
+            "ANDROID" -> "Android"
+            "WEATHER" -> "weather"
+            "RESPONSE" -> "response"
+            "SYSTEM" -> "system"
+            "NETWORK" -> "network"
+            "PRIVATE" -> "private"
+            "CORTEX" -> "cortex"
+            "HTTP", "HTTPS", "API", "APK", "GPS", "CPU", "GPU", "PCM", "JSON", "HTML", "CSS", "URL", "SMS" -> upper
+            else -> raw.lowercase().replaceFirstChar { character ->
+                if (character.isLowerCase()) character.titlecase() else character.toString()
+            }
+        }
+    }
 
     private val HIDDEN_XML_BLOCK = Regex(
         "(?is)<(think|analysis|reasoning|scratchpad|internal|chain_of_thought)>.*?</\\1>"
@@ -72,4 +115,9 @@ object JarvisResponseSanitizer {
     private val AVAILABLE_EVIDENCE_PREFACE = Regex(
         "(?is)^\\s*(?:from|based on) the available evidence,?\\s*"
     )
+    private val DOTTED_OR_SPACED_WORD = Regex(
+        "(?i)(?<![A-Za-z])(?:[A-Za-z][.\\s-]){3,}[A-Za-z](?![A-Za-z])"
+    )
+    private val ALL_CAPS_WORD = Regex("\\b[A-Z]{4,}\\b")
+    private val DECORATIVE_UNICODE = Regex("[\\u2600-\\u27BF\\uD83C-\\uDBFF\\uDC00-\\uDFFF]")
 }
