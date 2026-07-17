@@ -1,0 +1,114 @@
+name: Patch Tavily Plan Compatibility
+
+on:
+  push:
+    branches:
+      - agent/friday-0.9.24-tavily-plan-fix
+
+permissions:
+  contents: write
+
+concurrency:
+  group: friday-tavily-plan-patch
+  cancel-in-progress: false
+
+jobs:
+  patch-source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout patch branch
+        uses: actions/checkout@v7
+        with:
+          ref: agent/friday-0.9.24-tavily-plan-fix
+          fetch-depth: 0
+
+      - name: Apply source and release patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_exact(path: str, old: str, new: str) -> None:
+              file = Path(path)
+              text = file.read_text()
+              if old not in text:
+                  raise SystemExit(f"Expected marker missing in {path}: {old!r}")
+              file.write_text(text.replace(old, new))
+
+          search_client = "app/src/main/java/com/seongja/jarvis/SearchGridResearchClient.kt"
+          replace_exact(
+              search_client,
+              '                put("safe_search", true)\n',
+              '                // safe_search is omitted because Tavily restricts it to enterprise plans.\n',
+          )
+
+          replace_exact("app/build.gradle.kts", "versionCode = 33", "versionCode = 34")
+          replace_exact(
+              "app/build.gradle.kts",
+              'versionName = "0.9.23-design-lock"',
+              'versionName = "0.9.24-tavily-plan-fix"',
+          )
+          replace_exact("helix-ui/package.json", '"version": "0.9.23"', '"version": "0.9.24"')
+          replace_exact("helix-ui/src/Hud.tsx", "BUILD 0.9.23", "BUILD 0.9.24")
+
+          hud_host = Path("app/src/main/java/com/seongja/jarvis/HelixHudView.kt")
+          host_text = hud_host.read_text()
+          host_text = host_text.replace("FridayHelix/0.9.22", "FridayHelix/0.9.24")
+          host_text = host_text.replace("FridayHelix/0.9.23", "FridayHelix/0.9.24")
+          hud_host.write_text(host_text)
+
+          workflow = Path(".github/workflows/android-apk.yml")
+          workflow_text = workflow.read_text()
+          workflow_text = workflow_text.replace("0.9.23-design-lock", "0.9.24-tavily-plan-fix")
+          workflow_text = workflow_text.replace("0.9.23-Design-Lock", "0.9.24-Tavily-Plan-Fix")
+          workflow_text = workflow_text.replace("0.9.23 // Design Lock", "0.9.24 // Tavily Plan Fix")
+          workflow_text = workflow_text.replace("design-lock", "tavily-plan-fix")
+          workflow_text = workflow_text.replace("Design-Lock", "Tavily-Plan-Fix")
+          workflow_text = workflow_text.replace("Design Lock", "Tavily Plan Fix")
+          verification_anchor = "          grep -q 'class NetworkHealthMonitor' app/src/main/java/com/seongja/jarvis/NetworkHealthMonitor.kt\n"
+          verification_patch = verification_anchor + (
+              "          ! grep -q 'put(\"safe_search\"' app/src/main/java/com/seongja/jarvis/SearchGridResearchClient.kt\n"
+              "          grep -q 'Tavily restricts it to enterprise plans' app/src/main/java/com/seongja/jarvis/SearchGridResearchClient.kt\n"
+          )
+          if verification_anchor not in workflow_text:
+              raise SystemExit("Android workflow verification anchor is missing")
+          workflow.write_text(workflow_text.replace(verification_anchor, verification_patch))
+
+          beacon = Path(".github/workflows/ci-status-beacon.yml")
+          beacon_text = beacon.read_text()
+          beacon_text = beacon_text.replace("0.9.23-design-lock", "0.9.24-tavily-plan-fix")
+          beacon_text = beacon_text.replace("0.9.23-Design-Lock", "0.9.24-Tavily-Plan-Fix")
+          beacon.write_text(beacon_text)
+
+          manifest = Path("ci/friday-0.9.24-tavily-plan-fix.manifest")
+          manifest.write_text(
+              "F.R.I.D.A.Y. // HELIX OPS\n"
+              "VERSION // 0.9.24-tavily-plan-fix\n"
+              "VERSION CODE // 34\n"
+              "PACKAGE // com.seongja.jarvis\n"
+              "PATCH // OMIT ENTERPRISE-ONLY TAVILY SAFE_SEARCH FIELD\n"
+              "TAVILY // STANDARD PLAN COMPATIBLE REQUEST BODY\n"
+              "EXA // PRESERVED\n"
+              "DESIGN // 0.9.23 LOCKED HUD PRESERVED\n"
+              "OPERATIONS // NETWORK + CARTESIA + RESEARCH + INTEGRATIONS PRESERVED\n"
+          )
+
+          Path(".github/workflows/patch-tavily-plan.yml").unlink()
+          PY
+
+          git diff --check
+          ! grep -R 'put("safe_search"' app/src/main/java/com/seongja/jarvis
+          grep -q 'versionName = "0.9.24-tavily-plan-fix"' app/build.gradle.kts
+          grep -q 'BUILD 0.9.24' helix-ui/src/Hud.tsx
+
+      - name: Commit clean Tavily patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "FRIDAY Patch Core"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "Fix Tavily standard-plan requests"
+          git push origin HEAD:agent/friday-0.9.24-tavily-plan-fix
