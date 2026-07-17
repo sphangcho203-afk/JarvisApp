@@ -1,0 +1,91 @@
+.status-symbol {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  font-size: 0;
+  color: rgba(var(--accent-rgb) / .94);
+}
+
+.weather-glyph {
+  width: 21px;
+  height: 21px;
+  overflow: visible;
+  filter: drop-shadow(0 0 5px rgba(var(--accent-rgb) / .34));
+}
+
+.weather-glyph .weather-frame {
+  opacity: .34;
+}
+
+.weather-glyph .weather-alert-node {
+  color: rgba(255, 153, 68, .94);
+  filter: drop-shadow(0 0 5px rgba(255, 133, 42, .34));
+}
+
+.response-box {
+  display: flex;
+  flex-direction: column;
+  height: 42%;
+  min-height: 96px;
+  max-height: 158px;
+}
+
+.response-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  margin-top: 10px;
+  padding: 0 8px 4px 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  -webkit-overflow-scrolling: touch;
+  user-select: text;
+  -webkit-user-select: text;
+  scrollbar-gutter: stable;
+}
+
+.response-scroll > p {
+  margin: 0;
+  min-height: 100%;
+  overflow: visible;
+  font-family: "Roboto Mono", ui-monospace, monospace;
+  font-size: 8px;
+  line-height: 1.62;
+  letter-spacing: .035em;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+.response-scroll:focus-visible {
+  outline: 1px solid rgba(var(--accent-rgb) / .38);
+  outline-offset: 4px;
+}
+
+.terminal-log {
+  max-height: 34%;
+}
+
+@media (min-width: 760px) {
+  .response-scroll > p { font-size: 10px; }
+}
+
+@media (max-width: 390px) {
+  .status-symbol { width: 18px; height: 18px; }
+  .weather-glyph { width: 17px; height: 17px; }
+  .response-box {
+    height: 43%;
+    min-height: 92px;
+    max-height: 124px;
+  }
+  .response-scroll {
+    margin-top: 7px;
+    padding-right: 5px;
+  }
+  .response-scroll > p {
+    font-size: 6px;
+    line-height: 1.58;
+  }
+}
