@@ -16,6 +16,7 @@ object JarvisResponseSanitizer {
             .replace(HIDDEN_FENCE_BLOCK, " ")
             .replace(HIDDEN_TAG, " ")
             .replace(LEADING_FINAL_LABEL, "")
+            .replace(DECORATIVE_UNICODE, " ")
             .trim()
 
         if (groundedResearch) {
@@ -54,7 +55,6 @@ object JarvisResponseSanitizer {
             .replace(Regex("[*_#>`]"), " ")
             .replace(Regex("\\s*//+\\s*"), ". ")
             .replace(Regex("\\s*(?:->|→)\\s*"), ". ")
-            .replace(DECORATIVE_UNICODE, " ")
 
         value = DOTTED_OR_SPACED_WORD.replace(value) { match ->
             val joined = match.value.filter(Char::isLetter)
