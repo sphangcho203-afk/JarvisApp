@@ -128,6 +128,10 @@ class GmailApiClient(context: Context) {
 
     fun profile(): GmailProfile {
         val token = acquireAccessToken()
+        return profileWithToken(token)
+    }
+
+    private fun profileWithToken(token: String): GmailProfile {
         val root = getJson("$BASE/users/me/profile", token)
         return GmailProfile(
             emailAddress = root.optString("emailAddress").trim(),
@@ -295,12 +299,20 @@ class GmailApiClient(context: Context) {
             throw GmailAccessRequiredException("Gmail consent is required. Say authorize Gmail.")
         }
         val token = result.accessToken.orEmpty()
-        val account = result.toGoogleSignInAccount()?.email.orEmpty()
         val granted = result.grantedScopes.orEmpty().toSet()
-        if (token.isBlank() || account.isBlank() || !GmailScopes.requiredUris.all(granted::contains)) {
+        if (token.isBlank() || !GmailScopes.requiredUris.all(granted::contains)) {
             throw GmailAccessRequiredException("Gmail authorization is incomplete. Say authorize Gmail.")
         }
-        authStore.recordAuthorized(account, granted)
+
+        val returnedAccount = result.toGoogleSignInAccount()?.email.orEmpty()
+        val storedAccount = authStore.load().accountEmail
+        val account = returnedAccount.ifBlank { storedAccount }
+        if (account.isNotBlank()) {
+            authStore.recordAuthorized(account, granted)
+        } else {
+            val recovered = profileWithToken(token)
+            authStore.recordAuthorized(recovered.emailAddress, granted)
+        }
         return token
     }
 
