@@ -12,11 +12,11 @@ import java.lang.ref.WeakReference
 import java.util.WeakHashMap
 
 /**
- * Process-level setup and live-data bridge for the HELIX WebView.
+ * Process-level setup, owner-access policy, and live-data bridge for HELIX.
  *
  * First launch flows through cortex/API setup, WeatherAPI setup, then Android
  * permissions. Secrets never cross the JavaScript bridge; HELIX receives only
- * a redacted weather snapshot.
+ * redacted health and weather data.
  */
 class JarvisApplication : Application(), Application.ActivityLifecycleCallbacks {
 
@@ -31,8 +31,20 @@ class JarvisApplication : Application(), Application.ActivityLifecycleCallbacks 
         registerActivityLifecycleCallbacks(this)
     }
 
+    override fun onActivityPreCreated(activity: Activity, savedInstanceState: Bundle?) {
+        OwnerAccessController.protect(activity)
+    }
+
+    override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) {
+        // API 28 fallback because onActivityPreCreated was added in API 29.
+        OwnerAccessController.protect(activity)
+    }
+
     override fun onActivityResumed(activity: Activity) {
+        OwnerAccessController.protect(activity)
+        if (OwnerAccessController.requireAuthentication(activity)) return
         if (activity !is MainActivity) return
+
         attachSetupBridge(activity)
         WeatherRuntime.refresh()
         val cortexConfigured = runCatching { JarvisBrain(activity).isCloudConfigured() }
@@ -145,7 +157,6 @@ class JarvisApplication : Application(), Application.ActivityLifecycleCallbacks 
         }
     }
 
-    override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) = Unit
     override fun onActivityStarted(activity: Activity) = Unit
     override fun onActivityPaused(activity: Activity) = Unit
     override fun onActivityStopped(activity: Activity) = Unit
