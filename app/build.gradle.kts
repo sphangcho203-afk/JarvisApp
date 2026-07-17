@@ -11,8 +11,8 @@ android {
         applicationId = "com.seongja.jarvis"
         minSdk = 28
         targetSdk = 35
-        versionCode = 33
-        versionName = "0.9.23-design-lock"
+        versionCode = 34
+        versionName = "0.9.24-gmail-image"
     }
 
     buildTypes {
@@ -37,4 +37,5 @@ android {
 
 dependencies {
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("com.google.android.gms:play-services-auth:21.6.0")
 }
