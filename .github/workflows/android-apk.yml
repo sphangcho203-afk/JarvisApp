@@ -22,8 +22,37 @@ env:
   FRIDAY_VERSION: 0.10.0
 
 jobs:
+  integrate:
+    name: Integrate native workspace continuity
+    if: github.event_name == 'pull_request' && github.head_ref == 'agent/complete-hardening-0.9.31'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v7
+        with:
+          ref: agent/complete-hardening-0.9.31
+          fetch-depth: 0
+
+      - name: Apply deterministic source integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/finalize_sensory_source.py
+          if git diff --quiet; then
+            echo 'Native workspace continuity is already integrated.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'Complete FRIDAY native workspace continuity'
+          git push origin HEAD:agent/complete-hardening-0.9.31
+
   build:
     name: Build and inspect FRIDAY 0.10.0
+    needs: integrate
+    if: always() && (needs.integrate.result == 'success' || needs.integrate.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 50
     outputs:
@@ -56,6 +85,7 @@ jobs:
           grep -q 'X-CAMERA' helix-ui/src/WorkspaceRail.tsx
           grep -q 'VISUAL LAB' helix-ui/src/WorkspaceRail.tsx
           grep -q 'PRIVATE DIARY' helix-ui/src/WorkspaceRail.tsx
+          grep -q 'onOpen' helix-ui/src/WorkspaceRail.tsx
 
       - name: Smoke-test phone and desktop HELIX
         shell: bash
@@ -142,6 +172,10 @@ jobs:
           grep -q 'assets/helix/index.html' apk-contents.log
           grep -q 'class XCameraActivity' app/src/main/java/com/seongja/jarvis/XCameraActivity.kt
           grep -q 'class GeminiVisionClient' app/src/main/java/com/seongja/jarvis/GeminiVisionClient.kt
+          grep -q 'class FridayWorkspaceVoice' app/src/main/java/com/seongja/jarvis/FridayWorkspaceVoice.kt
+          grep -q 'spokenInWorkspace' app/src/main/java/com/seongja/jarvis/XCameraActivity.kt
+          grep -q 'consumeXCameraResult' app/src/main/java/com/seongja/jarvis/MainActivity.kt
+          grep -q 'openWorkspace' app/src/main/java/com/seongja/jarvis/HelixHudView.kt
           grep -q 'open your eyes' app/src/main/java/com/seongja/jarvis/FridayVisionRouter.kt
           grep -q 'class ImageGenerationActivity' app/src/main/java/com/seongja/jarvis/ImageGenerationActivity.kt
           grep -q 'class PrivateDiaryActivity' app/src/main/java/com/seongja/jarvis/PrivateDiaryActivity.kt
