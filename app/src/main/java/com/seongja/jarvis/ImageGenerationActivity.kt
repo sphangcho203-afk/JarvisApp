@@ -26,15 +26,22 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
+/**
+ * Native visual-synthesis workspace. A generated image is previewed first and
+ * enters the gallery only after an explicit SAVE or SHARE action.
+ */
 class ImageGenerationActivity : Activity() {
     private lateinit var promptView: TextView
     private lateinit var statusView: TextView
     private lateinit var detailView: TextView
     private lateinit var imageView: ImageView
     private lateinit var progress: ProgressBar
+    private lateinit var saveButton: Button
     private lateinit var shareButton: Button
     private lateinit var regenerateButton: Button
+
     private var prompt: String = ""
+    private var currentResult: GeneratedImage? = null
     private var savedUri: Uri? = null
     private var generationRunning = false
 
@@ -43,8 +50,8 @@ class ImageGenerationActivity : Activity() {
         prompt = intent.getStringExtra(EXTRA_PROMPT).orEmpty().trim()
         setContentView(buildUi())
         if (prompt.isBlank()) {
-            statusView.text = "IMAGE SYNTHESIS // PROMPT REQUIRED"
-            detailView.text = "Tell F.R.I.D.A.Y. what image to create."
+            statusView.text = "VISUAL LAB // VOICE PROMPT REQUIRED"
+            detailView.text = "Return to F.R.I.D.A.Y. and describe what to create, or say visualize followed by the scene."
             progress.visibility = View.GONE
         } else {
             generate()
@@ -57,7 +64,7 @@ class ImageGenerationActivity : Activity() {
             setPadding(dp(16), dp(20), dp(16), dp(28))
             setBackgroundColor(BG)
         }
-        root.addView(label("F.R.I.D.A.Y. // IMAGE SYNTHESIS", 22f, CYAN, true).apply {
+        root.addView(label("F.R.I.D.A.Y. // VISUAL LAB", 22f, CYAN, true).apply {
             gravity = Gravity.CENTER_HORIZONTAL
             letterSpacing = .09f
         }, params(bottom = 5))
@@ -71,7 +78,7 @@ class ImageGenerationActivity : Activity() {
             setPadding(dp(12), dp(12), dp(12), dp(12))
             background = panelBackground()
         }
-        statusView = label("IMAGE SYNTHESIS // INITIALIZING", 14f, GREEN, true)
+        statusView = label("VISUAL LAB // INITIALIZING", 14f, GREEN, true)
         promptView = label(prompt.ifBlank { "NO PROMPT" }, 12f, SOFT, false)
         detailView = label("Selecting an available Gemini image route.", 11f, MUTED, false)
         progress = ProgressBar(this).apply { isIndeterminate = true }
@@ -80,15 +87,23 @@ class ImageGenerationActivity : Activity() {
             scaleType = ImageView.ScaleType.FIT_CENTER
             setBackgroundColor(Color.rgb(1, 7, 18))
             visibility = View.GONE
+            contentDescription = "Generated F.R.I.D.A.Y. visual preview"
         }
-        shareButton = button("SHARE GENERATED IMAGE", BLUE) { shareImage() }.apply { isEnabled = false }
-        regenerateButton = button("GENERATE AGAIN", GREEN) { generate() }.apply { isEnabled = false }
+        saveButton = button("SAVE TO GALLERY", GREEN) { saveCurrentImage(announce = true) }
+            .apply { isEnabled = false }
+        shareButton = button("SHARE GENERATED IMAGE", BLUE) { shareImage() }
+            .apply { isEnabled = false }
+        regenerateButton = button("GENERATE AGAIN", GREEN) { generate() }
+            .apply { isEnabled = false }
 
         panel.addView(statusView, params(bottom = 8))
         panel.addView(promptView, params(bottom = 8))
         panel.addView(detailView, params(bottom = 10))
-        panel.addView(progress, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(44)).apply { bottomMargin = dp(8) })
+        panel.addView(progress, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(44)).apply {
+            bottomMargin = dp(8)
+        })
         panel.addView(imageView, params(bottom = 10))
+        panel.addView(saveButton, params(bottom = 7))
         panel.addView(shareButton, params(bottom = 7))
         panel.addView(regenerateButton, params(bottom = 7))
         panel.addView(button("RETURN TO F.R.I.D.A.Y.", CYAN) { finish() })
@@ -99,12 +114,15 @@ class ImageGenerationActivity : Activity() {
     private fun generate() {
         if (generationRunning || prompt.isBlank()) return
         generationRunning = true
+        currentResult = null
         savedUri = null
+        ImageGenerationRuntime.clear()
+        saveButton.isEnabled = false
         shareButton.isEnabled = false
         regenerateButton.isEnabled = false
         imageView.visibility = View.GONE
         progress.visibility = View.VISIBLE
-        statusView.text = "IMAGE SYNTHESIS // GENERATING"
+        statusView.text = "VISUAL LAB // GENERATING"
         detailView.text = "Gemini visual route acquisition in progress."
         JarvisOperationBus.publish("IMAGE SYNTHESIS", "GENERATING VISUAL // GEMINI ROUTE", .18f)
 
@@ -112,7 +130,9 @@ class ImageGenerationActivity : Activity() {
             val result = runCatching {
                 val client = GeminiImageClient(this)
                 if (!client.isConfigured()) {
-                    throw GeminiImageException("No Gemini key is configured. Say configure APIs and add a Gemini key first.")
+                    throw GeminiImageException(
+                        "No Gemini key is configured. Say configure APIs and add a Gemini key first."
+                    )
                 }
                 client.generate(prompt)
             }
@@ -131,32 +151,74 @@ class ImageGenerationActivity : Activity() {
             displayFailure(GeminiImageException("Android could not decode the generated image."))
             return
         }
+
+        currentResult = result
+        savedUri = null
         imageView.setImageBitmap(bitmap)
         imageView.visibility = View.VISIBLE
-        savedUri = saveToGallery(result)
-        statusView.text = "IMAGE SYNTHESIS // COMPLETE"
+        statusView.text = "VISUAL LAB // PREVIEW VERIFIED"
+        renderDetails(result, saved = false)
+        saveButton.isEnabled = true
+        shareButton.isEnabled = false
+        regenerateButton.isEnabled = true
+
+        ImageGenerationRuntime.storeSuccess(prompt, result, saved = false)
+        JarvisConversationBus.recordUser("VISUAL LAB: $prompt")
+        JarvisConversationBus.recordAssistant(
+            "Visual preview generated with ${result.model} in ${result.elapsedMs} milliseconds."
+        )
+        JarvisOperationBus.publish(
+            "IMAGE SYNTHESIS COMPLETE",
+            "${result.model} // ${result.elapsedMs}MS // PREVIEW READY",
+            1f
+        )
+        JarvisOperationBus.clear("VISUAL PREVIEW READY")
+    }
+
+    private fun saveCurrentImage(announce: Boolean): Uri? {
+        savedUri?.let { return it }
+        val result = currentResult ?: return null
+        val uri = saveToGallery(result)
+        if (uri == null) {
+            if (announce) {
+                Toast.makeText(this, "The preview is safe, but gallery save failed.", Toast.LENGTH_LONG).show()
+            }
+            return null
+        }
+
+        savedUri = uri
+        statusView.text = "VISUAL LAB // SAVED"
+        renderDetails(result, saved = true)
+        saveButton.isEnabled = false
+        shareButton.isEnabled = true
+        ImageGenerationRuntime.storeSuccess(prompt, result, saved = true)
+        JarvisOperationBus.publish("VISUAL LAB", "SAVED // PICTURES/FRIDAY", 1f)
+        if (announce) {
+            Toast.makeText(this, "Saved to Pictures/FRIDAY.", Toast.LENGTH_SHORT).show()
+        }
+        return uri
+    }
+
+    private fun renderDetails(result: GeneratedImage, saved: Boolean) {
         detailView.text = buildString {
             append("MODEL // ${result.model}\n")
             append("TIME // ${result.elapsedMs}ms\n")
-            append("FORMAT // ${result.mimeType.uppercase(Locale.US)}")
-            if (savedUri != null) append("\nSAVED // PICTURES/FRIDAY")
+            append("FORMAT // ${result.mimeType.uppercase(Locale.US)}\n")
+            append(if (saved) "STORAGE // PICTURES/FRIDAY" else "STORAGE // PREVIEW ONLY")
             if (result.text.isNotBlank()) append("\nNOTE // ${result.text.take(180)}")
         }
-        shareButton.isEnabled = savedUri != null
-        regenerateButton.isEnabled = true
-        JarvisOperationBus.publish("IMAGE SYNTHESIS COMPLETE", "${result.model} // ${result.elapsedMs}MS", 1f)
-        JarvisOperationBus.clear("IMAGE READY")
     }
 
     private fun displayFailure(error: Throwable) {
-        val message = (error.message ?: error.javaClass.simpleName)
-            .replace(Regex("AIza[A-Za-z0-9_-]+"), "[redacted]")
-            .replace(Regex("\\s+"), " ")
-            .trim()
-            .take(500)
-        statusView.text = "IMAGE SYNTHESIS // FAILED"
+        val message = safeError(error)
+        currentResult = null
+        savedUri = null
+        statusView.text = "VISUAL LAB // FAILED"
         detailView.text = message
+        saveButton.isEnabled = false
+        shareButton.isEnabled = false
         regenerateButton.isEnabled = true
+        ImageGenerationRuntime.storeFailure(prompt, message)
         JarvisOperationBus.publish("IMAGE SYNTHESIS ERROR", message, 1f, false)
         JarvisOperationBus.clear("IMAGE ROUTE FAILED")
     }
@@ -190,12 +252,11 @@ class ImageGenerationActivity : Activity() {
         }
         uri
     }.getOrElse {
-        Toast.makeText(this, "Image preview ready, but gallery save failed.", Toast.LENGTH_LONG).show()
         null
     }
 
     private fun shareImage() {
-        val uri = savedUri ?: return
+        val uri = savedUri ?: saveCurrentImage(announce = false) ?: return
         val intent = Intent(Intent.ACTION_SEND).apply {
             type = contentResolver.getType(uri) ?: "image/*"
             putExtra(Intent.EXTRA_STREAM, uri)
@@ -204,6 +265,12 @@ class ImageGenerationActivity : Activity() {
         }
         startActivity(Intent.createChooser(intent, "Share F.R.I.D.A.Y. image"))
     }
+
+    private fun safeError(error: Throwable): String = (error.message ?: error.javaClass.simpleName)
+        .replace(Regex("AIza[A-Za-z0-9_-]+"), "[redacted]")
+        .replace(Regex("\\s+"), " ")
+        .trim()
+        .take(500)
 
     private fun label(text: String, size: Float, color: Int, bold: Boolean): TextView =
         TextView(this).apply {
@@ -256,5 +323,55 @@ class ImageGenerationActivity : Activity() {
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             )
         }
+    }
+}
+
+data class ImageGenerationPendingResult(
+    val prompt: String,
+    val message: String,
+    val model: String,
+    val elapsedMs: Long,
+    val saved: Boolean,
+    val isError: Boolean
+)
+
+object ImageGenerationRuntime {
+    @Volatile
+    private var pending: ImageGenerationPendingResult? = null
+
+    fun clear() {
+        pending = null
+    }
+
+    fun storeSuccess(prompt: String, result: GeneratedImage, saved: Boolean) {
+        pending = ImageGenerationPendingResult(
+            prompt = prompt.take(4_000),
+            message = if (saved) {
+                "The generated image is ready and saved to Pictures/FRIDAY."
+            } else {
+                "The generated image preview is ready. It has not been saved yet."
+            },
+            model = result.model,
+            elapsedMs = result.elapsedMs,
+            saved = saved,
+            isError = false
+        )
+    }
+
+    fun storeFailure(prompt: String, message: String) {
+        pending = ImageGenerationPendingResult(
+            prompt = prompt.take(4_000),
+            message = message.take(600),
+            model = "none",
+            elapsedMs = 0L,
+            saved = false,
+            isError = true
+        )
+    }
+
+    fun consume(): ImageGenerationPendingResult? {
+        val result = pending
+        pending = null
+        return result
     }
 }
