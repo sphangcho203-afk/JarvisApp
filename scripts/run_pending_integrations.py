@@ -5,13 +5,13 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 
-# Base sensory, workspace precedence, and Visual Lab continuity are already
-# committed directly. These X-Camera integrations remain deterministic until
-# their final Android validation succeeds.
+# These integrations remain deterministic until the complete Android 16 runtime
+# validation succeeds. Each script is idempotent against already-integrated code.
 scripts = [
     ROOT / "integration_xcamera_voice_control.py",
     ROOT / "integration_xcamera_regex_fix.py",
     ROOT / "integration_xcamera_voice_parser.py",
+    ROOT / "integration_runtime_voice_test_mode.py",
 ]
 
 for script in scripts:
