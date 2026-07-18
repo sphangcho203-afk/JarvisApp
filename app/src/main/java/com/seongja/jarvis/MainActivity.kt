@@ -26,6 +26,12 @@ class MainActivity : Activity() {
     private lateinit var countdown: JarvisCountdownController
     private lateinit var soundEngine: JarvisSoundEngine
 
+    private val runtimeTestMode: Boolean
+        get() = intent?.getBooleanExtra(
+            JarvisApplication.EXTRA_SKIP_ONBOARDING_FOR_TESTS,
+            false
+        ) == true
+
     private var resumed = false
     private var announcedOnline = false
     private var setupOpenedThisSession = false
@@ -65,14 +71,16 @@ class MainActivity : Activity() {
             onTick = hud::setCountdown,
             onFinished = ::handleCountdownFinished
         )
-        voiceLoop = VoiceLoop(
-            activity = this,
-            onSpeech = ::handleSpeech,
-            onPartial = ::handlePartialSpeech,
-            onRms = hud::setVoiceAmplitude,
-            onState = ::handleVoiceState,
-            onDiagnostic = { message -> runOnUiThread { hud.pushEvent(message) } }
-        )
+        if (!runtimeTestMode) {
+            voiceLoop = VoiceLoop(
+                activity = this,
+                onSpeech = ::handleSpeech,
+                onPartial = ::handlePartialSpeech,
+                onRms = hud::setVoiceAmplitude,
+                onState = ::handleVoiceState,
+                onDiagnostic = { message -> runOnUiThread { hud.pushEvent(message) } }
+            )
+        }
         WeatherRuntime.addListener(weatherListener)
         WeatherRuntime.refresh()
 
@@ -97,8 +105,9 @@ class MainActivity : Activity() {
 
         hud.setCoreTapListener {
             when {
+                runtimeTestMode -> hud.pushEvent("INSTRUMENTATION -> VOICE ARRAY DISABLED")
                 brainBusy.get() -> abortActiveRequest("USER CANCELLED ACTIVE REQUEST")
-                hasMicPermission() -> {
+                hasMicPermission() && ::voiceLoop.isInitialized -> {
                     hud.pushEvent("USER -> VOICE ARRAY RECALIBRATION")
                     voiceLoop.manualRestart()
                 }
@@ -111,7 +120,12 @@ class MainActivity : Activity() {
 
         hud.setWorkspaceListener(::openWorkspace)
         hud.isLongClickable = false
-        if (!hasMicPermission()) requestMicPermission()
+        if (runtimeTestMode) {
+            hud.pushEvent("INSTRUMENTATION -> REAL UI / VOICE + WAKE DISABLED")
+            hud.setVoiceState(VoiceLoop.State.READY)
+        } else if (!hasMicPermission()) {
+            requestMicPermission()
+        }
     }
 
     override fun onNewIntent(intent: Intent?) {
@@ -126,7 +140,7 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         resumed = true
-        JarvisWakeService.pause(this)
+        if (!runtimeTestMode) JarvisWakeService.pause(this)
         enterImmersiveMode()
         if (::brain.isInitialized) {
             hud.setCloudConfigured(brain.isCloudConfigured())
@@ -148,7 +162,12 @@ class MainActivity : Activity() {
         WeatherRuntime.refresh()
         consumeXCameraResult()
         consumeImageGenerationResult()
-        if (hasMicPermission() && !brainBusy.get()) {
+        if (
+            !runtimeTestMode &&
+            ::voiceLoop.isInitialized &&
+            hasMicPermission() &&
+            !brainBusy.get()
+        ) {
             voiceLoop.resume()
             hud.postDelayed({ openCloudSetupIfRequired() }, 450L)
         }
@@ -157,7 +176,9 @@ class MainActivity : Activity() {
     override fun onPause() {
         resumed = false
         if (::voiceLoop.isInitialized) voiceLoop.stop()
-        if (JarvisWakeService.isEnabled(this)) JarvisWakeService.resume(this)
+        if (!runtimeTestMode && JarvisWakeService.isEnabled(this)) {
+            JarvisWakeService.resume(this)
+        }
         super.onPause()
     }
 
@@ -815,8 +836,10 @@ class MainActivity : Activity() {
             grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
         ) {
             hud.pushEvent("AUTH -> MICROPHONE GRANTED")
-            voiceLoop.resume()
-            hud.postDelayed({ openCloudSetupIfRequired() }, 450L)
+            if (!runtimeTestMode && ::voiceLoop.isInitialized) {
+                voiceLoop.resume()
+                hud.postDelayed({ openCloudSetupIfRequired() }, 450L)
+            }
         } else if (requestCode == REQ_RECORD_AUDIO) {
             hud.pushEvent("AUTH -> MICROPHONE DENIED")
             hud.setVoiceState(VoiceLoop.State.UNAVAILABLE)
