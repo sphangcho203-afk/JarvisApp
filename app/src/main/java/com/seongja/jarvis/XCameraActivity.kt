@@ -403,66 +403,40 @@ class XCameraActivity : ComponentActivity() {
     }
 
     private fun handleWorkspaceSpeech(raw: String) {
-        val clean = raw.trim()
-        val normalized = clean
-            .lowercase(Locale.US)
-            .replace(Regex("[^a-z0-9]+"), " ")
-            .replace(Regex("\s+"), " ")
-            .trim()
-        if (normalized.isBlank()) {
-            startWorkspaceListening(420L)
-            return
-        }
+        when (val command = XCameraVoiceCommandParser.parse(raw)) {
+            XCameraVoiceCommand.Close -> closeFromVoice()
+            XCameraVoiceCommand.SwitchLens -> switchLens()
 
-        when {
-            normalized.contains("close your eyes") ||
-                normalized.contains("close x camera") ||
-                normalized.contains("stop the camera") ||
-                normalized.contains("stop looking") -> {
-                closeFromVoice()
-            }
-
-            normalized.contains("switch lens") ||
-                normalized.contains("switch camera") -> {
-                switchLens()
-            }
-
-            normalized.contains("front camera") ||
-                normalized.contains("selfie camera") ||
-                normalized.contains("look at me") -> {
-                if (lensFacing != CameraSelector.LENS_FACING_FRONT) {
+            is XCameraVoiceCommand.UseFront -> {
+                question = command.question
+                if (lensFacing == CameraSelector.LENS_FACING_FRONT) {
+                    if (command.scan) captureAndAnalyze() else startWorkspaceListening(320L)
+                } else {
                     lensFacing = CameraSelector.LENS_FACING_FRONT
-                    autoScanConsumed = true
+                    autoScanRequested = command.scan
+                    autoScanConsumed = !command.scan
                     bindCamera()
-                } else {
-                    question = clean
-                    captureAndAnalyze()
                 }
             }
 
-            normalized.contains("rear camera") ||
-                normalized.contains("back camera") -> {
-                if (lensFacing != CameraSelector.LENS_FACING_BACK) {
+            is XCameraVoiceCommand.UseRear -> {
+                question = command.question
+                if (lensFacing == CameraSelector.LENS_FACING_BACK) {
+                    if (command.scan) captureAndAnalyze() else startWorkspaceListening(320L)
+                } else {
                     lensFacing = CameraSelector.LENS_FACING_BACK
-                    autoScanConsumed = true
+                    autoScanRequested = command.scan
+                    autoScanConsumed = !command.scan
                     bindCamera()
-                } else {
-                    question = clean
-                    captureAndAnalyze()
                 }
             }
 
-            normalized.contains("scan") ||
-                normalized.contains("look again") ||
-                normalized.contains("what can you see") ||
-                normalized.contains("what do you see") ||
-                normalized.contains("tell me what you see") ||
-                normalized.contains("inspect") -> {
-                question = clean
+            is XCameraVoiceCommand.Scan -> {
+                question = command.question
                 captureAndAnalyze()
             }
 
-            else -> startWorkspaceListening(420L)
+            XCameraVoiceCommand.Ignore -> startWorkspaceListening(420L)
         }
     }
 
