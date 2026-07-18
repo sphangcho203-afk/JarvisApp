@@ -13,6 +13,11 @@ class FridayWorkspaceReservationTest {
                 "FRIDAY, open your eyes"
             )
         )
+        assertTrue(
+            FridayWorkspaceReservation.shouldBypassGenericDeviceRouter(
+                "Hey FRIDAY, could you please open your eyes and tell me what you see"
+            )
+        )
     }
 
     @Test
@@ -20,6 +25,11 @@ class FridayWorkspaceReservationTest {
         assertTrue(
             FridayWorkspaceReservation.shouldBypassGenericDeviceRouter(
                 "open my private diary"
+            )
+        )
+        assertTrue(
+            FridayWorkspaceReservation.shouldBypassGenericDeviceRouter(
+                "open my private diary and find yesterday"
             )
         )
         assertTrue(
@@ -34,6 +44,11 @@ class FridayWorkspaceReservationTest {
         assertTrue(
             FridayWorkspaceReservation.shouldBypassGenericDeviceRouter(
                 "open x-camera"
+            )
+        )
+        assertTrue(
+            FridayWorkspaceReservation.shouldBypassGenericDeviceRouter(
+                "open x camera rear lens"
             )
         )
         assertTrue(
@@ -53,6 +68,11 @@ class FridayWorkspaceReservationTest {
         assertFalse(
             FridayWorkspaceReservation.shouldBypassGenericDeviceRouter(
                 "open settings"
+            )
+        )
+        assertFalse(
+            FridayWorkspaceReservation.shouldBypassGenericDeviceRouter(
+                "open eye doctor"
             )
         )
     }
