@@ -52,10 +52,32 @@ object FridayWorkspaceReservation {
         "inspect this"
     )
 
+    private val continuationWords = setOf(
+        "and",
+        "then",
+        "to",
+        "please",
+        "for",
+        "with",
+        "using",
+        "show",
+        "find",
+        "search",
+        "create",
+        "new",
+        "rear",
+        "front"
+    )
+
     fun shouldBypassGenericDeviceRouter(raw: String): Boolean {
         val normalized = normalize(raw)
         if (normalized.isBlank()) return false
-        if (normalized in directPhrases) return true
+        if (directPhrases.any { phrase ->
+                normalized == phrase || normalized.startsWith("$phrase ")
+            }
+        ) {
+            return true
+        }
 
         val target = openPattern.matchEntire(normalized)
             ?.groupValues
@@ -69,7 +91,11 @@ object FridayWorkspaceReservation {
             ?.trim()
             ?: return false
 
-        return target in reservedTargets
+        return reservedTargets.any { reserved ->
+            target == reserved || continuationWords.any { word ->
+                target.startsWith("$reserved $word ") || target == "$reserved $word"
+            }
+        }
     }
 
     private fun normalize(value: String): String {
@@ -79,13 +105,19 @@ object FridayWorkspaceReservation {
             .replace(Regex("\\s+"), " ")
             .trim()
 
-        command = command
-            .replace(Regex("^(?:hey\\s+)?(?:friday|jarvis)\\s+"), "")
-            .replace(Regex("^(?:please|kindly)\\s+"), "")
-            .replace(Regex("^(?:can|could|would|will)\\s+(?:you|u)\\s+"), "")
-            .replace(Regex("^(?:i\\s+want\\s+you\\s+to|i\\s+need\\s+you\\s+to)\\s+"), "")
+        var changed: Boolean
+        do {
+            val before = command
+            command = command
+                .replace(Regex("^(?:hey\\s+)?(?:friday|jarvis)\\s+"), "")
+                .replace(Regex("^(?:please|kindly)\\s+"), "")
+                .replace(Regex("^(?:can|could|would|will)\\s+(?:you|u)\\s+"), "")
+                .replace(Regex("^(?:i\\s+want\\s+you\\s+to|i\\s+need\\s+you\\s+to)\\s+"), "")
+            changed = command != before
+        } while (changed)
+
+        return command
             .replace(Regex("\\s+(?:for me|right now|now please|please)$"), "")
             .trim()
-        return command
     }
 }
