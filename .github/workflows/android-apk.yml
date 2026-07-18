@@ -39,6 +39,7 @@ jobs:
         run: |
           set -euo pipefail
           python3 scripts/finalize_sensory_source.py
+          python3 scripts/run_pending_integrations.py
           if git diff --quiet; then
             echo 'Native workspace continuity is already integrated.'
             exit 0
@@ -175,6 +176,7 @@ jobs:
           grep -q 'class FridayWorkspaceVoice' app/src/main/java/com/seongja/jarvis/FridayWorkspaceVoice.kt
           grep -q 'spokenInWorkspace' app/src/main/java/com/seongja/jarvis/XCameraActivity.kt
           grep -q 'consumeXCameraResult' app/src/main/java/com/seongja/jarvis/MainActivity.kt
+          grep -q 'FridayWorkspaceReservation' app/src/main/java/com/seongja/jarvis/MainActivity.kt
           grep -q 'openWorkspace' app/src/main/java/com/seongja/jarvis/HelixHudView.kt
           grep -q 'open your eyes' app/src/main/java/com/seongja/jarvis/FridayVisionRouter.kt
           grep -q 'class ImageGenerationActivity' app/src/main/java/com/seongja/jarvis/ImageGenerationActivity.kt
