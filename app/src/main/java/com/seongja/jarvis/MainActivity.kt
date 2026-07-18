@@ -13,6 +13,7 @@ import android.view.WindowManager
 import com.jarvis.core.device.DeviceActionResult
 import com.jarvis.core.device.DeviceActionStatus
 import com.jarvis.core.device.DeviceCommandRouter
+import com.jarvis.core.device.FridayWorkspaceReservation
 import com.jarvis.core.device.SystemControlAccess
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
@@ -146,6 +147,7 @@ class MainActivity : Activity() {
         }
         WeatherRuntime.refresh()
         consumeXCameraResult()
+        consumeImageGenerationResult()
         if (hasMicPermission() && !brainBusy.get()) {
             voiceLoop.resume()
             hud.postDelayed({ openCloudSetupIfRequired() }, 450L)
@@ -202,6 +204,51 @@ class MainActivity : Activity() {
         if (!result.isError && !result.spokenInWorkspace) {
             mainHandler.postDelayed({ if (resumed) speak(result.description) }, 280L)
         }
+    }
+
+    private fun consumeImageGenerationResult() {
+        val result = ImageGenerationRuntime.consume() ?: return
+        val spoken = if (result.isError) {
+            "Visual Lab failed: ${result.message}"
+        } else {
+            result.message
+        }
+        val response = BrainResponse(
+            spoken = spoken,
+            display = buildString {
+                appendLine(if (result.isError) "VISUAL LAB // FAILED" else "VISUAL LAB // GENERATION VERIFIED")
+                appendLine("PROMPT // ${result.prompt.take(320)}")
+                appendLine("MODEL // ${result.model}")
+                appendLine("TIME // ${result.elapsedMs}MS")
+                appendLine("STORAGE // ${if (result.saved) "PICTURES/FRIDAY" else "PREVIEW ONLY"}")
+                append(result.message)
+            },
+            intent = if (result.isError) "image/error" else "image/result",
+            confidence = if (result.isError) 0f else .98f,
+            mode = if (result.isError) BrainMode.ALERT else BrainMode.ONLINE,
+            trace = listOf(
+                "workspace=visual_lab",
+                "model=${result.model}",
+                "latency=${result.elapsedMs}ms",
+                "saved=${result.saved}"
+            ),
+            memory = brain.memorySnapshot(),
+            thoughts = listOf(
+                if (result.isError) {
+                    "The native image route reported a real provider or decoding failure."
+                } else {
+                    "The generated visual was decoded successfully before being reported as ready."
+                }
+            ),
+            entities = listOf("workspace=visual_lab"),
+            decision = if (result.isError) "report_visual_lab_error" else "return_generated_visual_result",
+            action = BrainAction()
+        )
+        hud.submitBrainResponse(response)
+        hud.pushEvent(if (result.isError) "VISUAL LAB -> DEGRADED" else "VISUAL LAB -> RESULT VERIFIED")
+        mainHandler.postDelayed({
+            if (resumed && !brainBusy.get()) speak(spoken)
+        }, 280L)
     }
 
     private fun handlePartialSpeech(text: String) {
@@ -265,7 +312,14 @@ class MainActivity : Activity() {
             return
         }
 
-        val deviceResult = deviceCommandRouter.executeDetailed(clean)
+        val deviceResult = if (
+            FridayWorkspaceReservation.shouldBypassGenericDeviceRouter(clean)
+        ) {
+            hud.pushEvent("NATIVE WORKSPACE -> RESERVED ROUTE")
+            null
+        } else {
+            deviceCommandRouter.executeDetailed(clean)
+        }
         if (deviceResult != null) {
             val mode = when (deviceResult.status) {
                 DeviceActionStatus.FAILED -> BrainMode.ALERT

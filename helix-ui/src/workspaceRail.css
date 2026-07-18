@@ -32,7 +32,7 @@
 .workspace-rail::after {
   content: "";
   position: absolute;
-  pointer-events: none;
+  pointer-events: auto;
   top: 6px;
   right: 6px;
   bottom: 6px;
