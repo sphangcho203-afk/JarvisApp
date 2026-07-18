@@ -11,7 +11,13 @@ const CAPABILITIES = [
  * buttons: each phrase is routed by the native command core to a dedicated
  * Android workspace before generic model dialogue is allowed.
  */
-export function WorkspaceRail() {
+export function WorkspaceRail({
+  bridgeReady,
+  onOpen,
+}: {
+  bridgeReady: boolean
+  onOpen: (workspace: string) => void
+}) {
   return (
     <section className="workspace-rail" aria-label="FRIDAY native workspace commands">
       <div className="workspace-rail-label">
@@ -20,14 +26,20 @@ export function WorkspaceRail() {
       </div>
       <div className="workspace-rail-track">
         {CAPABILITIES.map(capability => (
-          <article key={capability.id} className="workspace-capability">
+          <button
+            key={capability.id}
+            type="button"
+            className="workspace-capability"
+            disabled={!bridgeReady}
+            onClick={() => onOpen(capability.id.toLowerCase())}
+          >
             <div className="workspace-capability-head">
               <span>{capability.id}</span>
               <i>{capability.state}</i>
             </div>
             <strong>{capability.title}</strong>
-            <small>SAY // {capability.command}</small>
-          </article>
+            <small>OPEN // {capability.command}</small>
+          </button>
         ))}
       </div>
     </section>

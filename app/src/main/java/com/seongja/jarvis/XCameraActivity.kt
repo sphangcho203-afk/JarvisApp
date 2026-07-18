@@ -45,6 +45,7 @@ class XCameraActivity : ComponentActivity() {
     private lateinit var scanButton: Button
     private lateinit var switchButton: Button
     private lateinit var cameraExecutor: ExecutorService
+    private lateinit var workspaceVoice: FridayWorkspaceVoice
 
     private var imageCapture: ImageCapture? = null
     private var lensFacing = CameraSelector.LENS_FACING_BACK
@@ -67,6 +68,12 @@ class XCameraActivity : ComponentActivity() {
         lensFacing = intent.getIntExtra(EXTRA_LENS, CameraSelector.LENS_FACING_BACK)
         autoScanRequested = intent.getBooleanExtra(EXTRA_AUTO_SCAN, true)
         cameraExecutor = Executors.newSingleThreadExecutor()
+        workspaceVoice = FridayWorkspaceVoice(
+            context = this,
+            onDiagnostic = { message ->
+                JarvisOperationBus.publish("X-CAMERA VOICE", message.take(180), .9f)
+            }
+        )
         setContentView(buildUi())
         XCameraRuntime.attach(this)
         JarvisOperationBus.publish("X-CAMERA", "OPTICAL ARRAY INITIALIZING", .08f)
@@ -81,13 +88,14 @@ class XCameraActivity : ComponentActivity() {
 
     override fun onDestroy() {
         XCameraRuntime.detach(this)
+        if (::workspaceVoice.isInitialized) workspaceVoice.destroy()
         cameraExecutor.shutdownNow()
         super.onDestroy()
     }
 
     fun closeFromVoice() {
         runOnUiThread {
-            XCameraRuntime.storeSystemMessage("X-CAMERA closed by owner command.")
+            if (::workspaceVoice.isInitialized) workspaceVoice.stop()
             finish()
         }
     }
@@ -166,7 +174,10 @@ class XCameraActivity : ComponentActivity() {
         }
         scanButton = button("SCAN WHAT I SEE", GREEN) { captureAndAnalyze() }
         switchButton = button("SWITCH LENS", BLUE) { switchLens() }
-        val closeButton = button("CLOSE EYES", RED) { finish() }
+        val closeButton = button("CLOSE EYES", RED) {
+            if (::workspaceVoice.isInitialized) workspaceVoice.stop()
+            finish()
+        }
         buttons.addView(scanButton, weightedButtonParams())
         buttons.addView(switchButton, weightedButtonParams())
         buttons.addView(closeButton, weightedButtonParams())
@@ -272,7 +283,8 @@ class XCameraActivity : ComponentActivity() {
             result.onSuccess { analysis ->
                 statusView.text = "X-CAMERA // VISION VERIFIED // ${analysis.elapsedMs}MS"
                 resultView.text = analysis.description
-                XCameraRuntime.storeResult(question, analysis)
+                val spokenInWorkspace = workspaceVoice.speak(analysis.description)
+                XCameraRuntime.storeResult(question, analysis, spokenInWorkspace)
                 JarvisConversationBus.recordUser("X-CAMERA: $question")
                 JarvisConversationBus.recordAssistant(analysis.description)
                 JarvisOperationBus.publish(
@@ -388,7 +400,8 @@ data class XCameraPendingResult(
     val description: String,
     val model: String,
     val elapsedMs: Long,
-    val isError: Boolean = false
+    val isError: Boolean = false,
+    val spokenInWorkspace: Boolean = false
 )
 
 object XCameraRuntime {
@@ -411,12 +424,17 @@ object XCameraRuntime {
         return true
     }
 
-    fun storeResult(question: String, result: VisionAnalysis) {
+    fun storeResult(
+        question: String,
+        result: VisionAnalysis,
+        spokenInWorkspace: Boolean
+    ) {
         pending = XCameraPendingResult(
             question = question,
             description = result.description,
             model = result.model,
-            elapsedMs = result.elapsedMs
+            elapsedMs = result.elapsedMs,
+            spokenInWorkspace = spokenInWorkspace
         )
     }
 

@@ -48,7 +48,12 @@ class RuntimeSmokeTest {
             WaApiConfigActivity::class.java,
             WeatherSetupActivity::class.java,
             PermissionCenterActivity::class.java,
-            OwnerAccessGateActivity::class.java
+            OwnerAccessGateActivity::class.java,
+            XCameraActivity::class.java,
+            ImageGenerationActivity::class.java,
+            PrivateDiaryActivity::class.java,
+            MemoryVaultActivity::class.java,
+            OwnerVoiceEnrollmentActivity::class.java
         ).forEach { activityClass ->
             val info = packageManager.getActivityInfo(
                 ComponentName(context, activityClass),

@@ -108,6 +108,7 @@ class MainActivity : Activity() {
             }
         }
 
+        hud.setWorkspaceListener(::openWorkspace)
         hud.isLongClickable = false
         if (!hasMicPermission()) requestMicPermission()
     }
@@ -144,6 +145,7 @@ class MainActivity : Activity() {
             )
         }
         WeatherRuntime.refresh()
+        consumeXCameraResult()
         if (hasMicPermission() && !brainBusy.get()) {
             voiceLoop.resume()
             hud.postDelayed({ openCloudSetupIfRequired() }, 450L)
@@ -155,6 +157,51 @@ class MainActivity : Activity() {
         if (::voiceLoop.isInitialized) voiceLoop.stop()
         if (JarvisWakeService.isEnabled(this)) JarvisWakeService.resume(this)
         super.onPause()
+    }
+
+    private fun openWorkspace(workspace: String) {
+        when (workspace.trim().lowercase(Locale.US)) {
+            "xcamera", "vision", "eyes" -> XCameraActivity.launch(this, autoScan = false)
+            "image", "visual", "studio" -> ImageGenerationActivity.launch(this, "")
+            "diary" -> PrivateDiaryActivity.launch(this)
+            "memory", "vault" -> MemoryVaultActivity.launch(this)
+            "control", "permissions" -> startActivity(Intent(this, PermissionCenterActivity::class.java))
+            "apis", "cortex" -> startActivity(Intent(this, CloudConfigActivity::class.java))
+            else -> hud.pushEvent("WORKSPACE -> UNKNOWN ${workspace.take(32).uppercase(Locale.US)}")
+        }
+    }
+
+    private fun consumeXCameraResult() {
+        val result = XCameraRuntime.consume() ?: return
+        val response = BrainResponse(
+            spoken = result.description,
+            display = buildString {
+                appendLine(if (result.isError) "X-CAMERA // DEGRADED" else "X-CAMERA // VISUAL ANALYSIS VERIFIED")
+                appendLine("QUESTION // ${result.question.take(320)}")
+                appendLine("MODEL // ${result.model}")
+                appendLine("TIME // ${result.elapsedMs}MS")
+                append(result.description)
+            },
+            intent = if (result.isError) "vision/error" else "vision/result",
+            confidence = if (result.isError) 0f else .97f,
+            mode = if (result.isError) BrainMode.ALERT else BrainMode.ONLINE,
+            trace = listOf(
+                "workspace=x_camera",
+                "model=${result.model}",
+                "latency=${result.elapsedMs}ms",
+                "capture_persistence=disabled"
+            ),
+            memory = brain.memorySnapshot(),
+            thoughts = listOf("A temporary camera frame was analyzed and discarded."),
+            entities = listOf("sensor=xcamera"),
+            decision = if (result.isError) "report_xcamera_error" else "return_visual_analysis",
+            action = BrainAction()
+        )
+        hud.submitBrainResponse(response)
+        hud.pushEvent(if (result.isError) "X-CAMERA -> DEGRADED" else "X-CAMERA -> RESULT VERIFIED")
+        if (!result.isError && !result.spokenInWorkspace) {
+            mainHandler.postDelayed({ if (resumed) speak(result.description) }, 280L)
+        }
     }
 
     private fun handlePartialSpeech(text: String) {

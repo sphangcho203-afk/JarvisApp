@@ -6,6 +6,7 @@ declare global {
     JarvisAndroid?: {
       onHelixReady: () => void
       onCoreTap: () => void
+      openWorkspace: (workspace: string) => void
       onHelixError?: (message: string) => void
     }
     JarvisCommandBridge?: {
@@ -156,6 +157,7 @@ export function useNativeBridge() {
       window.setTimeout(readWeather, 900)
     },
     tapCore: () => window.JarvisAndroid?.onCoreTap(),
+    openWorkspace: (workspace: string) => window.JarvisAndroid?.openWorkspace?.(workspace),
   }
 }
 

@@ -43,7 +43,7 @@ export default function App() {
   const bridge = useNativeBridge()
   return (
     <HelixErrorBoundary>
-      <WorkspaceRail />
+      <WorkspaceRail bridgeReady={bridge.bridgeReady} onOpen={bridge.openWorkspace} />
       <Hud
         mode={bridge.mode}
         audioRef={bridge.metricsRef}

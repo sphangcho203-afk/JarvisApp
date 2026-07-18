@@ -411,3 +411,49 @@ Earlier fingerprint/unknown-touch concepts must be implemented only where Androi
 11. Continue phone-computer JARVIS synchronization and advanced automation.
 
 This roadmap is living, but no previously approved feature may silently disappear. Any change to scope must be stated explicitly and approved by Seongja.
+
+
+---
+
+# 15. Owner-selectable operating modes
+
+## Hybrid intelligence
+
+- Android-native deterministic actions run first.
+- Local/offline reasoning is preferred for privacy, availability and low latency when configured.
+- Encrypted cloud cortex nodes are optional for stronger current models, research and multimodal work.
+- FRIDAY must show which route handled the request and fail over honestly.
+
+## Fully offline private mode
+
+The earlier Termux architecture remains an approved project track:
+
+- microphone capture to `whisper.cpp`
+- local wake phrase
+- localhost-only `llama.cpp` or Ollama inference
+- mobile RAG and encrypted local memory
+- allow-listed Android action planner
+- no public network dependency
+- localhost services bound to `127.0.0.1`
+- atomic memory writes and bounded storage
+
+Offline mode must be selectable rather than silently removed when cloud features are added.
+
+# 16. Screen awareness and contextual follow-ups
+
+- “See my screen” uses an explicit on-demand Accessibility snapshot of readable text, controls and fields.
+- Screen context is temporary and must not be stored by default.
+- Pixel-level screen vision requires explicit Android MediaProjection consent and a visible capture state.
+- The assistant must never imply it can see the screen when Android has not supplied context.
+- A local action-state ledger should resolve follow-ups such as “turn it off back” to the most recent compatible device action, while asking when ambiguity remains.
+
+# 17. First-launch, multilingual and floating experience
+
+- First-launch permission/API onboarding should appear once, then reopen only by owner command or reset.
+- FRIDAY should understand Seongja's multilingual speech patterns, including English, Assamese, Hindi, Bengali and Nepali where the selected recognition backend supports them.
+- A compact floating HELIX may provide visible state and quick return to the full chamber, subject to Android overlay permission and battery restrictions.
+- Sounds, boot sequences, voice-state animations and haptics are functional feedback, not decoration.
+
+# 18. Completion reporting
+
+When a release truly passes signing, automated verification and physical-phone acceptance, FRIDAY may send a completion report to Seongja's own authorized Gmail account. No completion message should be sent earlier.

@@ -91,7 +91,7 @@ function Header({
         <div className="friday-mark"><FridayMark /></div>
         <div className="ops-identity-copy">
           <p className="ops-title">F.R.I.D.A.Y. <span>//</span> HELIX OPS</p>
-          <p className="ops-subtitle">SEONGJA PRIVATE INTELLIGENCE <span>//</span> BUILD 0.9.31</p>
+          <p className="ops-subtitle">SEONGJA PRIVATE INTELLIGENCE <span>//</span> BUILD 0.10.0</p>
         </div>
       </div>
       <div className="ops-header-state">

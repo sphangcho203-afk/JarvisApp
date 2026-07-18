@@ -135,7 +135,7 @@ class CartesiaSonicClient(
         val request = Request.Builder()
             .url(url)
             .header("X-API-Key", activeApiKey)
-            .header("User-Agent", "Friday-Android/0.9.22")
+            .header("User-Agent", "Friday-Android/0.10.0")
             .build()
         val route = store.load().routeLabel(activeKeyIndex)
         mainHandler.post {
