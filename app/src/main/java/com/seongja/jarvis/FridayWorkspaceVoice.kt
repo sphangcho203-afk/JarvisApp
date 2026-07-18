@@ -9,8 +9,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class FridayWorkspaceVoice(
     context: Context,
-    private val onDiagnostic: (String) -> Unit = {},
-    private val onComplete: () -> Unit = {}
+    private val diagnosticSink: (String) -> Unit = {},
+    private val completionSink: () -> Unit = {}
 ) : CartesiaSonicClient.Listener {
     private val destroyed = AtomicBoolean(false)
     private val client = CartesiaSonicClient(context.applicationContext, this)
@@ -39,24 +39,24 @@ class FridayWorkspaceVoice(
     }
 
     override fun onReady(label: String) {
-        onDiagnostic("WORKSPACE VOICE -> $label READY")
+        diagnosticSink("WORKSPACE VOICE -> $label READY")
     }
 
     override fun onAudioStarted(label: String) {
-        onDiagnostic("WORKSPACE VOICE -> $label SPEAKING")
+        diagnosticSink("WORKSPACE VOICE -> $label SPEAKING")
     }
 
     override fun onCompleted() {
-        onDiagnostic("WORKSPACE VOICE -> COMPLETE")
-        onComplete()
+        diagnosticSink("WORKSPACE VOICE -> COMPLETE")
+        completionSink()
     }
 
     override fun onDiagnostic(message: String) {
-        onDiagnostic.invoke(message)
+        diagnosticSink(message)
     }
 
     override fun onError(message: String) {
-        onDiagnostic("WORKSPACE VOICE -> ERROR // $message")
-        onComplete()
+        diagnosticSink("WORKSPACE VOICE -> ERROR // $message")
+        completionSink()
     }
 }
