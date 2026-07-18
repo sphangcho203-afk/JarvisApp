@@ -46,6 +46,7 @@ class XCameraActivity : ComponentActivity() {
     private lateinit var switchButton: Button
     private lateinit var cameraExecutor: ExecutorService
     private lateinit var workspaceVoice: FridayWorkspaceVoice
+    private var workspaceSpeech: OnDeviceSpeechInput? = null
 
     private var imageCapture: ImageCapture? = null
     private var lensFacing = CameraSelector.LENS_FACING_BACK
@@ -53,6 +54,10 @@ class XCameraActivity : ComponentActivity() {
     private var autoScanRequested = true
     private var autoScanConsumed = false
     private var captureRunning = false
+    private var workspaceSpeaking = false
+    private var activityResumed = false
+
+    private val speechRestart = Runnable { startWorkspaceListening() }
 
     private val cameraPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
@@ -72,10 +77,17 @@ class XCameraActivity : ComponentActivity() {
             context = this,
             onDiagnostic = { message ->
                 JarvisOperationBus.publish("X-CAMERA VOICE", message.take(180), .9f)
+            },
+            onComplete = {
+                runOnUiThread {
+                    workspaceSpeaking = false
+                    startWorkspaceListening(480L)
+                }
             }
         )
         setContentView(buildUi())
         XCameraRuntime.attach(this)
+        initializeWorkspaceSpeech()
         JarvisOperationBus.publish("X-CAMERA", "OPTICAL ARRAY INITIALIZING", .08f)
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED) {
@@ -86,7 +98,24 @@ class XCameraActivity : ComponentActivity() {
         }
     }
 
+    override fun onResume() {
+        super.onResume()
+        activityResumed = true
+        startWorkspaceListening(320L)
+    }
+
+    override fun onPause() {
+        activityResumed = false
+        statusView.removeCallbacks(speechRestart)
+        workspaceSpeech?.stop()
+        super.onPause()
+    }
+
     override fun onDestroy() {
+        activityResumed = false
+        statusView.removeCallbacks(speechRestart)
+        workspaceSpeech?.destroy()
+        workspaceSpeech = null
         XCameraRuntime.detach(this)
         if (::workspaceVoice.isInitialized) workspaceVoice.destroy()
         cameraExecutor.shutdownNow()
@@ -95,6 +124,7 @@ class XCameraActivity : ComponentActivity() {
 
     fun closeFromVoice() {
         runOnUiThread {
+            workspaceSpeech?.stop()
             if (::workspaceVoice.isInitialized) workspaceVoice.stop()
             finish()
         }
@@ -154,7 +184,7 @@ class XCameraActivity : ComponentActivity() {
         bottom.addView(progress, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(34)))
 
         resultView = label(
-            "Say ‘open your eyes’ to enter this workspace. FRIDAY captures only when SCAN is active.",
+            "VOICE ONLINE // SAY SCAN AGAIN, SWITCH LENS, OR CLOSE YOUR EYES. CAPTURE IS ALWAYS VISIBLE.",
             11f,
             SOFT,
             false
@@ -175,6 +205,7 @@ class XCameraActivity : ComponentActivity() {
         scanButton = button("SCAN WHAT I SEE", GREEN) { captureAndAnalyze() }
         switchButton = button("SWITCH LENS", BLUE) { switchLens() }
         val closeButton = button("CLOSE EYES", RED) {
+            workspaceSpeech?.stop()
             if (::workspaceVoice.isInitialized) workspaceVoice.stop()
             finish()
         }
@@ -214,6 +245,8 @@ class XCameraActivity : ComponentActivity() {
                 if (autoScanRequested && !autoScanConsumed) {
                     autoScanConsumed = true
                     previewView.postDelayed({ captureAndAnalyze() }, 850L)
+                } else {
+                    startWorkspaceListening(420L)
                 }
             }.onFailure { showFailure("Camera startup failed: ${safeError(it)}") }
         }, ContextCompat.getMainExecutor(this))
@@ -221,6 +254,7 @@ class XCameraActivity : ComponentActivity() {
 
     private fun switchLens() {
         if (captureRunning) return
+        workspaceSpeech?.stop()
         lensFacing = if (lensFacing == CameraSelector.LENS_FACING_BACK) {
             CameraSelector.LENS_FACING_FRONT
         } else {
@@ -236,6 +270,8 @@ class XCameraActivity : ComponentActivity() {
             return
         }
         if (captureRunning) return
+        statusView.removeCallbacks(speechRestart)
+        workspaceSpeech?.stop()
         captureRunning = true
         setBusy(true)
         statusView.text = "X-CAMERA // CAPTURING VISIBLE FRAME"
@@ -283,8 +319,11 @@ class XCameraActivity : ComponentActivity() {
             result.onSuccess { analysis ->
                 statusView.text = "X-CAMERA // VISION VERIFIED // ${analysis.elapsedMs}MS"
                 resultView.text = analysis.description
-                val spokenInWorkspace = workspaceVoice.speak(analysis.description)
+                workspaceSpeech?.stop()
+                workspaceSpeaking = workspaceVoice.speak(analysis.description)
+                val spokenInWorkspace = workspaceSpeaking
                 XCameraRuntime.storeResult(question, analysis, spokenInWorkspace)
+                if (!workspaceSpeaking) startWorkspaceListening(420L)
                 JarvisConversationBus.recordUser("X-CAMERA: $question")
                 JarvisConversationBus.recordAssistant(analysis.description)
                 JarvisOperationBus.publish(
@@ -311,6 +350,120 @@ class XCameraActivity : ComponentActivity() {
         XCameraRuntime.storeSystemMessage(message)
         JarvisOperationBus.publish("X-CAMERA ERROR", message.take(220), 1f, false)
         JarvisOperationBus.clear("OPTICAL ROUTE FAILED")
+        startWorkspaceListening(650L)
+    }
+
+    private fun initializeWorkspaceSpeech() {
+        if (
+            ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            JarvisOperationBus.publish(
+                "X-CAMERA VOICE",
+                "MICROPHONE PERMISSION NOT AVAILABLE // TOUCH CONTROLS ACTIVE",
+                .4f
+            )
+            return
+        }
+        workspaceSpeech = OnDeviceSpeechInput(
+            activity = this,
+            listener = object : OnDeviceSpeechInput.Listener {
+                override fun onReady(backend: String) {
+                    JarvisOperationBus.publish("X-CAMERA VOICE", "$backend // COMMAND CHANNEL READY", .72f)
+                }
+
+                override fun onSpeechDetected() {
+                    JarvisOperationBus.publish("X-CAMERA VOICE", "OWNER SPEECH DETECTED", .78f)
+                }
+
+                override fun onPartial(text: String) = Unit
+                override fun onRms(value: Float) = Unit
+
+                override fun onFinal(text: String) {
+                    handleWorkspaceSpeech(text)
+                }
+
+                override fun onError(code: Int, recoverable: Boolean) {
+                    if (recoverable) startWorkspaceListening(620L)
+                }
+            }
+        )
+    }
+
+    private fun startWorkspaceListening(delayMs: Long = 220L) {
+        if (!activityResumed || captureRunning || workspaceSpeaking) return
+        val speech = workspaceSpeech ?: return
+        statusView.removeCallbacks(speechRestart)
+        statusView.postDelayed({
+            if (!activityResumed || captureRunning || workspaceSpeaking || isFinishing) return@postDelayed
+            if (!speech.isActive() && !speech.start()) {
+                statusView.postDelayed(speechRestart, 850L)
+            }
+        }, delayMs.coerceAtLeast(0L))
+    }
+
+    private fun handleWorkspaceSpeech(raw: String) {
+        val clean = raw.trim()
+        val normalized = clean
+            .lowercase(Locale.US)
+            .replace(Regex("[^a-z0-9]+"), " ")
+            .replace(Regex("\s+"), " ")
+            .trim()
+        if (normalized.isBlank()) {
+            startWorkspaceListening(420L)
+            return
+        }
+
+        when {
+            normalized.contains("close your eyes") ||
+                normalized.contains("close x camera") ||
+                normalized.contains("stop the camera") ||
+                normalized.contains("stop looking") -> {
+                closeFromVoice()
+            }
+
+            normalized.contains("switch lens") ||
+                normalized.contains("switch camera") -> {
+                switchLens()
+            }
+
+            normalized.contains("front camera") ||
+                normalized.contains("selfie camera") ||
+                normalized.contains("look at me") -> {
+                if (lensFacing != CameraSelector.LENS_FACING_FRONT) {
+                    lensFacing = CameraSelector.LENS_FACING_FRONT
+                    autoScanConsumed = true
+                    bindCamera()
+                } else {
+                    question = clean
+                    captureAndAnalyze()
+                }
+            }
+
+            normalized.contains("rear camera") ||
+                normalized.contains("back camera") -> {
+                if (lensFacing != CameraSelector.LENS_FACING_BACK) {
+                    lensFacing = CameraSelector.LENS_FACING_BACK
+                    autoScanConsumed = true
+                    bindCamera()
+                } else {
+                    question = clean
+                    captureAndAnalyze()
+                }
+            }
+
+            normalized.contains("scan") ||
+                normalized.contains("look again") ||
+                normalized.contains("what can you see") ||
+                normalized.contains("what do you see") ||
+                normalized.contains("tell me what you see") ||
+                normalized.contains("inspect") -> {
+                question = clean
+                captureAndAnalyze()
+            }
+
+            else -> startWorkspaceListening(420L)
+        }
     }
 
     private fun lensLabel(): String =
