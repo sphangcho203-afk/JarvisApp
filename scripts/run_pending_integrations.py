@@ -6,8 +6,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent
 
 # Base sensory, workspace precedence, and Visual Lab continuity are already
-# committed directly. Only X-Camera's local voice loop remains pending.
-scripts = [ROOT / "integration_xcamera_voice_control.py"]
+# committed directly. X-Camera voice control and its Kotlin escape correction
+# remain in the deterministic integration chain until validated.
+scripts = [
+    ROOT / "integration_xcamera_voice_control.py",
+    ROOT / "integration_xcamera_regex_fix.py",
+]
 
 for script in scripts:
     if script.exists():
