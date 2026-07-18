@@ -5,8 +5,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 
-# These integrations remain deterministic until the complete Android 16 runtime
-# validation succeeds. Each script is idempotent against already-integrated code.
+# The integrations below are committed in source and remain idempotent. CI runs
+# them only as a drift guard before validating the exact Android 16 revision.
 scripts = [
     ROOT / "integration_xcamera_voice_control.py",
     ROOT / "integration_xcamera_regex_fix.py",
