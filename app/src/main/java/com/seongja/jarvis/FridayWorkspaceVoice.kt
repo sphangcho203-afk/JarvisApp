@@ -22,19 +22,22 @@ class FridayWorkspaceVoice(
     private val diagnosticSink = onDiagnostic
     private val completionSink = onComplete
     private val client = CartesiaSonicClient(context.applicationContext, this)
-    private val localTts = TextToSpeech(context.applicationContext) { status ->
-        if (status == TextToSpeech.SUCCESS) {
-            localTts.language = Locale.UK
-            localTts.setSpeechRate(1.06f)
-            localTts.setPitch(1.0f)
-            localReady.set(true)
-            diagnosticSink("WORKSPACE VOICE -> ANDROID TTS READY")
-        } else {
-            localReady.set(false)
-            diagnosticSink("WORKSPACE VOICE -> ANDROID TTS UNAVAILABLE")
+    private lateinit var localTts: TextToSpeech
+
+    init {
+        localTts = TextToSpeech(context.applicationContext) { status ->
+            if (status == TextToSpeech.SUCCESS && ::localTts.isInitialized) {
+                localTts.language = Locale.UK
+                localTts.setSpeechRate(1.06f)
+                localTts.setPitch(1.0f)
+                localReady.set(true)
+                diagnosticSink("WORKSPACE VOICE -> ANDROID TTS READY")
+            } else {
+                localReady.set(false)
+                diagnosticSink("WORKSPACE VOICE -> ANDROID TTS UNAVAILABLE")
+            }
         }
-    }.apply {
-        setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+        localTts.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
             override fun onStart(utteranceId: String?) {
                 diagnosticSink("WORKSPACE VOICE -> ANDROID TTS SPEAKING")
             }
@@ -73,7 +76,7 @@ class FridayWorkspaceVoice(
             return true
         }
 
-        if (!localReady.get()) {
+        if (!localReady.get() || !::localTts.isInitialized) {
             diagnosticSink("WORKSPACE VOICE -> NO READY OUTPUT ROUTE")
             return false
         }
@@ -90,14 +93,16 @@ class FridayWorkspaceVoice(
     fun stop() {
         if (destroyed.get()) return
         client.cancel()
-        localTts.stop()
+        if (::localTts.isInitialized) localTts.stop()
     }
 
     fun destroy() {
         if (!destroyed.compareAndSet(false, true)) return
         client.destroy()
-        localTts.stop()
-        localTts.shutdown()
+        if (::localTts.isInitialized) {
+            localTts.stop()
+            localTts.shutdown()
+        }
     }
 
     override fun onReady(label: String) {
