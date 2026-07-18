@@ -101,7 +101,7 @@ object FridayWorkspaceReservation {
     private fun normalize(value: String): String {
         var command = value
             .lowercase(Locale.US)
-            .replace(Regex("[^a-z0-9 -]"), " ")
+            .replace(Regex("[^a-z0-9]+"), " ")
             .replace(Regex("\\s+"), " ")
             .trim()
 
