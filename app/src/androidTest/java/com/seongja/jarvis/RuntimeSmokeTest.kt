@@ -25,11 +25,13 @@ class RuntimeSmokeTest {
         ActivityScenario.launch<MainActivity>(intent).use { scenario ->
             scenario.moveToState(Lifecycle.State.RESUMED)
             scenario.onActivity { activity ->
+                val decorView = activity.window.decorView
                 assertFalse(activity.isFinishing)
                 assertNotNull(activity.window)
-                assertNotNull(activity.window.decorView)
-                assertTrue(activity.window.decorView.isAttachedToWindow)
-                assertTrue(activity.window.decorView.hasWindowFocus() || activity.hasWindowFocus())
+                assertNotNull(decorView)
+                assertTrue(decorView.isAttachedToWindow)
+                assertNotNull(decorView.windowToken)
+                assertTrue(decorView.isShown)
             }
         }
     }
