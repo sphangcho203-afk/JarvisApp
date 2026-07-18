@@ -433,7 +433,11 @@ class FridayCapabilityRouter(context: Context) {
 
 object ImageCommandIntent {
     private val creationVerb = Regex(
-        "\\b(create|generate|make|draw|design|render|produce|illustrate|paint|visuali[sz]e|model|show)\\b",
+        "\\b(create|generate|make|draw|design|render|produce|illustrate|paint|show)\\b",
+        RegexOption.IGNORE_CASE
+    )
+    private val directVisualize = Regex(
+        "\\bvisuali[sz]e\\b",
         RegexOption.IGNORE_CASE
     )
     private val visualNoun = Regex(
@@ -443,16 +447,17 @@ object ImageCommandIntent {
 
     fun promptFor(raw: String): String? {
         val clean = raw.trim()
-        if (!creationVerb.containsMatchIn(clean) || !visualNoun.containsMatchIn(clean)) {
-            return null
-        }
+        val isDirectVisualization = directVisualize.containsMatchIn(clean)
+        val isCreationRequest = creationVerb.containsMatchIn(clean) && visualNoun.containsMatchIn(clean)
+        if (!isDirectVisualization && !isCreationRequest) return null
+
         val stripped = clean
             .replace(
                 Regex("(?i)^\\s*(hey\\s+)?(friday|jarvis)[, ]*"),
                 ""
             )
             .replace(
-                Regex("(?i)^\\s*(please\\s+)?(create|generate|make|draw|design|render|produce|illustrate|paint|visualize|visualise|model|show\\s+me)\\s+"),
+                Regex("(?i)^\\s*(please\\s+)?(create|generate|make|draw|design|render|produce|illustrate|paint|visualize|visualise|show\\s+me)\\s+"),
                 ""
             )
             .replace(
