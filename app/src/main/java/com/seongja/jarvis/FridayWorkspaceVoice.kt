@@ -9,10 +9,12 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class FridayWorkspaceVoice(
     context: Context,
-    private val diagnosticSink: (String) -> Unit = {},
-    private val completionSink: () -> Unit = {}
+    onDiagnostic: (String) -> Unit = {},
+    onComplete: () -> Unit = {}
 ) : CartesiaSonicClient.Listener {
     private val destroyed = AtomicBoolean(false)
+    private val diagnosticSink = onDiagnostic
+    private val completionSink = onComplete
     private val client = CartesiaSonicClient(context.applicationContext, this)
 
     fun isConfigured(): Boolean = client.isConfigured()
