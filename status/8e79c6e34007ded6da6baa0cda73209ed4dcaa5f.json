@@ -3,10 +3,10 @@
   "version": "0.9.26-waapi-direct",
   "source_sha": "8e79c6e34007ded6da6baa0cda73209ed4dcaa5f",
   "source_branch": "agent/complete-hardening-0.9.31",
-  "event": "push",
+  "event": "pull_request",
   "conclusion": "cancelled",
-  "run_id": "29623899490",
-  "run_number": "348",
+  "run_id": "29623901324",
+  "run_number": "349",
   "artifact": "FRIDAY-Helix-0.9.26-WaAPI-Direct-apk",
   "release_tag": "v0.9.26-waapi-direct"
 }
