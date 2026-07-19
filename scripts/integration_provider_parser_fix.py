@@ -4,30 +4,33 @@ ROOT = Path(__file__).resolve().parents[1]
 PROVIDERS = ROOT / "app/src/main/java/com/seongja/jarvis/UniversalProviderMesh.kt"
 text = PROVIDERS.read_text(encoding="utf-8")
 
+old_alias = 'aliases = listOf("open weather", "openweather")'
+new_alias = 'aliases = listOf("openweather", "openweathermap", "open weather map")'
+if new_alias not in text:
+    if old_alias not in text:
+        raise RuntimeError("Provider parser OpenWeather alias anchor missing")
+    text = text.replace(old_alias, new_alias, 1)
 
-def replace_required(old: str, new: str, label: str) -> None:
-    global text
-    if new in text:
-        return
-    if old not in text:
-        raise RuntimeError(f"Provider parser {label} anchor missing: {old!r}")
-    text = text.replace(old, new, 1)
-
-
-replace_required(
-    'aliases = listOf("open weather", "openweather")',
-    'aliases = listOf("openweather", "openweathermap", "open weather map")',
-    "OpenWeather alias",
-)
-
-replace_required(
-    '        val lower = input.lowercase(Locale.US).replace(Regex("\\s+"), " ").trim()\n',
-    '        val lower = input.lowercase(Locale.US)\n'
-    '            .replace(Regex("[^a-z0-9]+"), " ")\n'
-    '            .replace(Regex("\\s+"), " ")\n'
-    '            .trim()\n',
-    "normalization",
-)
+normalized_marker = '            .replace(Regex("[^a-z0-9]+"), " ")'
+if normalized_marker not in text:
+    lines = text.splitlines(keepends=True)
+    index = next(
+        (
+            i
+            for i, line in enumerate(lines)
+            if line.strip().startswith("val lower = input.lowercase(Locale.US).replace(Regex(")
+        ),
+        -1,
+    )
+    if index < 0:
+        raise RuntimeError("Provider parser normalization statement not found")
+    lines[index:index + 1] = [
+        "        val lower = input.lowercase(Locale.US)\n",
+        "            .replace(Regex(\"[^a-z0-9]+\"), \" \")\n",
+        "            .replace(Regex(\"\\\\s+\"), \" \")\n",
+        "            .trim()\n",
+    ]
+    text = "".join(lines)
 
 PROVIDERS.write_text(text, encoding="utf-8")
 print("Provider command parser hardened for punctuation and generic weather setup commands.")
