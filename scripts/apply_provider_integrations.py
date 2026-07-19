@@ -1,12 +1,21 @@
 from pathlib import Path
 import runpy
+import traceback
 
 ROOT = Path(__file__).resolve().parent
+REPORT = ROOT.parent / "helix-build.log"
 
-for script_name in ("integration_provider_mesh.py", "integration_provider_workspace.py"):
-    script = ROOT / script_name
-    if not script.exists():
-        raise FileNotFoundError(f"Required provider integration is missing: {script_name}")
-    runpy.run_path(str(script), run_name="__main__")
+try:
+    for script_name in ("integration_provider_mesh.py", "integration_provider_workspace.py"):
+        script = ROOT / script_name
+        if not script.exists():
+            raise FileNotFoundError(f"Required provider integration is missing: {script_name}")
+        print(f"Applying {script_name}...")
+        runpy.run_path(str(script), run_name="__main__")
+except Exception:
+    detail = traceback.format_exc()
+    REPORT.write_text("FRIDAY PROVIDER INTEGRATION FAILURE\n\n" + detail, encoding="utf-8")
+    print(detail)
+    raise
 
 print("All FRIDAY universal provider integrations applied.")
