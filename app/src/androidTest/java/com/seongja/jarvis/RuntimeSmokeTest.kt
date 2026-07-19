@@ -44,6 +44,7 @@ class RuntimeSmokeTest {
         val packageManager = context.packageManager
         listOf(
             CloudConfigActivity::class.java,
+            ProviderMeshActivity::class.java,
             GmailAuthorizationActivity::class.java,
             WaApiConfigActivity::class.java,
             WeatherSetupActivity::class.java,
