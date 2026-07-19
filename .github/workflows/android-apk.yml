@@ -11,7 +11,7 @@ on:
       - main
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: friday-sensory-${{ github.workflow }}-${{ github.ref }}
@@ -22,47 +22,23 @@ env:
   FRIDAY_VERSION: 0.10.0
 
 jobs:
-  integrate:
-    name: Integrate native workspace continuity
-    if: github.event_name == 'pull_request' && github.head_ref == 'agent/complete-hardening-0.9.31'
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    steps:
-      - name: Checkout feature branch
-        uses: actions/checkout@v6
-        with:
-          ref: agent/complete-hardening-0.9.31
-          fetch-depth: 0
-
-      - name: Apply deterministic source integration
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 scripts/finalize_sensory_source.py
-          python3 scripts/run_pending_integrations.py
-          if git diff --quiet; then
-            echo 'Native workspace continuity is already integrated.'
-            exit 0
-          fi
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
-          git commit -m 'Complete FRIDAY native workspace continuity'
-          git push origin HEAD:agent/complete-hardening-0.9.31
-
   build:
     name: Build and inspect FRIDAY 0.10.0
-    needs: integrate
-    if: always() && (needs.integrate.result == 'success' || needs.integrate.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 50
     outputs:
       signed: ${{ steps.verify.outputs.signed }}
     steps:
-      - name: Checkout latest source
+      - name: Checkout source
         uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
+
+      - name: Verify committed source integrations are stable
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/finalize_sensory_source.py
+          python3 scripts/run_pending_integrations.py
+          git diff --exit-code
 
       - name: Set up Node 22
         uses: actions/setup-node@v6
@@ -233,10 +209,8 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
-      - name: Checkout latest source
+      - name: Checkout source
         uses: actions/checkout@v6
-        with:
-          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref_name }}
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
