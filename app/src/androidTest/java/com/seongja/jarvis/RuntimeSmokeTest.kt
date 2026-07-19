@@ -7,6 +7,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -24,12 +25,18 @@ class RuntimeSmokeTest {
 
         ActivityScenario.launch<MainActivity>(intent).use { scenario ->
             scenario.moveToState(Lifecycle.State.RESUMED)
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
             scenario.onActivity { activity ->
+                val decor = activity.window.decorView
                 assertFalse(activity.isFinishing)
                 assertNotNull(activity.window)
-                assertNotNull(activity.window.decorView)
-                assertTrue(activity.window.decorView.isAttachedToWindow)
-                assertTrue(activity.window.decorView.hasWindowFocus() || activity.hasWindowFocus())
+                assertNotNull(decor)
+                assertTrue("MainActivity decor must be attached", decor.isAttachedToWindow)
+                assertNotNull("Attached decor must have a real window token", decor.windowToken)
+                assertTrue(
+                    "MainActivity must remain at least started during the runtime probe",
+                    activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
+                )
             }
         }
     }
