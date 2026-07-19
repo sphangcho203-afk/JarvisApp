@@ -6,7 +6,11 @@ ROOT = Path(__file__).resolve().parent
 REPORT = ROOT.parent / "helix-build.log"
 
 try:
-    for script_name in ("integration_provider_mesh.py", "integration_provider_workspace.py"):
+    for script_name in (
+        "integration_provider_parser_fix.py",
+        "integration_provider_mesh.py",
+        "integration_provider_workspace.py",
+    ):
         script = ROOT / script_name
         if not script.exists():
             raise FileNotFoundError(f"Required provider integration is missing: {script_name}")
