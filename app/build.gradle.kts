@@ -16,12 +16,18 @@ val releaseSigningConfigured = listOf(
 
 val integrateUniversalProviderMesh by tasks.registering(Exec::class) {
     group = "friday"
-    description = "Deterministically wires the universal provider mesh into FRIDAY's reasoning core."
+    description = "Deterministically wires the universal provider mesh into FRIDAY's reasoning core and launcher."
     workingDir(rootProject.projectDir)
-    commandLine("python3", "scripts/integration_provider_mesh.py")
-    inputs.file(rootProject.file("scripts/integration_provider_mesh.py"))
-    inputs.file(rootProject.file("app/src/main/java/com/seongja/jarvis/UniversalProviderMesh.kt"))
-    inputs.file(rootProject.file("app/src/main/java/com/seongja/jarvis/JarvisBrain.kt"))
+    commandLine("python3", "scripts/apply_provider_integrations.py")
+    inputs.files(
+        rootProject.file("scripts/apply_provider_integrations.py"),
+        rootProject.file("scripts/integration_provider_mesh.py"),
+        rootProject.file("scripts/integration_provider_workspace.py"),
+        rootProject.file("app/src/main/java/com/seongja/jarvis/UniversalProviderMesh.kt"),
+        rootProject.file("app/src/main/java/com/seongja/jarvis/JarvisBrain.kt"),
+        rootProject.file("app/src/main/java/com/seongja/jarvis/MainActivity.kt"),
+        rootProject.file("helix-ui/src/CinematicOs.tsx")
+    )
     outputs.upToDateWhen { false }
 }
 
