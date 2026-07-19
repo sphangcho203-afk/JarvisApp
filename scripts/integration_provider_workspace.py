@@ -5,9 +5,9 @@ MAIN = ROOT / "app/src/main/java/com/seongja/jarvis/MainActivity.kt"
 CINEMATIC = ROOT / "helix-ui/src/CinematicOs.tsx"
 
 
-def patch(path: Path, old: str, new: str, label: str) -> None:
+def patch(path: Path, old: str, new: str, label: str, marker: str = "") -> None:
     text = path.read_text(encoding="utf-8")
-    if new in text:
+    if (marker and marker in text) or new in text:
         return
     if old not in text:
         raise RuntimeError(f"{label} integration anchor missing: {old[:180]!r}")
@@ -22,6 +22,7 @@ patch(
     '            "providers", "provider", "mesh", "apis" -> ProviderMeshActivity.launch(this)\n'
     '            "cortex", "legacyapis" -> startActivity(Intent(this, CloudConfigActivity::class.java))\n',
     "MainActivity provider workspace",
+    marker='ProviderMeshActivity.launch(this)',
 )
 
 patch(
@@ -32,6 +33,7 @@ patch(
     "  { route: 'providers', code: 'MESH', title: 'API PROVIDERS', detail: 'MODELS + KEYS + ROUTING' },\n"
     "  { route: 'control', code: 'ANDROID', title: 'SYSTEM CONTROL', detail: 'DEVICE AUTOMATION' },\n",
     "Cinematic launcher provider module",
+    marker="route: 'providers'",
 )
 
 print("Universal provider workspace integrated into MainActivity and CinematicOs")
