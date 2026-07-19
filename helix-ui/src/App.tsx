@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { CinematicOs } from './CinematicOs'
 import { Hud } from './Hud'
 import { WorkspaceRail } from './WorkspaceRail'
 import { useNativeBridge } from './nativeBridge'
@@ -43,6 +44,14 @@ export default function App() {
   const bridge = useNativeBridge()
   return (
     <HelixErrorBoundary>
+      <CinematicOs
+        mode={bridge.mode}
+        telemetry={bridge.telemetry}
+        operation={bridge.operation}
+        bridgeReady={bridge.bridgeReady}
+        onOpen={bridge.openWorkspace}
+        onCoreTap={bridge.tapCore}
+      />
       <WorkspaceRail bridgeReady={bridge.bridgeReady} onOpen={bridge.openWorkspace} />
       <Hud
         mode={bridge.mode}

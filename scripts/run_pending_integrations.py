@@ -5,13 +5,12 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 
-# The integrations below are committed in source and remain idempotent. CI runs
-# them only as a drift guard before validating the exact Android 16 revision.
+# Only genuinely pending, idempotent integrations belong here. The Android 16
+# runtime-test mode is committed directly and must not be regenerated in CI.
 scripts = [
     ROOT / "integration_xcamera_voice_control.py",
     ROOT / "integration_xcamera_regex_fix.py",
     ROOT / "integration_xcamera_voice_parser.py",
-    ROOT / "integration_runtime_voice_test_mode.py",
 ]
 
 for script in scripts:
