@@ -6,9 +6,11 @@ on:
     branches:
       - main
       - agent/complete-hardening-0.9.31
+      - agent/friday-0.12-provider-mesh
   pull_request:
     branches:
       - main
+      - agent/friday-0.11-cinematic-os
 
 permissions:
   contents: read
@@ -40,6 +42,16 @@ jobs:
           python3 scripts/run_pending_integrations.py
           git diff --exit-code
 
+      - name: Apply universal provider integrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/apply_provider_integrations.py
+          grep -q 'UniversalProviderMeshClient' app/src/main/java/com/seongja/jarvis/JarvisBrain.kt
+          grep -q 'ProviderMeshCommandRouter' app/src/main/java/com/seongja/jarvis/JarvisBrain.kt
+          grep -q 'ProviderMeshActivity.launch' app/src/main/java/com/seongja/jarvis/MainActivity.kt
+          grep -q 'API PROVIDERS' helix-ui/src/CinematicOs.tsx
+
       - name: Set up Node 22
         uses: actions/setup-node@v6
         with:
@@ -61,6 +73,7 @@ jobs:
           test -s app/src/main/assets/helix/index.html
           grep -q 'X-CAMERA' helix-ui/src/WorkspaceRail.tsx
           grep -q 'VISUAL LAB' helix-ui/src/WorkspaceRail.tsx
+          grep -q 'API MESH' helix-ui/src/WorkspaceRail.tsx
           grep -q 'PRIVATE DIARY' helix-ui/src/WorkspaceRail.tsx
           grep -q 'onOpen' helix-ui/src/WorkspaceRail.tsx
 
@@ -79,6 +92,7 @@ jobs:
           grep -q 'F.R.I.D.A.Y.' helix-mobile-dom.html
           grep -q 'X-CAMERA' helix-mobile-dom.html
           grep -q 'VISUAL LAB' helix-mobile-dom.html
+          grep -q 'API MESH' helix-mobile-dom.html
           grep -q 'PRIVATE DIARY' helix-mobile-dom.html
           grep -q 'MEMORY VAULT' helix-mobile-dom.html
 
@@ -157,6 +171,9 @@ jobs:
           grep -q 'open your eyes' app/src/main/java/com/seongja/jarvis/FridayVisionRouter.kt
           grep -q 'class ImageGenerationActivity' app/src/main/java/com/seongja/jarvis/ImageGenerationActivity.kt
           grep -q 'class PrivateDiaryActivity' app/src/main/java/com/seongja/jarvis/PrivateDiaryActivity.kt
+          grep -q 'class ProviderMeshActivity' app/src/main/java/com/seongja/jarvis/ProviderMeshActivity.kt
+          grep -q 'class SecureProviderMeshRegistry' app/src/main/java/com/seongja/jarvis/UniversalProviderMesh.kt
+          grep -q 'ProviderMeshActivity' app/src/main/AndroidManifest.xml
           mkdir -p release
           if [[ "$SIGNING_CONFIGURED" == 'true' ]]; then
             "$TOOLS/apksigner" verify --verbose --print-certs "$RELEASE_APK" 2>&1 | tee apk-signature.log
@@ -175,7 +192,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: FRIDAY-0.10.0-sensory-validation
+          name: FRIDAY-0.12.0-provider-mesh-validation
           path: |
             helix-build.log
             helix-server.log
@@ -247,7 +264,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: FRIDAY-0.10.0-android16-runtime
+          name: FRIDAY-0.12.0-provider-mesh-android16-runtime
           path: |
             app/build/reports/androidTests/connected/
             app/build/outputs/androidTest-results/connected/
