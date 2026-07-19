@@ -2,6 +2,7 @@ const CAPABILITIES = [
   { id: 'VISION', route: 'xcamera', title: 'X-CAMERA', command: 'OPEN YOUR EYES', state: 'NATIVE' },
   { id: 'CREATE', route: 'image', title: 'VISUAL LAB', command: 'VISUALIZE...', state: 'GEMINI' },
   { id: 'PROVIDERS', route: 'providers', title: 'API MESH', command: 'OPEN API SETUP', state: 'ENCRYPTED' },
+  { id: 'VOICE', route: 'voice', title: 'VOICE LAB', command: 'OPEN VOICE LAB', state: 'LOCAL' },
   { id: 'PRIVATE', route: 'diary', title: 'PRIVATE DIARY', command: 'OPEN MY DIARY', state: 'LOCKED' },
   { id: 'MEMORY', route: 'memory', title: 'MEMORY VAULT', command: 'OPEN MEMORY VAULT', state: 'LOCAL' },
   { id: 'ANDROID', route: 'control', title: 'CONTROL', command: 'ENABLE CONTROL', state: 'SYSTEM' },
