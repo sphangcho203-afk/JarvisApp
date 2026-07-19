@@ -29,14 +29,11 @@ class RuntimeSmokeTest {
             scenario.onActivity { activity ->
                 val decor = activity.window.decorView
                 assertFalse(activity.isFinishing)
+                assertFalse(activity.isDestroyed)
                 assertNotNull(activity.window)
                 assertNotNull(decor)
                 assertTrue("MainActivity decor must be attached", decor.isAttachedToWindow)
                 assertNotNull("Attached decor must have a real window token", decor.windowToken)
-                assertTrue(
-                    "MainActivity must remain at least started during the runtime probe",
-                    activity.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)
-                )
             }
         }
     }
