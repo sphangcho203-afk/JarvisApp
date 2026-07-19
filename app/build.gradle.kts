@@ -14,6 +14,21 @@ val releaseSigningConfigured = listOf(
     releaseKeyPassword
 ).all { !it.isNullOrBlank() }
 
+val integrateUniversalProviderMesh by tasks.registering(Exec::class) {
+    group = "friday"
+    description = "Deterministically wires the universal provider mesh into FRIDAY's reasoning core."
+    workingDir(rootProject.projectDir)
+    commandLine("python3", "scripts/integration_provider_mesh.py")
+    inputs.file(rootProject.file("scripts/integration_provider_mesh.py"))
+    inputs.file(rootProject.file("app/src/main/java/com/seongja/jarvis/UniversalProviderMesh.kt"))
+    inputs.file(rootProject.file("app/src/main/java/com/seongja/jarvis/JarvisBrain.kt"))
+    outputs.upToDateWhen { false }
+}
+
+tasks.named("preBuild").configure {
+    dependsOn(integrateUniversalProviderMesh)
+}
+
 android {
     namespace = "com.seongja.jarvis"
     compileSdk = 36
