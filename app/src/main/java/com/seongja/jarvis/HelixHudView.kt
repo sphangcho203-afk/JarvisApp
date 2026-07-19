@@ -60,6 +60,7 @@ class HelixHudView(context: Context) : WebView(context) {
     private var cloudConfigured = false
     private var voiceSource = "ON-DEVICE"
     private var coreTapListener: (() -> Unit)? = null
+    private var workspaceListener: ((String) -> Unit)? = null
     private var lastAudioDispatchAt = 0L
     private var bridgeTimeout: Runnable? = null
     private var lastServiceRefreshAt = 0L
@@ -115,7 +116,7 @@ class HelixHudView(context: Context) : WebView(context) {
             setSupportZoom(false)
             setGeolocationEnabled(false)
             databaseEnabled = false
-            userAgentString = "$userAgentString FridayHelix/0.9.22"
+            userAgentString = "$userAgentString FridayHelix/0.10.0"
             @Suppress("DEPRECATION") saveFormData = false
             @Suppress("DEPRECATION") allowFileAccessFromFileURLs = true
             @Suppress("DEPRECATION") allowUniversalAccessFromFileURLs = false
@@ -171,6 +172,10 @@ class HelixHudView(context: Context) : WebView(context) {
 
     fun setCoreTapListener(listener: () -> Unit) {
         coreTapListener = listener
+    }
+
+    fun setWorkspaceListener(listener: (String) -> Unit) {
+        workspaceListener = listener
     }
 
     fun setCloudConfigured(configured: Boolean) {
@@ -275,6 +280,7 @@ class HelixHudView(context: Context) : WebView(context) {
         stopTelemetry()
         handler.removeCallbacksAndMessages(null)
         coreTapListener = null
+        workspaceListener = null
         pendingPayloads.clear()
         removeJavascriptInterface(BRIDGE_NAME)
         stopLoading()
@@ -484,6 +490,19 @@ class HelixHudView(context: Context) : WebView(context) {
                 if (!released) {
                     performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
                     coreTapListener?.invoke()
+                }
+            }
+        }
+
+        @JavascriptInterface
+        fun openWorkspace(workspace: String) {
+            val clean = workspace.replace(Regex("[^A-Za-z0-9_-]"), "").take(32)
+            if (clean.isBlank()) return
+            post {
+                if (!released) {
+                    performHapticFeedback(HapticFeedbackConstants.VIRTUAL_KEY)
+                    dispatchEvent("WORKSPACE -> ${clean.uppercase(Locale.US)}", "SYS")
+                    workspaceListener?.invoke(clean)
                 }
             }
         }

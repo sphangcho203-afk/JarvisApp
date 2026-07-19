@@ -4,6 +4,11 @@ import android.content.Context
 import android.content.Intent
 import java.util.Locale
 
+/**
+ * Deterministic native capability router. Every supported device/workspace
+ * command is intercepted here before FRIDAY is allowed to produce generic
+ * cloud dialogue about what it might do.
+ */
 class FridayCapabilityRouter(context: Context) {
     private val appContext = context.applicationContext
     private val gmail = GmailApiClient(appContext)
@@ -11,12 +16,15 @@ class FridayCapabilityRouter(context: Context) {
     private val images = GeminiImageClient(appContext)
     private val waapi = WaApiCommandRouter(appContext)
     private val ownerVoice = OwnerVoiceProfileStore(appContext)
+    private val vision = FridayVisionRouter(appContext)
 
     fun statusLabel(): String = buildString {
         append("Gmail ")
         append(if (gmailAuth.load().isAuthorized()) "authorized" else "consent")
         append(" // image ")
         append(if (images.isConfigured()) "ready" else "key required")
+        append(" // X-Camera ")
+        append(if (GeminiVisionClient(appContext).isConfigured()) "ready" else "key required")
         append(" // WhatsApp ")
         append(waapi.statusLabel())
         append(" // diary encrypted")
@@ -25,23 +33,38 @@ class FridayCapabilityRouter(context: Context) {
         append(if (ownerVoice.load().enrolled) "familiarity enrolled" else "enrollment required")
     }
 
-    fun intercept(input: String, memorySummary: String, onToken: ((String) -> Unit)? = null): BrainResponse? {
-        PrivateDiaryCommandParser.parse(input)?.let { return handleDiaryCommand(it, memorySummary, onToken) }
-        MemoryVaultCommandParser.parse(input)?.let { return handleMemoryVaultCommand(it, memorySummary, onToken) }
-        OwnerVoiceCommandParser.parse(input)?.let { return handleOwnerVoiceCommand(it, memorySummary, onToken) }
+    fun intercept(
+        input: String,
+        memorySummary: String,
+        onToken: ((String) -> Unit)? = null
+    ): BrainResponse? {
+        vision.intercept(input, memorySummary, onToken)?.let { return it }
+        PrivateDiaryCommandParser.parse(input)?.let {
+            return handleDiaryCommand(it, memorySummary, onToken)
+        }
+        MemoryVaultCommandParser.parse(input)?.let {
+            return handleMemoryVaultCommand(it, memorySummary, onToken)
+        }
+        OwnerVoiceCommandParser.parse(input)?.let {
+            return handleOwnerVoiceCommand(it, memorySummary, onToken)
+        }
         waapi.intercept(input, memorySummary, onToken)?.let { return it }
 
         ImageCommandIntent.promptFor(input)?.let { prompt ->
-            JarvisOperationBus.publish("IMAGE SYNTHESIS", "OPENING GEMINI VISUAL STUDIO", .08f)
-            onToken?.invoke("Opening image synthesis, Sir. ")
+            JarvisOperationBus.publish(
+                "IMAGE SYNTHESIS",
+                "OPENING GEMINI VISUAL STUDIO",
+                .08f
+            )
+            onToken?.invoke("Opening the Visual Lab, Sir. ")
             ImageGenerationActivity.launch(appContext, prompt)
             return BrainResponse(
-                spoken = "Image synthesis is underway, Sir. The visual studio is open on screen.",
+                spoken = "The Visual Lab is open and generating it now, Sir.",
                 display = buildString {
-                    appendLine("IMAGE SYNTHESIS // GEMINI VISUAL STUDIO")
+                    appendLine("VISUAL LAB // IMAGE SYNTHESIS ACTIVE")
                     appendLine("PROMPT // ${prompt.take(320)}")
-                    appendLine("ROUTE // AUTOMATIC IMAGE MODEL FAILOVER")
-                    append("OUTPUT // PREVIEW + GALLERY + SHARE")
+                    appendLine("ROUTE // AUTOMATIC GEMINI IMAGE FAILOVER")
+                    append("OUTPUT // LIVE PREVIEW + GALLERY + SHARE")
                 },
                 intent = "image/generate",
                 confidence = 1f,
@@ -53,8 +76,13 @@ class FridayCapabilityRouter(context: Context) {
                     "activity=image_generation_studio"
                 ),
                 memory = memorySummary,
-                thoughts = listOf("The image prompt was routed to the dedicated visual synthesis surface."),
-                entities = listOf("aspect_ratio=${GeminiImageClient.inferAspectRatio(prompt)}"),
+                thoughts = listOf(
+                    "The visual request was routed to the real native synthesis surface."
+                ),
+                entities = listOf(
+                    "aspect_ratio=${GeminiImageClient.inferAspectRatio(prompt)}",
+                    "workspace=visual_lab"
+                ),
                 decision = "launch_image_synthesis",
                 action = BrainAction()
             )
@@ -65,11 +93,20 @@ class FridayCapabilityRouter(context: Context) {
             launchGmailAuthorization()
             return authorizationResponse(memorySummary)
         }
-        JarvisOperationBus.publish("GMAIL PRIVATE DATA", "ACQUIRING AUTHORIZED MAILBOX TOKEN", .12f)
+
+        JarvisOperationBus.publish(
+            "GMAIL PRIVATE DATA",
+            "ACQUIRING AUTHORIZED MAILBOX TOKEN",
+            .12f
+        )
         onToken?.invoke("Accessing Gmail, Sir. ")
         return runCatching { gmail.execute(command) }.fold(
             onSuccess = { result ->
-                JarvisOperationBus.publish("GMAIL OPERATION VERIFIED", result.trace.firstOrNull().orEmpty(), .94f)
+                JarvisOperationBus.publish(
+                    "GMAIL OPERATION VERIFIED",
+                    result.trace.firstOrNull().orEmpty(),
+                    .94f
+                )
                 BrainResponse(
                     spoken = result.spoken,
                     display = result.display,
@@ -78,8 +115,12 @@ class FridayCapabilityRouter(context: Context) {
                     mode = BrainMode.ONLINE,
                     trace = result.trace + "oauth=google_identity_services",
                     memory = memorySummary,
-                    thoughts = listOf("Gmail data was handled through the user-authorized Google API scope set."),
-                    entities = listOf("gmail_account=${gmailAuth.load().accountEmail}"),
+                    thoughts = listOf(
+                        "Gmail data was handled through the user-authorized Google API scope set."
+                    ),
+                    entities = listOf(
+                        "gmail_account=${gmailAuth.load().accountEmail}"
+                    ),
                     decision = "execute_authorized_gmail_command",
                     action = BrainAction()
                 )
@@ -90,17 +131,29 @@ class FridayCapabilityRouter(context: Context) {
                     authorizationResponse(memorySummary, error.message)
                 } else {
                     val message = (error.message ?: error.javaClass.simpleName)
-                        .replace(Regex("\\s+"), " ").trim().take(480)
-                    JarvisOperationBus.publish("GMAIL OPERATION ERROR", message, 1f, false)
+                        .replace(Regex("\\s+"), " ")
+                        .trim()
+                        .take(480)
+                    JarvisOperationBus.publish(
+                        "GMAIL OPERATION ERROR",
+                        message,
+                        1f,
+                        false
+                    )
                     BrainResponse(
                         spoken = "The Gmail operation failed: $message",
                         display = "GMAIL // OPERATION FAILED\n$message",
                         intent = "gmail/error",
                         confidence = 0f,
                         mode = BrainMode.ALERT,
-                        trace = listOf("gmail_operation=failed", "error=${error.javaClass.simpleName}"),
+                        trace = listOf(
+                            "gmail_operation=failed",
+                            "error=${error.javaClass.simpleName}"
+                        ),
                         memory = memorySummary,
-                        thoughts = listOf("The mailbox request failed without exposing credentials."),
+                        thoughts = listOf(
+                            "The mailbox request failed without exposing credentials."
+                        ),
                         entities = emptyList(),
                         decision = "report_gmail_failure",
                         action = BrainAction()
@@ -110,7 +163,11 @@ class FridayCapabilityRouter(context: Context) {
         ).also { JarvisOperationBus.clear("GMAIL CYCLE COMPLETE") }
     }
 
-    private fun handleDiaryCommand(command: PrivateDiaryCommand, memorySummary: String, onToken: ((String) -> Unit)?): BrainResponse {
+    private fun handleDiaryCommand(
+        command: PrivateDiaryCommand,
+        memorySummary: String,
+        onToken: ((String) -> Unit)?
+    ): BrainResponse {
         val result = when (command) {
             PrivateDiaryCommand.Open -> {
                 PrivateDiaryActivity.launch(appContext)
@@ -121,6 +178,7 @@ class FridayCapabilityRouter(context: Context) {
                     "launch_private_diary"
                 )
             }
+
             PrivateDiaryCommand.NewEntry -> {
                 PrivateDiaryActivity.launch(appContext, newEntry = true)
                 RouteResult(
@@ -130,6 +188,7 @@ class FridayCapabilityRouter(context: Context) {
                     "launch_new_diary_entry"
                 )
             }
+
             is PrivateDiaryCommand.Search -> {
                 PrivateDiaryActivity.launch(appContext, search = command.query)
                 RouteResult(
@@ -139,17 +198,31 @@ class FridayCapabilityRouter(context: Context) {
                     "launch_owner_diary_search"
                 )
             }
+
             PrivateDiaryCommand.SecureVault -> {
                 val secured = PrivateDiaryRuntime.secureActive("OWNER COMMAND")
                 RouteResult(
-                    if (secured) "Diary sealed. Temporary vault context has been cleared, Sir." else "The private diary is already sealed, Sir.",
-                    if (secured) "PRIVATE DIARY // SEALED\nTEMPORARY CONTEXT // CLEARED" else "PRIVATE DIARY // ALREADY SEALED",
+                    if (secured) {
+                        "Diary sealed. Temporary vault context has been cleared, Sir."
+                    } else {
+                        "The private diary is already sealed, Sir."
+                    },
+                    if (secured) {
+                        "PRIVATE DIARY // SEALED\nTEMPORARY CONTEXT // CLEARED"
+                    } else {
+                        "PRIVATE DIARY // ALREADY SEALED"
+                    },
                     "diary/secure",
                     if (secured) "secure_active_diary" else "diary_already_secure"
                 )
             }
         }
-        JarvisOperationBus.publish("PRIVATE DIARY", result.display.lineSequence().firstOrNull().orEmpty(), 1f)
+
+        JarvisOperationBus.publish(
+            "PRIVATE DIARY",
+            result.display.lineSequence().firstOrNull().orEmpty(),
+            1f
+        )
         onToken?.invoke(result.spoken)
         return BrainResponse(
             spoken = result.spoken,
@@ -164,14 +237,20 @@ class FridayCapabilityRouter(context: Context) {
                 "diary_memory_separation=enforced"
             ),
             memory = memorySummary,
-            thoughts = listOf("The diary route protects entries unless the owner selects a readable mode."),
+            thoughts = listOf(
+                "The diary route protects entries unless the owner selects a readable mode."
+            ),
             entities = listOf("workspace=private_diary_vault"),
             decision = result.decision,
             action = BrainAction()
         )
     }
 
-    private fun handleMemoryVaultCommand(command: MemoryVaultCommand, memorySummary: String, onToken: ((String) -> Unit)?): BrainResponse {
+    private fun handleMemoryVaultCommand(
+        command: MemoryVaultCommand,
+        memorySummary: String,
+        onToken: ((String) -> Unit)?
+    ): BrainResponse {
         val result = when (command) {
             MemoryVaultCommand.Open -> {
                 MemoryVaultActivity.launch(appContext)
@@ -182,6 +261,7 @@ class FridayCapabilityRouter(context: Context) {
                     "launch_memory_vault"
                 )
             }
+
             MemoryVaultCommand.ReviewPending -> {
                 MemoryVaultActivity.launchPending(appContext)
                 RouteResult(
@@ -191,6 +271,7 @@ class FridayCapabilityRouter(context: Context) {
                     "launch_memory_review_queue"
                 )
             }
+
             MemoryVaultCommand.ConversationArchive -> {
                 MemoryVaultActivity.launchArchive(appContext)
                 RouteResult(
@@ -200,6 +281,7 @@ class FridayCapabilityRouter(context: Context) {
                     "launch_conversation_archive"
                 )
             }
+
             is MemoryVaultCommand.Search -> {
                 MemoryVaultActivity.launch(appContext, query = command.query)
                 RouteResult(
@@ -210,7 +292,12 @@ class FridayCapabilityRouter(context: Context) {
                 )
             }
         }
-        JarvisOperationBus.publish("MEMORY VAULT", result.display.lineSequence().firstOrNull().orEmpty(), .95f)
+
+        JarvisOperationBus.publish(
+            "MEMORY VAULT",
+            result.display.lineSequence().firstOrNull().orEmpty(),
+            .95f
+        )
         onToken?.invoke(result.spoken)
         return BrainResponse(
             spoken = result.spoken,
@@ -225,14 +312,20 @@ class FridayCapabilityRouter(context: Context) {
                 "diary_transfer=approval_queue_only"
             ),
             memory = memorySummary,
-            thoughts = listOf("Personal memory controls remain local and owner-authenticated."),
+            thoughts = listOf(
+                "Personal memory controls remain local and owner-authenticated."
+            ),
             entities = listOf("workspace=memory_vault"),
             decision = result.decision,
             action = BrainAction()
         )
     }
 
-    private fun handleOwnerVoiceCommand(command: OwnerVoiceCommand, memorySummary: String, onToken: ((String) -> Unit)?): BrainResponse {
+    private fun handleOwnerVoiceCommand(
+        command: OwnerVoiceCommand,
+        memorySummary: String,
+        onToken: ((String) -> Unit)?
+    ): BrainResponse {
         val profile = ownerVoice.load()
         val result = when (command) {
             OwnerVoiceCommand.Status -> RouteResult(
@@ -250,6 +343,7 @@ class FridayCapabilityRouter(context: Context) {
                 intent = "voice_identity/status",
                 decision = "report_owner_voice_status"
             )
+
             OwnerVoiceCommand.OpenLab,
             OwnerVoiceCommand.Enroll -> {
                 OwnerVoiceEnrollmentActivity.launch(appContext)
@@ -261,7 +355,12 @@ class FridayCapabilityRouter(context: Context) {
                 )
             }
         }
-        JarvisOperationBus.publish("OWNER VOICE", result.display.lineSequence().firstOrNull().orEmpty(), .9f)
+
+        JarvisOperationBus.publish(
+            "OWNER VOICE",
+            result.display.lineSequence().firstOrNull().orEmpty(),
+            .9f
+        )
         onToken?.invoke(result.spoken)
         return BrainResponse(
             spoken = result.spoken,
@@ -276,7 +375,9 @@ class FridayCapabilityRouter(context: Context) {
                 "sensitive_authorization=android_owner_required"
             ),
             memory = memorySummary,
-            thoughts = listOf("Voice familiarity improves personalization but never grants privileged access by itself."),
+            thoughts = listOf(
+                "Voice familiarity improves personalization but never grants privileged access by itself."
+            ),
             entities = listOf("workspace=owner_voice_lab"),
             decision = result.decision,
             action = BrainAction()
@@ -284,42 +385,85 @@ class FridayCapabilityRouter(context: Context) {
     }
 
     private fun launchGmailAuthorization() {
-        appContext.startActivity(Intent(appContext, GmailAuthorizationActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        appContext.startActivity(
+            Intent(appContext, GmailAuthorizationActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
     }
 
-    private fun authorizationResponse(memorySummary: String, reason: String? = null): BrainResponse = BrainResponse(
+    private fun authorizationResponse(
+        memorySummary: String,
+        reason: String? = null
+    ): BrainResponse = BrainResponse(
         spoken = "Google Gmail authorization is open, Sir. Select your account and approve the requested permissions.",
         display = buildString {
             appendLine("GMAIL // GOOGLE AUTHORIZATION OPEN")
             appendLine("SCOPES // MODIFY + SEND")
             appendLine("ACCOUNT // SELECT ON GOOGLE CONSENT SCREEN")
-            if (!reason.isNullOrBlank()) append("STATUS // ${reason.take(220)}") else append("STATUS // AWAITING OWNER CONSENT")
+            if (!reason.isNullOrBlank()) {
+                append("STATUS // ${reason.take(220)}")
+            } else {
+                append("STATUS // AWAITING OWNER CONSENT")
+            }
         },
         intent = "gmail/authorize",
         confidence = 1f,
         mode = BrainMode.EXECUTING,
-        trace = listOf("google_identity_services", "gmail_oauth_consent", "token_not_persisted"),
+        trace = listOf(
+            "google_identity_services",
+            "gmail_oauth_consent",
+            "token_not_persisted"
+        ),
         memory = memorySummary,
-        thoughts = listOf("Google must obtain explicit account consent before Gmail data can be accessed."),
+        thoughts = listOf(
+            "Google must obtain explicit account consent before Gmail data can be accessed."
+        ),
         entities = listOf("scopes=gmail.modify+gmail.send"),
         decision = "launch_gmail_authorization",
         action = BrainAction()
     )
 
-    private data class RouteResult(val spoken: String, val display: String, val intent: String, val decision: String)
+    private data class RouteResult(
+        val spoken: String,
+        val display: String,
+        val intent: String,
+        val decision: String
+    )
 }
 
 object ImageCommandIntent {
-    private val creationVerb = Regex("\\b(create|generate|make|draw|design|render|produce|illustrate|paint)\\b", RegexOption.IGNORE_CASE)
-    private val visualNoun = Regex("\\b(image|picture|photo|wallpaper|poster|logo|art|artwork|illustration|graphic|thumbnail|cover)\\b", RegexOption.IGNORE_CASE)
+    private val creationVerb = Regex(
+        "\\b(create|generate|make|draw|design|render|produce|illustrate|paint|show)\\b",
+        RegexOption.IGNORE_CASE
+    )
+    private val directVisualize = Regex(
+        "\\bvisuali[sz]e\\b",
+        RegexOption.IGNORE_CASE
+    )
+    private val visualNoun = Regex(
+        "\\b(image|picture|photo|wallpaper|poster|logo|art|artwork|illustration|graphic|thumbnail|cover|visual|scene|concept|diagram|3d\\s+model|model)\\b",
+        RegexOption.IGNORE_CASE
+    )
 
     fun promptFor(raw: String): String? {
         val clean = raw.trim()
-        if (!creationVerb.containsMatchIn(clean) || !visualNoun.containsMatchIn(clean)) return null
+        val isDirectVisualization = directVisualize.containsMatchIn(clean)
+        val isCreationRequest = creationVerb.containsMatchIn(clean) && visualNoun.containsMatchIn(clean)
+        if (!isDirectVisualization && !isCreationRequest) return null
+
         val stripped = clean
-            .replace(Regex("(?i)^\\s*(hey\\s+)?(friday|jarvis)[, ]*"), "")
-            .replace(Regex("(?i)^\\s*(please\\s+)?(create|generate|make|draw|design|render|produce|illustrate|paint)\\s+"), "")
-            .replace(Regex("(?i)^(an?|the)\\s+(image|picture|photo|wallpaper|poster|logo|artwork?|illustration|graphic|thumbnail|cover)\\s+(of|for|showing)?\\s*"), "")
+            .replace(
+                Regex("(?i)^\\s*(hey\\s+)?(friday|jarvis)[, ]*"),
+                ""
+            )
+            .replace(
+                Regex("(?i)^\\s*(please\\s+)?(create|generate|make|draw|design|render|produce|illustrate|paint|visualize|visualise|show\\s+me)\\s+"),
+                ""
+            )
+            .replace(
+                Regex("(?i)^(an?|the)\\s+(image|picture|photo|wallpaper|poster|logo|artwork?|illustration|graphic|thumbnail|cover|visual|scene|concept|diagram|3d\\s+model|model)\\s+(of|for|showing)?\\s*"),
+                ""
+            )
             .trim()
         return stripped.ifBlank { clean }.take(4_000)
     }

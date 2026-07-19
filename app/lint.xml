@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!--
+      FRIDAY is a private, owner-specific English tactical interface. Its status
+      panels intentionally assemble live telemetry, provider names, counters,
+      and diagnostic codes at runtime rather than presenting translatable copy.
+    -->
+    <issue id="SetTextI18n" severity="ignore" />
+
+    <!-- API 36 is the stable Android 16 target used by this release. -->
+    <issue id="OldTargetApi" severity="ignore" />
+
+    <!-- AGP 8.12.2 is intentionally paired with its supported Gradle 8.13 toolchain. -->
+    <issue id="AndroidGradlePluginVersion" severity="ignore" />
+
+    <!-- OkHttp 5 is a major migration; 4.12 remains the audited stable client here. -->
+    <issue id="NewerVersionAvailable" severity="ignore" />
+
+    <!-- Platform APIs are deliberate in this low-dependency Android core. -->
+    <issue id="UseKtx" severity="ignore" />
+</lint>

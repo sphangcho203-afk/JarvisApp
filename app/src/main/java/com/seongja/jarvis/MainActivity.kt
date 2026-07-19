@@ -13,6 +13,7 @@ import android.view.WindowManager
 import com.jarvis.core.device.DeviceActionResult
 import com.jarvis.core.device.DeviceActionStatus
 import com.jarvis.core.device.DeviceCommandRouter
+import com.jarvis.core.device.FridayWorkspaceReservation
 import com.jarvis.core.device.SystemControlAccess
 import java.util.Locale
 import java.util.concurrent.atomic.AtomicBoolean
@@ -24,6 +25,12 @@ class MainActivity : Activity() {
     private lateinit var voiceLoop: VoiceLoop
     private lateinit var countdown: JarvisCountdownController
     private lateinit var soundEngine: JarvisSoundEngine
+
+    private val runtimeTestMode: Boolean
+        get() = intent?.getBooleanExtra(
+            JarvisApplication.EXTRA_SKIP_ONBOARDING_FOR_TESTS,
+            false
+        ) == true
 
     private var resumed = false
     private var announcedOnline = false
@@ -64,14 +71,16 @@ class MainActivity : Activity() {
             onTick = hud::setCountdown,
             onFinished = ::handleCountdownFinished
         )
-        voiceLoop = VoiceLoop(
-            activity = this,
-            onSpeech = ::handleSpeech,
-            onPartial = ::handlePartialSpeech,
-            onRms = hud::setVoiceAmplitude,
-            onState = ::handleVoiceState,
-            onDiagnostic = { message -> runOnUiThread { hud.pushEvent(message) } }
-        )
+        if (!runtimeTestMode) {
+            voiceLoop = VoiceLoop(
+                activity = this,
+                onSpeech = ::handleSpeech,
+                onPartial = ::handlePartialSpeech,
+                onRms = hud::setVoiceAmplitude,
+                onState = ::handleVoiceState,
+                onDiagnostic = { message -> runOnUiThread { hud.pushEvent(message) } }
+            )
+        }
         WeatherRuntime.addListener(weatherListener)
         WeatherRuntime.refresh()
 
@@ -96,8 +105,9 @@ class MainActivity : Activity() {
 
         hud.setCoreTapListener {
             when {
+                runtimeTestMode -> hud.pushEvent("INSTRUMENTATION -> VOICE ARRAY DISABLED")
                 brainBusy.get() -> abortActiveRequest("USER CANCELLED ACTIVE REQUEST")
-                hasMicPermission() -> {
+                hasMicPermission() && ::voiceLoop.isInitialized -> {
                     hud.pushEvent("USER -> VOICE ARRAY RECALIBRATION")
                     voiceLoop.manualRestart()
                 }
@@ -108,8 +118,14 @@ class MainActivity : Activity() {
             }
         }
 
+        hud.setWorkspaceListener(::openWorkspace)
         hud.isLongClickable = false
-        if (!hasMicPermission()) requestMicPermission()
+        if (runtimeTestMode) {
+            hud.pushEvent("INSTRUMENTATION -> REAL UI / VOICE + WAKE DISABLED")
+            hud.setVoiceState(VoiceLoop.State.READY)
+        } else if (!hasMicPermission()) {
+            requestMicPermission()
+        }
     }
 
     override fun onNewIntent(intent: Intent?) {
@@ -124,7 +140,7 @@ class MainActivity : Activity() {
     override fun onResume() {
         super.onResume()
         resumed = true
-        JarvisWakeService.pause(this)
+        if (!runtimeTestMode) JarvisWakeService.pause(this)
         enterImmersiveMode()
         if (::brain.isInitialized) {
             hud.setCloudConfigured(brain.isCloudConfigured())
@@ -144,7 +160,14 @@ class MainActivity : Activity() {
             )
         }
         WeatherRuntime.refresh()
-        if (hasMicPermission() && !brainBusy.get()) {
+        consumeXCameraResult()
+        consumeImageGenerationResult()
+        if (
+            !runtimeTestMode &&
+            ::voiceLoop.isInitialized &&
+            hasMicPermission() &&
+            !brainBusy.get()
+        ) {
             voiceLoop.resume()
             hud.postDelayed({ openCloudSetupIfRequired() }, 450L)
         }
@@ -153,8 +176,100 @@ class MainActivity : Activity() {
     override fun onPause() {
         resumed = false
         if (::voiceLoop.isInitialized) voiceLoop.stop()
-        if (JarvisWakeService.isEnabled(this)) JarvisWakeService.resume(this)
+        if (!runtimeTestMode && JarvisWakeService.isEnabled(this)) {
+            JarvisWakeService.resume(this)
+        }
         super.onPause()
+    }
+
+    private fun openWorkspace(workspace: String) {
+        when (workspace.trim().lowercase(Locale.US)) {
+            "xcamera", "vision", "eyes" -> XCameraActivity.launch(this, autoScan = false)
+            "image", "visual", "studio" -> ImageGenerationActivity.launch(this, "")
+            "diary" -> PrivateDiaryActivity.launch(this)
+            "memory", "vault" -> MemoryVaultActivity.launch(this)
+            "control", "permissions" -> startActivity(Intent(this, PermissionCenterActivity::class.java))
+            "apis", "cortex" -> startActivity(Intent(this, CloudConfigActivity::class.java))
+            else -> hud.pushEvent("WORKSPACE -> UNKNOWN ${workspace.take(32).uppercase(Locale.US)}")
+        }
+    }
+
+    private fun consumeXCameraResult() {
+        val result = XCameraRuntime.consume() ?: return
+        val response = BrainResponse(
+            spoken = result.description,
+            display = buildString {
+                appendLine(if (result.isError) "X-CAMERA // DEGRADED" else "X-CAMERA // VISUAL ANALYSIS VERIFIED")
+                appendLine("QUESTION // ${result.question.take(320)}")
+                appendLine("MODEL // ${result.model}")
+                appendLine("TIME // ${result.elapsedMs}MS")
+                append(result.description)
+            },
+            intent = if (result.isError) "vision/error" else "vision/result",
+            confidence = if (result.isError) 0f else .97f,
+            mode = if (result.isError) BrainMode.ALERT else BrainMode.ONLINE,
+            trace = listOf(
+                "workspace=x_camera",
+                "model=${result.model}",
+                "latency=${result.elapsedMs}ms",
+                "capture_persistence=disabled"
+            ),
+            memory = brain.memorySnapshot(),
+            thoughts = listOf("A temporary camera frame was analyzed and discarded."),
+            entities = listOf("sensor=xcamera"),
+            decision = if (result.isError) "report_xcamera_error" else "return_visual_analysis",
+            action = BrainAction()
+        )
+        hud.submitBrainResponse(response)
+        hud.pushEvent(if (result.isError) "X-CAMERA -> DEGRADED" else "X-CAMERA -> RESULT VERIFIED")
+        if (!result.isError && !result.spokenInWorkspace) {
+            mainHandler.postDelayed({ if (resumed) speak(result.description) }, 280L)
+        }
+    }
+
+    private fun consumeImageGenerationResult() {
+        val result = ImageGenerationRuntime.consume() ?: return
+        val spoken = if (result.isError) {
+            "Visual Lab failed: ${result.message}"
+        } else {
+            result.message
+        }
+        val response = BrainResponse(
+            spoken = spoken,
+            display = buildString {
+                appendLine(if (result.isError) "VISUAL LAB // FAILED" else "VISUAL LAB // GENERATION VERIFIED")
+                appendLine("PROMPT // ${result.prompt.take(320)}")
+                appendLine("MODEL // ${result.model}")
+                appendLine("TIME // ${result.elapsedMs}MS")
+                appendLine("STORAGE // ${if (result.saved) "PICTURES/FRIDAY" else "PREVIEW ONLY"}")
+                append(result.message)
+            },
+            intent = if (result.isError) "image/error" else "image/result",
+            confidence = if (result.isError) 0f else .98f,
+            mode = if (result.isError) BrainMode.ALERT else BrainMode.ONLINE,
+            trace = listOf(
+                "workspace=visual_lab",
+                "model=${result.model}",
+                "latency=${result.elapsedMs}ms",
+                "saved=${result.saved}"
+            ),
+            memory = brain.memorySnapshot(),
+            thoughts = listOf(
+                if (result.isError) {
+                    "The native image route reported a real provider or decoding failure."
+                } else {
+                    "The generated visual was decoded successfully before being reported as ready."
+                }
+            ),
+            entities = listOf("workspace=visual_lab"),
+            decision = if (result.isError) "report_visual_lab_error" else "return_generated_visual_result",
+            action = BrainAction()
+        )
+        hud.submitBrainResponse(response)
+        hud.pushEvent(if (result.isError) "VISUAL LAB -> DEGRADED" else "VISUAL LAB -> RESULT VERIFIED")
+        mainHandler.postDelayed({
+            if (resumed && !brainBusy.get()) speak(spoken)
+        }, 280L)
     }
 
     private fun handlePartialSpeech(text: String) {
@@ -218,7 +333,14 @@ class MainActivity : Activity() {
             return
         }
 
-        val deviceResult = deviceCommandRouter.executeDetailed(clean)
+        val deviceResult = if (
+            FridayWorkspaceReservation.shouldBypassGenericDeviceRouter(clean)
+        ) {
+            hud.pushEvent("NATIVE WORKSPACE -> RESERVED ROUTE")
+            null
+        } else {
+            deviceCommandRouter.executeDetailed(clean)
+        }
         if (deviceResult != null) {
             val mode = when (deviceResult.status) {
                 DeviceActionStatus.FAILED -> BrainMode.ALERT
@@ -714,8 +836,10 @@ class MainActivity : Activity() {
             grantResults.firstOrNull() == PackageManager.PERMISSION_GRANTED
         ) {
             hud.pushEvent("AUTH -> MICROPHONE GRANTED")
-            voiceLoop.resume()
-            hud.postDelayed({ openCloudSetupIfRequired() }, 450L)
+            if (!runtimeTestMode && ::voiceLoop.isInitialized) {
+                voiceLoop.resume()
+                hud.postDelayed({ openCloudSetupIfRequired() }, 450L)
+            }
         } else if (requestCode == REQ_RECORD_AUDIO) {
             hud.pushEvent("AUTH -> MICROPHONE DENIED")
             hud.setVoiceState(VoiceLoop.State.UNAVAILABLE)
