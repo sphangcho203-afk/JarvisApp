@@ -32,5 +32,38 @@ if normalized_marker not in text:
     ]
     text = "".join(lines)
 
+generic_marker = '        val genericWeatherSetup = lower in setOf('
+if generic_marker not in text:
+    anchor = '        val preset = ProviderMeshCatalog.match(lower)\n'
+    if anchor not in text:
+        raise RuntimeError("Provider parser preset matching anchor missing")
+    generic_block = '''        val genericWeatherSetup = lower in setOf(
+            "open weather setup",
+            "open weather api setup",
+            "open weather apis setup",
+            "weather api setup",
+            "weather apis setup",
+            "configure weather",
+            "configure weather api",
+            "configure weather apis"
+        )
+        if (genericWeatherSetup) {
+            return ProviderMeshCommand.Open(category = ProviderMeshCategory.WEATHER)
+        }
+        val genericResearchSetup = lower in setOf(
+            "open research setup",
+            "open research api setup",
+            "open research apis setup",
+            "research api setup",
+            "research apis setup",
+            "configure research api",
+            "configure research apis"
+        )
+        if (genericResearchSetup) {
+            return ProviderMeshCommand.Open(category = ProviderMeshCategory.RESEARCH)
+        }
+'''
+    text = text.replace(anchor, generic_block + anchor, 1)
+
 PROVIDERS.write_text(text, encoding="utf-8")
-print("Provider command parser hardened for punctuation and generic weather setup commands.")
+print("Provider command parser hardened for punctuation and generic category setup commands.")
