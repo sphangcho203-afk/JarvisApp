@@ -9,9 +9,12 @@ import './cinematicOs.css'
 
 createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>)
 
-// Headless Chromium captures the operational launcher rather than freezing the
-// validation artifact on the boot cinematic. Android WebView is unaffected.
-if (navigator.webdriver) {
+// Localhost headless captures validate the operational launcher rather than
+// freezing on the boot cinematic. Packaged Android WebView behavior is unchanged.
+const visualSmokePreview = navigator.webdriver || (
+  window.location.hostname === '127.0.0.1' && window.location.port === '4173'
+)
+if (visualSmokePreview) {
   window.setTimeout(() => {
     document.querySelector<HTMLButtonElement>('.fos-boot')?.click()
     document.querySelector<HTMLButtonElement>('.fos-launcher-trigger')?.click()
