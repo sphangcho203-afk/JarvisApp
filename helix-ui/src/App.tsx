@@ -2,6 +2,7 @@ import { Component, type ErrorInfo, type ReactNode } from 'react'
 import { FridayCinematicOS } from './FridayCinematicOS'
 import { useNativeBridge } from './nativeBridge'
 
+// ReferenceCinematicCore has been superseded by the reference-accurate FridayCinematicOS.
 interface BoundaryProps { children: ReactNode }
 interface BoundaryState { error: Error | null }
 
