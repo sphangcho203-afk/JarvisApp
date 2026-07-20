@@ -29,6 +29,16 @@ new_response = '''        {(scene === 'CORE' || voiceFocus || props.operation.ac
 if old_response in text:
     text = text.replace(old_response, new_response, 1)
 
+old_location = '''          <div className="fos-location-check">✓</div>
+          <div className="fos-coordinates">'''
+new_location = '''          <div className="fos-location-check">✓</div>
+          <div className="fos-radar-labels">
+            {place.split(',').map((label, index) => <span key={`${label}-${index}`}>{label.trim().toUpperCase()}</span>)}
+          </div>
+          <div className="fos-coordinates">'''
+if old_location in text:
+    text = text.replace(old_location, new_location, 1)
+
 logo = '''function FosLogo() {
   return (
     <svg className="fos-logo" viewBox="0 0 100 100" aria-hidden="true">
