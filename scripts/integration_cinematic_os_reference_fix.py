@@ -2,6 +2,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 UI = ROOT / "helix-ui/src/FridayCinematicOS.tsx"
+BRIDGE = ROOT / "helix-ui/src/nativeBridge.ts"
 
 text = UI.read_text(encoding="utf-8")
 
@@ -69,4 +70,19 @@ if "function FosLogo()" not in text:
     text = text.replace(marker, logo + marker, 1)
 
 UI.write_text(text, encoding="utf-8")
+
+bridge = BRIDGE.read_text(encoding="utf-8")
+bridge = bridge.replace(
+    "return ['news', 'route', 'location', 'modules'].includes(value) ? value : ''",
+    "return ['core', 'voice', 'news', 'route', 'location', 'modules'].includes(value) ? value : ''",
+)
+preview_mode = "const PREVIEW_MODE: HelixState = PREVIEW_SCENE === 'voice' ? 'LISTENING' : 'IDLE'\n\n"
+if "const PREVIEW_MODE:" not in bridge:
+    anchor = "const PREVIEW_TRANSCRIPT = PREVIEW_SCENE === 'news'"
+    if anchor not in bridge:
+        raise RuntimeError("FRIDAY preview-mode anchor missing")
+    bridge = bridge.replace(anchor, preview_mode + anchor, 1)
+bridge = bridge.replace("const [mode, setMode] = useState<HelixState>('IDLE')", "const [mode, setMode] = useState<HelixState>(PREVIEW_MODE)")
+BRIDGE.write_text(bridge, encoding="utf-8")
+
 print("FRIDAY cinematic OS reference fixes applied")
