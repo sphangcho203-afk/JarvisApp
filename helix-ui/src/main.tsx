@@ -6,6 +6,7 @@ import './referenceCinematic.css'
 import './referenceCinematicFixes.css'
 import './referenceCinematicExact.css'
 import './fridayCinematicOS.css'
+import './fridayCinematicOSFixes.css'
 
 const preview = new URLSearchParams(window.location.search).get('scene')?.toLowerCase() || ''
 const visualSmokePreview = navigator.webdriver || (
