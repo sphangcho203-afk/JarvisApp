@@ -14,6 +14,15 @@ def patch(path: Path, old: str, new: str, label: str) -> None:
     path.write_text(text.replace(old, new, 1), encoding="utf-8")
 
 
+def insert_after_if_missing(path: Path, anchor: str, insertion: str, marker: str, label: str) -> None:
+    text = path.read_text(encoding="utf-8")
+    if marker in text:
+        return
+    if anchor not in text:
+        raise RuntimeError(f"Voice Lab {label} integration anchor missing: {anchor[:220]!r}")
+    path.write_text(text.replace(anchor, anchor + insertion, 1), encoding="utf-8")
+
+
 patch(
     MAIN,
     '        hud.pushEvent("LOCAL ANDROID SPEECH OUTPUT -> DISABLED")\n',
@@ -31,32 +40,34 @@ patch(
     "resume profile refresh",
 )
 
-patch(
+provider_route = '            "providers", "provider", "mesh", "apis" -> ProviderMeshActivity.launch(this)\n'
+voice_route = '            "voice", "voicelab", "speech", "tts" -> FridayVoiceLabActivity.launch(this)\n'
+insert_after_if_missing(
     MAIN,
-    '            "providers", "provider", "mesh", "apis" -> ProviderMeshActivity.launch(this)\n'
-    '            "cortex", "legacyapis" -> startActivity(Intent(this, CloudConfigActivity::class.java))\n',
-    '            "providers", "provider", "mesh", "apis" -> ProviderMeshActivity.launch(this)\n'
-    '            "voice", "voicelab", "speech", "tts" -> FridayVoiceLabActivity.launch(this)\n'
-    '            "cortex", "legacyapis" -> startActivity(Intent(this, CloudConfigActivity::class.java))\n',
+    provider_route,
+    voice_route,
+    '"voice", "voicelab", "speech", "tts" -> FridayVoiceLabActivity.launch(this)',
     "workspace route",
 )
 
-patch(
-    MAIN,
-    '        soundEngine.processing()\n\n'
-    '        CountdownCommandParser.parse(clean)?.let { timerCommand ->\n',
-    '        soundEngine.processing()\n\n'
-    '        if (FridayVoiceLabCommand.matches(clean)) {\n'
-    '            hud.pushEvent("VOICE LAB -> OPEN")\n'
-    '            cancelProcessingTimeout()\n'
-    '            hud.setProcessing(false)\n'
-    '            brainBusy.set(false)\n'
-    '            FridayVoiceLabActivity.launch(this)\n'
-    '            return\n'
-    '        }\n\n'
-    '        CountdownCommandParser.parse(clean)?.let { timerCommand ->\n',
-    "voice command",
-)
+voice_command_marker = '        if (FridayVoiceLabCommand.matches(clean)) {'
+if voice_command_marker not in MAIN.read_text(encoding="utf-8"):
+    patch(
+        MAIN,
+        '        soundEngine.processing()\n\n'
+        '        CountdownCommandParser.parse(clean)?.let { timerCommand ->\n',
+        '        soundEngine.processing()\n\n'
+        '        if (FridayVoiceLabCommand.matches(clean)) {\n'
+        '            hud.pushEvent("VOICE LAB -> OPEN")\n'
+        '            cancelProcessingTimeout()\n'
+        '            hud.setProcessing(false)\n'
+        '            brainBusy.set(false)\n'
+        '            FridayVoiceLabActivity.launch(this)\n'
+        '            return\n'
+        '        }\n\n'
+        '        CountdownCommandParser.parse(clean)?.let { timerCommand ->\n',
+        "voice command",
+    )
 
 patch(
     MAIN,
