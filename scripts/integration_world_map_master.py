@@ -21,6 +21,28 @@ if map_entry not in cinematic:
 CINEMATIC.write_text(cinematic, encoding="utf-8")
 
 world_data = DATA.read_text(encoding="utf-8")
+world_data = world_data.replace("const COUNTRY_KEY = 'countries-110m'", "const COUNTRY_KEY = 'countries-10m-v1'")
+world_data = world_data.replace("const PLACE_KEY = 'places-110m'", "const PLACE_KEY = 'places-10m-v1'")
+old_country_endpoints = '''const COUNTRY_ENDPOINTS = [
+  'https://cdn.jsdelivr.net/gh/nvkelso/natural-earth-vector@master/geojson/ne_110m_admin_0_countries.geojson',
+  'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_admin_0_countries.geojson',
+]'''
+new_country_endpoints = '''const COUNTRY_ENDPOINTS = [
+  './geodata/countries-10m.geojson',
+  'https://cdn.jsdelivr.net/gh/nvkelso/natural-earth-vector@master/geojson/ne_10m_admin_0_countries.geojson',
+  'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_0_countries.geojson',
+]'''
+world_data = world_data.replace(old_country_endpoints, new_country_endpoints)
+old_place_endpoints = '''const PLACE_ENDPOINTS = [
+  'https://cdn.jsdelivr.net/gh/nvkelso/natural-earth-vector@master/geojson/ne_110m_populated_places_simple.geojson',
+  'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_populated_places_simple.geojson',
+]'''
+new_place_endpoints = '''const PLACE_ENDPOINTS = [
+  './geodata/places-10m.geojson',
+  'https://cdn.jsdelivr.net/gh/nvkelso/natural-earth-vector@master/geojson/ne_10m_populated_places_simple.geojson',
+  'https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_populated_places_simple.geojson',
+]'''
+world_data = world_data.replace(old_place_endpoints, new_place_endpoints)
 fallback_factory = '''export function createFallbackWorldMapDataset(): WorldMapDataset {
   return {
     countries: FALLBACK_COUNTRIES,
