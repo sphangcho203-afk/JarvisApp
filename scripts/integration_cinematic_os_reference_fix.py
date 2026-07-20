@@ -40,6 +40,11 @@ new_location = '''          <div className="fos-location-check">✓</div>
 if old_location in text:
     text = text.replace(old_location, new_location, 1)
 
+text = text.replace(
+    "if (duration?.[1]) values.push({ label: 'DURATION', value: duration[1].trim().toUpperCase() })",
+    "if (duration?.[1] && /\\d/.test(duration[1])) values.push({ label: 'DURATION', value: duration[1].trim().toUpperCase() })",
+)
+
 logo = '''function FosLogo() {
   return (
     <svg className="fos-logo" viewBox="0 0 100 100" aria-hidden="true">
