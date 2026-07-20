@@ -40,6 +40,14 @@ new_location = '''          <div className="fos-location-check">✓</div>
 if old_location in text:
     text = text.replace(old_location, new_location, 1)
 
+old_core = '''    <div className={`fos-quantum-core ${compact ? 'compact' : ''}`} style={{ '--energy-scale': scale } as CSSProperties}>
+      <svg viewBox="0 0 600 600" aria-hidden="true">'''
+new_core = '''    <div className={`fos-quantum-core ${compact ? 'compact' : ''}`} style={{ '--energy-scale': scale } as CSSProperties}>
+      <div className="fos-core-reactor" />
+      <svg viewBox="0 0 600 600" aria-hidden="true">'''
+if old_core in text:
+    text = text.replace(old_core, new_core, 1)
+
 text = text.replace(
     "if (duration?.[1]) values.push({ label: 'DURATION', value: duration[1].trim().toUpperCase() })",
     "if (duration?.[1] && /\\d/.test(duration[1])) values.push({ label: 'DURATION', value: duration[1].trim().toUpperCase() })",
