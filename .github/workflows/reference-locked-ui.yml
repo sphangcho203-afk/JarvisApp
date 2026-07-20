@@ -41,6 +41,7 @@ jobs:
           grep -q 'FridayCinematicOS' helix-ui/src/App.tsx
           grep -q 'function FosLogo' helix-ui/src/FridayCinematicOS.tsx
           grep -q 'fos-radar-labels' helix-ui/src/FridayCinematicOS.tsx
+          grep -q 'fos-core-reactor' helix-ui/src/FridayCinematicOS.tsx
 
       - name: Set up Node 22
         uses: actions/setup-node@v6
@@ -228,13 +229,16 @@ jobs:
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 36
-          target: google_apis
+          target: default
           arch: x86_64
           profile: pixel_6
           emulator-boot-timeout: 420
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot -netdelay none -netspeed full
           disable-animations: true
-          script: ./gradlew :app:connectedDebugAndroidTest --stacktrace --no-daemon
+          script: |
+            adb shell svc wifi disable || true
+            adb shell svc data disable || true
+            ./gradlew :app:connectedDebugAndroidTest --stacktrace --no-daemon
 
       - name: Upload Android 16 report
         if: always()
