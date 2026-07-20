@@ -1,5 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react'
-import { OperationalCore } from './OperationalCore'
+import { ReferenceCinematicCore } from './ReferenceCinematicCore'
 import { useNativeBridge } from './nativeBridge'
 
 interface BoundaryProps { children: ReactNode }
@@ -37,7 +37,7 @@ export default function App() {
   const bridge = useNativeBridge()
   return (
     <HelixErrorBoundary>
-      <OperationalCore
+      <ReferenceCinematicCore
         mode={bridge.mode}
         metrics={bridge.metrics}
         transcript={bridge.transcript}
@@ -47,6 +47,7 @@ export default function App() {
         telemetry={bridge.telemetry}
         operation={bridge.operation}
         weather={bridge.weather}
+        location={bridge.location}
         countdown={bridge.countdown}
         bridgeReady={bridge.bridgeReady}
         onCoreTap={bridge.tapCore}
