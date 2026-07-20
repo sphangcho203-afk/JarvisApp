@@ -4,6 +4,7 @@ import App from './App'
 import './styles.css'
 import './referenceCinematic.css'
 import './referenceCinematicFixes.css'
+import './referenceCinematicExact.css'
 
 const preview = new URLSearchParams(window.location.search).get('scene')?.toLowerCase() || ''
 const visualSmokePreview = navigator.webdriver || (
