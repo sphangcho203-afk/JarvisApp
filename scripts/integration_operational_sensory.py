@@ -9,6 +9,8 @@ def patch(path: Path, old: str, new: str, label: str) -> None:
     text = path.read_text(encoding="utf-8")
     if new in text:
         return
+    if label == "design voice command" and "FridayDesignCommandParser.parse(clean)" in text:
+        return
     if old not in text:
         raise RuntimeError(f"Operational sensory {label} anchor missing: {old[:240]!r}")
     path.write_text(text.replace(old, new, 1), encoding="utf-8")
