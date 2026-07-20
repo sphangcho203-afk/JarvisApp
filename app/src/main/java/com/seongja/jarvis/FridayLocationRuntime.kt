@@ -1,6 +1,7 @@
 package com.seongja.jarvis
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Geocoder
@@ -45,6 +46,7 @@ class FridayLocationRuntime(context: Context) {
         appContext.checkSelfPermission(Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
             appContext.checkSelfPermission(Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
 
+    @SuppressLint("MissingPermission")
     fun locate(callback: (FridayLocationSnapshot) -> Unit) {
         if (closed.get()) return
         if (!hasPermission()) {
@@ -105,6 +107,7 @@ class FridayLocationRuntime(context: Context) {
         }
     }
 
+    @SuppressLint("MissingPermission")
     private fun lastKnownLocation(): Location? {
         if (!hasPermission()) return null
         return listOf(
