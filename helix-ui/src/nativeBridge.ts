@@ -4,6 +4,7 @@ import type {
   CountdownState,
   FridayDesignMode,
   HelixState,
+  LocationSnapshot,
   NativePayload,
   NativeTelemetry,
   OperationState,
@@ -43,6 +44,7 @@ const INITIAL_TELEMETRY: NativeTelemetry = {
 const INITIAL_OPERATION: OperationState = { stage: 'SYSTEM READY', detail: 'AWAITING VERIFIED COMMAND', progress: 0, active: false }
 const INITIAL_RESPONSE_META: ResponseMeta = { intent: '', confidence: 0, trace: [], entities: [], decision: '' }
 const INITIAL_WEATHER: WeatherTelemetry = { configured: false, status: 'NOT CONFIGURED', fresh: false, location: '', tempC: 0, feelsLikeC: 0, condition: '', conditionCode: 0, icon: '◌', isDay: true, windKph: 0, windDirection: '', gustKph: 0, humidity: 0, cloudPercent: 0, precipMm: 0, rainChance: 0, todayMinC: 0, todayMaxC: 0, updatedAtMs: 0, alert: '' }
+const INITIAL_LOCATION: LocationSnapshot = { available: false, acquiring: false, latitude: 0, longitude: 0, accuracyM: 0, altitudeM: 0, provider: '', placeName: '', updatedAtMs: 0, error: '' }
 const INITIAL_COUNTDOWN: CountdownState = { active: false, label: 'MISSION TIMER', remainingMs: 0, totalMs: 0, progress: 0 }
 
 export function useNativeBridge() {
@@ -62,6 +64,7 @@ export function useNativeBridge() {
   const [telemetry, setTelemetry] = useState(INITIAL_TELEMETRY)
   const [operation, setOperation] = useState(INITIAL_OPERATION)
   const [weather, setWeather] = useState(INITIAL_WEATHER)
+  const [location, setLocation] = useState(INITIAL_LOCATION)
   const [countdown, setCountdown] = useState(INITIAL_COUNTDOWN)
   const [bridgeReady, setBridgeReady] = useState(false)
   const [logs, setLogs] = useState<TerminalLog[]>([
@@ -111,6 +114,9 @@ export function useNativeBridge() {
             break
           case 'design':
             if (payload.design) setDesignMode(payload.design)
+            break
+          case 'location':
+            setLocation(current => ({ ...current, ...payload.location }))
             break
           case 'audio': {
             const rms = Math.max(0, Math.min(1, payload.rms ?? 0))
@@ -174,7 +180,7 @@ export function useNativeBridge() {
 
   return {
     mode, metricsRef, metrics, transcript, response, responseMeta, designMode, telemetry, operation, weather,
-    countdown, bridgeReady, logs,
+    location, countdown, bridgeReady, logs,
     clearLogs: () => setLogs([]),
     refreshWeather: () => {
       window.JarvisCommandBridge?.refreshWeather()
@@ -207,6 +213,6 @@ function channelFor(text: string): TerminalLog['channel'] {
   const value = text.toUpperCase()
   if (value.includes('ERROR') || value.includes('FAILED') || value.includes('DENIED') || value.includes('ALERT') || value.includes('DEGRADED')) return 'WARN'
   if (value.includes('VOICE') || value.includes('MIC') || value.includes('CARTESIA')) return 'VOICE'
-  if (value.includes('ACTION') || value.includes('SYSTEM') || value.includes('DEVICE') || value.includes('PERMISSION') || value.includes('WEATHER')) return 'SYS'
+  if (value.includes('ACTION') || value.includes('SYSTEM') || value.includes('DEVICE') || value.includes('PERMISSION') || value.includes('WEATHER') || value.includes('LOCATION')) return 'SYS'
   return 'CORE'
 }
