@@ -1,31 +1,28 @@
-name: Build FRIDAY Sensory Core
+name: Build FRIDAY Release Core
 
 on:
   workflow_dispatch:
   push:
     branches:
       - main
-      - agent/complete-hardening-0.9.31
-      - agent/friday-0.12-provider-mesh
+      - agent/friday-0.14-operational-sensory-core
   pull_request:
     branches:
       - main
-      - agent/friday-0.11-cinematic-os
 
 permissions:
   contents: read
 
 concurrency:
-  group: friday-sensory-${{ github.workflow }}-${{ github.ref }}
+  group: friday-release-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
   CI: true
-  FRIDAY_VERSION: 0.10.0
 
 jobs:
   build:
-    name: Build and inspect FRIDAY 0.10.0
+    name: Build and inspect operational FRIDAY
     runs-on: ubuntu-latest
     timeout-minutes: 50
     outputs:
@@ -34,7 +31,7 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v6
 
-      - name: Verify committed source integrations are stable
+      - name: Verify committed source transformations
         shell: bash
         run: |
           set -euo pipefail
@@ -42,15 +39,17 @@ jobs:
           python3 scripts/run_pending_integrations.py
           git diff --exit-code
 
-      - name: Apply universal provider integrations
+      - name: Apply deterministic FRIDAY integrations
         shell: bash
         run: |
           set -euo pipefail
           python3 scripts/apply_provider_integrations.py
           grep -q 'UniversalProviderMeshClient' app/src/main/java/com/seongja/jarvis/JarvisBrain.kt
           grep -q 'ProviderMeshCommandRouter' app/src/main/java/com/seongja/jarvis/JarvisBrain.kt
-          grep -q 'ProviderMeshActivity.launch' app/src/main/java/com/seongja/jarvis/MainActivity.kt
-          grep -q 'API PROVIDERS' helix-ui/src/CinematicOs.tsx
+          grep -q 'FridayVoiceLabCommand' app/src/main/java/com/seongja/jarvis/MainActivity.kt
+          grep -q 'FridayDesignCommandParser' app/src/main/java/com/seongja/jarvis/MainActivity.kt
+          grep -q 'themeShift' app/src/main/java/com/seongja/jarvis/JarvisSoundEngine.kt
+          grep -q 'OperationalCore' helix-ui/src/App.tsx
 
       - name: Set up Node 22
         uses: actions/setup-node@v6
@@ -59,7 +58,7 @@ jobs:
           cache: npm
           cache-dependency-path: helix-ui/package-lock.json
 
-      - name: Build locked HELIX interface
+      - name: Build operational HELIX interface
         shell: bash
         run: |
           set -euo pipefail
@@ -71,13 +70,10 @@ jobs:
           mkdir -p app/src/main/assets/helix
           cp -R helix-ui/dist/. app/src/main/assets/helix/
           test -s app/src/main/assets/helix/index.html
-          grep -q 'X-CAMERA' helix-ui/src/WorkspaceRail.tsx
-          grep -q 'VISUAL LAB' helix-ui/src/WorkspaceRail.tsx
-          grep -q 'API MESH' helix-ui/src/WorkspaceRail.tsx
-          grep -q 'PRIVATE DIARY' helix-ui/src/WorkspaceRail.tsx
-          grep -q 'onOpen' helix-ui/src/WorkspaceRail.tsx
+          grep -q 'inferOperationalScene' helix-ui/src/OperationalCore.tsx
+          grep -q 'FridaySonicDirector' helix-ui/src/SonicDirector.ts
 
-      - name: Smoke-test phone and desktop HELIX
+      - name: Smoke-test operational phone and desktop interface
         shell: bash
         run: |
           set -euo pipefail
@@ -90,11 +86,14 @@ jobs:
           "$CHROME" --headless=new --no-sandbox --disable-dev-shm-usage --use-gl=swiftshader --enable-webgl --virtual-time-budget=7000 --window-size=432,960 --screenshot=helix-mobile-smoke.png --dump-dom http://127.0.0.1:4173/ > helix-mobile-dom.html
           "$CHROME" --headless=new --no-sandbox --disable-dev-shm-usage --use-gl=swiftshader --enable-webgl --virtual-time-budget=7000 --window-size=1280,720 --screenshot=helix-desktop-smoke.png http://127.0.0.1:4173/ >/dev/null
           grep -q 'F.R.I.D.A.Y.' helix-mobile-dom.html
+          grep -q 'FRIDAY MODULES' helix-mobile-dom.html
           grep -q 'X-CAMERA' helix-mobile-dom.html
           grep -q 'VISUAL LAB' helix-mobile-dom.html
-          grep -q 'API MESH' helix-mobile-dom.html
+          grep -q 'API PROVIDERS' helix-mobile-dom.html
+          grep -q 'VOICE LAB' helix-mobile-dom.html
           grep -q 'PRIVATE DIARY' helix-mobile-dom.html
           grep -q 'MEMORY VAULT' helix-mobile-dom.html
+          grep -q 'PERMISSION CENTER' helix-mobile-dom.html
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
@@ -131,7 +130,7 @@ jobs:
             echo 'configured=false' >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Lint, test, and assemble both variants
+      - name: Lint, test and assemble debug plus release
         shell: bash
         env:
           FRIDAY_KEYSTORE_PATH: ${{ github.workspace }}/.signing/friday-release.jks
@@ -142,7 +141,7 @@ jobs:
           set -o pipefail
           ./gradlew :app:lintDebug :app:lintRelease :app:testDebugUnitTest :app:assembleDebug :app:assembleRelease --stacktrace --warning-mode all --no-daemon 2>&1 | tee android-build.log
 
-      - name: Verify native sensory package
+      - name: Verify operational release package
         id: verify
         shell: bash
         env:
@@ -151,34 +150,32 @@ jobs:
           set -euo pipefail
           TOOLS="$ANDROID_HOME/build-tools/36.0.0"
           RELEASE_APK="$(find app/build/outputs/apk/release -name '*.apk' -type f | head -n 1)"
+          DEBUG_APK="$(find app/build/outputs/apk/debug -name '*.apk' -type f | head -n 1)"
           test -n "$RELEASE_APK"
+          test -n "$DEBUG_APK"
           "$TOOLS/zipalign" -c -v 4 "$RELEASE_APK" 2>&1 | tee apk-zipalign.log
           "$TOOLS/aapt" dump badging "$RELEASE_APK" | tee apk-badging.log
           "$TOOLS/aapt" dump permissions "$RELEASE_APK" | tee apk-permissions.log
           unzip -l "$RELEASE_APK" | tee apk-contents.log
-          grep -q "versionName='0.10.0-sensory-core'" apk-badging.log
           grep -q "application-label:'F.R.I.D.A.Y.'" apk-badging.log
           ! grep -q 'application-debuggable' apk-badging.log
           grep -q 'android.permission.CAMERA' apk-permissions.log
           grep -q 'assets/helix/index.html' apk-contents.log
           grep -q 'class XCameraActivity' app/src/main/java/com/seongja/jarvis/XCameraActivity.kt
-          grep -q 'class GeminiVisionClient' app/src/main/java/com/seongja/jarvis/GeminiVisionClient.kt
-          grep -q 'class FridayWorkspaceVoice' app/src/main/java/com/seongja/jarvis/FridayWorkspaceVoice.kt
-          grep -q 'spokenInWorkspace' app/src/main/java/com/seongja/jarvis/XCameraActivity.kt
-          grep -q 'consumeXCameraResult' app/src/main/java/com/seongja/jarvis/MainActivity.kt
-          grep -q 'FridayWorkspaceReservation' app/src/main/java/com/seongja/jarvis/MainActivity.kt
-          grep -q 'openWorkspace' app/src/main/java/com/seongja/jarvis/HelixHudView.kt
-          grep -q 'open your eyes' app/src/main/java/com/seongja/jarvis/FridayVisionRouter.kt
           grep -q 'class ImageGenerationActivity' app/src/main/java/com/seongja/jarvis/ImageGenerationActivity.kt
           grep -q 'class PrivateDiaryActivity' app/src/main/java/com/seongja/jarvis/PrivateDiaryActivity.kt
+          grep -q 'class MemoryVaultActivity' app/src/main/java/com/seongja/jarvis/MemoryVaultActivity.kt
           grep -q 'class ProviderMeshActivity' app/src/main/java/com/seongja/jarvis/ProviderMeshActivity.kt
-          grep -q 'class SecureProviderMeshRegistry' app/src/main/java/com/seongja/jarvis/UniversalProviderMesh.kt
-          grep -q 'ProviderMeshActivity' app/src/main/AndroidManifest.xml
-          mkdir -p release
+          grep -q 'class FridayVoiceLabActivity' app/src/main/java/com/seongja/jarvis/FridayVoiceLabActivity.kt
+          grep -q 'class JarvisSoundEngine' app/src/main/java/com/seongja/jarvis/JarvisSoundEngine.kt
+          grep -q 'FridayDesignMode' app/src/main/java/com/seongja/jarvis/FridayDesignMode.kt
+          mkdir -p validation release
+          cp "$DEBUG_APK" validation/FRIDAY-operational-debug.apk
+          sha256sum validation/FRIDAY-operational-debug.apk > validation/FRIDAY-operational-debug.apk.sha256
           if [[ "$SIGNING_CONFIGURED" == 'true' ]]; then
             "$TOOLS/apksigner" verify --verbose --print-certs "$RELEASE_APK" 2>&1 | tee apk-signature.log
-            cp "$RELEASE_APK" release/FRIDAY-0.10.0-Sensory-Core.apk
-            sha256sum release/FRIDAY-0.10.0-Sensory-Core.apk > release/FRIDAY-0.10.0-Sensory-Core.apk.sha256
+            cp "$RELEASE_APK" release/FRIDAY-operational-release.apk
+            sha256sum release/FRIDAY-operational-release.apk > release/FRIDAY-operational-release.apk.sha256
             echo 'signed=true' >> "$GITHUB_OUTPUT"
           else
             if "$TOOLS/apksigner" verify "$RELEASE_APK" > apk-signature.log 2>&1; then
@@ -192,8 +189,9 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: FRIDAY-0.12.0-provider-mesh-validation
+          name: FRIDAY-operational-release-validation
           path: |
+            validation/
             helix-build.log
             helix-server.log
             helix-mobile-dom.html
@@ -211,17 +209,17 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-      - name: Upload signed APK
+      - name: Upload permanently signed release APK
         if: success() && steps.verify.outputs.signed == 'true'
         uses: actions/upload-artifact@v7
         with:
-          name: FRIDAY-0.10.0-signed-apk
+          name: FRIDAY-operational-signed-release
           path: release/
           if-no-files-found: error
           retention-days: 30
 
   runtime:
-    name: Launch FRIDAY on Android 16
+    name: Launch operational FRIDAY on Android 16
     needs: build
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -264,7 +262,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v7
         with:
-          name: FRIDAY-0.12.0-provider-mesh-android16-runtime
+          name: FRIDAY-operational-android16-runtime
           path: |
             app/build/reports/androidTests/connected/
             app/build/outputs/androidTest-results/connected/
