@@ -47,6 +47,43 @@ const INITIAL_WEATHER: WeatherTelemetry = { configured: false, status: 'NOT CONF
 const INITIAL_LOCATION: LocationSnapshot = { available: false, acquiring: false, latitude: 0, longitude: 0, accuracyM: 0, altitudeM: 0, provider: '', placeName: '', updatedAtMs: 0, error: '' }
 const INITIAL_COUNTDOWN: CountdownState = { active: false, label: 'MISSION TIMER', remainingMs: 0, totalMs: 0, progress: 0 }
 
+const PREVIEW_SCENE = (() => {
+  try {
+    const value = new URLSearchParams(window.location.search).get('scene')?.toLowerCase() || ''
+    return ['news', 'route', 'location', 'modules'].includes(value) ? value : ''
+  } catch {
+    return ''
+  }
+})()
+
+const PREVIEW_TRANSCRIPT = PREVIEW_SCENE === 'news'
+  ? "What's happening around the world?"
+  : PREVIEW_SCENE === 'route'
+    ? 'Show me the routes from India to Japan'
+    : PREVIEW_SCENE === 'location'
+      ? 'Show me where I am'
+      : 'OWNER CHANNEL ARMED'
+
+const PREVIEW_RESPONSE = PREVIEW_SCENE === 'news'
+  ? 'Global developments will appear here from FRIDAY’s verified live research response. Business, science, technology, and major events are organized into readable broadcast cards. No unverified headline is inserted into the interface. Each brief remains tied to the source-synthesis result.'
+  : PREVIEW_SCENE === 'route'
+    ? 'Route calculation is awaiting a verified maps provider. Distance and duration remain marked as calculating until live route data arrives.'
+    : PREVIEW_SCENE === 'location'
+      ? "YOU'RE HERE, SIR. Biswanath, Assam, India"
+      : 'F.R.I.D.A.Y. operational. Awaiting command input.'
+
+const PREVIEW_META: ResponseMeta = PREVIEW_SCENE === 'news'
+  ? { intent: 'research/news', confidence: 1, trace: ['reference_preview'], entities: [], decision: 'render_global_brief' }
+  : PREVIEW_SCENE === 'route'
+    ? { intent: 'navigation/route', confidence: 1, trace: ['reference_preview'], entities: ['from=India', 'to=Japan'], decision: 'render_route' }
+    : PREVIEW_SCENE === 'location'
+      ? { intent: 'location/current', confidence: 1, trace: ['reference_preview'], entities: ['location=Biswanath'], decision: 'render_location' }
+      : INITIAL_RESPONSE_META
+
+const PREVIEW_LOCATION: LocationSnapshot = PREVIEW_SCENE === 'location'
+  ? { available: true, acquiring: false, latitude: 26.7271, longitude: 93.1479, accuracyM: 8, altitudeM: 82, provider: 'GPS', placeName: 'Biswanath, Assam, India', updatedAtMs: Date.now(), error: '' }
+  : INITIAL_LOCATION
+
 export function useNativeBridge() {
   const metricsRef = useRef<AudioMetrics>({ ...EMPTY_AUDIO })
   const peakRef = useRef(0)
@@ -57,14 +94,14 @@ export function useNativeBridge() {
   const lastLogAt = useRef(0)
   const [mode, setMode] = useState<HelixState>('IDLE')
   const [metrics, setMetrics] = useState<AudioMetrics>({ ...EMPTY_AUDIO })
-  const [transcript, setTranscript] = useState('OWNER CHANNEL ARMED')
-  const [response, setResponse] = useState('F.R.I.D.A.Y. operational. Awaiting command input.')
-  const [responseMeta, setResponseMeta] = useState<ResponseMeta>(INITIAL_RESPONSE_META)
+  const [transcript, setTranscript] = useState(PREVIEW_TRANSCRIPT)
+  const [response, setResponse] = useState(PREVIEW_RESPONSE)
+  const [responseMeta, setResponseMeta] = useState<ResponseMeta>(PREVIEW_META)
   const [designMode, setDesignMode] = useState<FridayDesignMode>('STANDARD')
   const [telemetry, setTelemetry] = useState(INITIAL_TELEMETRY)
   const [operation, setOperation] = useState(INITIAL_OPERATION)
   const [weather, setWeather] = useState(INITIAL_WEATHER)
-  const [location, setLocation] = useState(INITIAL_LOCATION)
+  const [location, setLocation] = useState(PREVIEW_LOCATION)
   const [countdown, setCountdown] = useState(INITIAL_COUNTDOWN)
   const [bridgeReady, setBridgeReady] = useState(false)
   const [logs, setLogs] = useState<TerminalLog[]>([
