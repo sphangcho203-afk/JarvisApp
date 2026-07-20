@@ -11,6 +11,7 @@ try:
         "integration_provider_mesh.py",
         "integration_provider_workspace.py",
         "integration_voice_lab.py",
+        "integration_operational_sensory.py",
     ):
         script = ROOT / script_name
         if not script.exists():
@@ -23,4 +24,4 @@ except Exception:
     print(detail)
     raise
 
-print("All FRIDAY provider and Voice Lab integrations applied.")
+print("All FRIDAY provider, Voice Lab, and operational sensory integrations applied.")
