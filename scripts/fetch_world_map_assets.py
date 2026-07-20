@@ -11,20 +11,24 @@ from typing import Any
 ROOT = Path(__file__).resolve().parents[1]
 OUTPUT = ROOT / "helix-ui" / "public" / "geodata"
 
+# Natural Earth 50m is the global operational LOD. It preserves all country and
+# territory geometry at full-Earth scale without forcing a phone to transform
+# the much larger 10m dataset every animation frame. Regional 10m and vector
+# tile layers are loaded separately when FRIDAY enters deep zoom.
 ASSETS = {
-    "countries-10m.geojson": [
-        "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_admin_0_countries.geojson",
-        "https://cdn.jsdelivr.net/gh/nvkelso/natural-earth-vector@master/geojson/ne_10m_admin_0_countries.geojson",
+    "countries-50m.geojson": [
+        "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_admin_0_countries.geojson",
+        "https://cdn.jsdelivr.net/gh/nvkelso/natural-earth-vector@master/geojson/ne_50m_admin_0_countries.geojson",
     ],
-    "places-10m.geojson": [
-        "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_10m_populated_places_simple.geojson",
-        "https://cdn.jsdelivr.net/gh/nvkelso/natural-earth-vector@master/geojson/ne_10m_populated_places_simple.geojson",
+    "places-50m.geojson": [
+        "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_50m_populated_places_simple.geojson",
+        "https://cdn.jsdelivr.net/gh/nvkelso/natural-earth-vector@master/geojson/ne_50m_populated_places_simple.geojson",
     ],
 }
 
 MINIMUM_FEATURES = {
-    "countries-10m.geojson": 170,
-    "places-10m.geojson": 500,
+    "countries-50m.geojson": 170,
+    "places-50m.geojson": 500,
 }
 
 
