@@ -119,6 +119,10 @@ world_map = world_map.replace(
     "  const [dataset, setDataset] = useState<WorldMapDataset>(() => createFallbackWorldMapDataset())",
 )
 world_map = world_map.replace(
+    "  const fpsSampleRef = useRef({ frames: 0, startedAt: performance.now() })",
+    "  const fpsSampleRef = useRef({ frames: 0, startedAt: performance.now() })\n  const previewFrameRef = useRef(0)",
+)
+world_map = world_map.replace(
     "          {loading ? <div className=\"world-map-loading\"><span /><b>BUILDING GLOBAL GEOMETRY</b><small>COUNTRIES · PLACES · COORDINATES</small></div> : null}",
     "          {loading && dataset.countries.length === 0 ? <div className=\"world-map-loading\"><span /><b>BUILDING GLOBAL GEOMETRY</b><small>COUNTRIES · PLACES · COORDINATES</small></div> : null}",
 )
@@ -129,6 +133,10 @@ world_map = world_map.replace(
 world_map = world_map.replace(
     "  const country = dataset.countries.find(feature => countryName(feature).toLowerCase().includes(normalized))\n  return countryLabel(country!)?.coordinate || null",
     "  const country = dataset.countries.find(feature => countryName(feature).toLowerCase().includes(normalized))\n  if (!country) return null\n  return countryLabel(country)?.coordinate || null",
+)
+world_map = world_map.replace(
+    "    animationRef.current = window.requestAnimationFrame(draw)\n  }, [projection, dataset, layers, resolvedRoute, effectiveLocation, selectedCountry, hoveredCountry])",
+    "    previewFrameRef.current += 1\n    const previewMode = document.documentElement.dataset.referencePreview === 'true'\n    if (!previewMode || previewFrameRef.current < 18) {\n      animationRef.current = window.requestAnimationFrame(draw)\n    }\n  }, [projection, dataset, layers, resolvedRoute, effectiveLocation, selectedCountry, hoveredCountry])",
 )
 MAP.write_text(world_map, encoding="utf-8")
 
