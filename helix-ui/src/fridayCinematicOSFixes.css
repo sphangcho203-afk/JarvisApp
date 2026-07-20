@@ -1,0 +1,16 @@
+.fos-command-chip,
+.fos-response {
+  left: 0 !important;
+  right: 0 !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  transform: none !important;
+}
+
+html[data-reference-preview="true"] .fos-command-chip,
+html[data-reference-preview="true"] .fos-response {
+  left: 0 !important;
+  right: 0 !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
