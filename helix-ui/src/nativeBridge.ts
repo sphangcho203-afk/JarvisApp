@@ -1,5 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
-import type { AudioMetrics, CountdownState, HelixState, NativePayload, NativeTelemetry, OperationState, TerminalLog, WeatherTelemetry } from './types'
+import type {
+  AudioMetrics,
+  CountdownState,
+  FridayDesignMode,
+  HelixState,
+  NativePayload,
+  NativeTelemetry,
+  OperationState,
+  ResponseMeta,
+  TerminalLog,
+  WeatherTelemetry,
+} from './types'
 
 declare global {
   interface Window {
@@ -30,6 +41,7 @@ const INITIAL_TELEMETRY: NativeTelemetry = {
   deepSeekStatus: 'NOT CONFIGURED', youtubeStatus: 'NOT CONFIGURED', gmailStatus: 'NOT CONFIGURED',
 }
 const INITIAL_OPERATION: OperationState = { stage: 'SYSTEM READY', detail: 'AWAITING VERIFIED COMMAND', progress: 0, active: false }
+const INITIAL_RESPONSE_META: ResponseMeta = { intent: '', confidence: 0, trace: [], entities: [], decision: '' }
 const INITIAL_WEATHER: WeatherTelemetry = { configured: false, status: 'NOT CONFIGURED', fresh: false, location: '', tempC: 0, feelsLikeC: 0, condition: '', conditionCode: 0, icon: '◌', isDay: true, windKph: 0, windDirection: '', gustKph: 0, humidity: 0, cloudPercent: 0, precipMm: 0, rainChance: 0, todayMinC: 0, todayMaxC: 0, updatedAtMs: 0, alert: '' }
 const INITIAL_COUNTDOWN: CountdownState = { active: false, label: 'MISSION TIMER', remainingMs: 0, totalMs: 0, progress: 0 }
 
@@ -43,8 +55,10 @@ export function useNativeBridge() {
   const lastLogAt = useRef(0)
   const [mode, setMode] = useState<HelixState>('IDLE')
   const [metrics, setMetrics] = useState<AudioMetrics>({ ...EMPTY_AUDIO })
-  const [transcript, setTranscript] = useState('OWNER CHANNEL ARMED // AWAITING SPEECH')
+  const [transcript, setTranscript] = useState('OWNER CHANNEL ARMED')
   const [response, setResponse] = useState('F.R.I.D.A.Y. operational. Awaiting command input.')
+  const [responseMeta, setResponseMeta] = useState<ResponseMeta>(INITIAL_RESPONSE_META)
+  const [designMode, setDesignMode] = useState<FridayDesignMode>('STANDARD')
   const [telemetry, setTelemetry] = useState(INITIAL_TELEMETRY)
   const [operation, setOperation] = useState(INITIAL_OPERATION)
   const [weather, setWeather] = useState(INITIAL_WEATHER)
@@ -53,7 +67,7 @@ export function useNativeBridge() {
   const [logs, setLogs] = useState<TerminalLog[]>([
     { id: 1, time: '00:00:01', channel: 'CORE', text: 'HELIX OPERATIONS LATTICE INITIALIZED' },
     { id: 2, time: '00:00:02', channel: 'SYS', text: 'NATIVE TELEMETRY BRIDGE SYNCHRONIZING' },
-    { id: 3, time: '00:00:03', channel: 'VOICE', text: 'CARTESIA FAILOVER MATRIX ARMED' },
+    { id: 3, time: '00:00:03', channel: 'VOICE', text: 'VOICE ROUTING MATRIX ARMED' },
   ])
 
   const pushLog = (channel: TerminalLog['channel'], text: string) => {
@@ -95,6 +109,9 @@ export function useNativeBridge() {
           case 'state':
             if (payload.mode) setMode(payload.mode)
             break
+          case 'design':
+            if (payload.design) setDesignMode(payload.design)
+            break
           case 'audio': {
             const rms = Math.max(0, Math.min(1, payload.rms ?? 0))
             peakRef.current = Math.max(rms, peakRef.current * .91)
@@ -110,10 +127,17 @@ export function useNativeBridge() {
             break
           }
           case 'transcript':
-            setTranscript(payload.text?.trim() || 'OWNER CHANNEL ARMED // AWAITING SPEECH')
+            setTranscript(payload.text?.trim() || 'OWNER CHANNEL ARMED')
             break
           case 'response':
             setResponse(payload.display?.trim() || payload.spoken?.trim() || 'VERIFIED RESPONSE RECEIVED')
+            setResponseMeta({
+              intent: payload.intent?.trim() || '',
+              confidence: Math.max(0, Math.min(1, payload.confidence ?? 0)),
+              trace: payload.trace ?? [],
+              entities: payload.entities ?? [],
+              decision: payload.decision?.trim() || '',
+            })
             if (payload.intent) pushLog('CORE', `${payload.intent.toUpperCase()} // CONFIDENCE ${Math.round((payload.confidence ?? 0) * 100)}%`)
             break
           case 'event':
@@ -149,7 +173,7 @@ export function useNativeBridge() {
   }, [])
 
   return {
-    mode, metricsRef, metrics, transcript, response, telemetry, operation, weather,
+    mode, metricsRef, metrics, transcript, response, responseMeta, designMode, telemetry, operation, weather,
     countdown, bridgeReady, logs,
     clearLogs: () => setLogs([]),
     refreshWeather: () => {
@@ -166,7 +190,7 @@ function normalizeOperationalEvent(text: string): string {
   const replacements: Array<[RegExp, string]> = [
     [/VOICE INPUT\s*->\s*PAUSED FOR OUTPUT.*/, 'INPUT CHANNEL HELD FOR RESPONSE'],
     [/VOICE\s*->\s*CARTESIA SONIC STREAM.*/, 'CARTESIA VOICE ROUTE ENGAGED'],
-    [/VOICE OUTPUT\s*->\s*CARTESIA CONTEXT OPEN.*/, 'SONIC-3 CONTEXT ESTABLISHED'],
+    [/VOICE OUTPUT\s*->\s*CARTESIA CONTEXT OPEN.*/, 'SONIC CONTEXT ESTABLISHED'],
     [/VOICE OUTPUT\s*->\s*CARTESIA COMPLETE.*/, 'VOICE RESPONSE COMPLETED'],
     [/VOICE INPUT\s*->\s*REARMING.*/, 'OWNER CHANNEL REARMED'],
     [/CORTEX MESH\s*->\s*ROUTING REQUEST.*/, 'COGNITIVE ROUTE SELECTED'],

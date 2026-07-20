@@ -20,6 +20,7 @@
 
     <queries>
         <intent><action android:name="android.speech.RecognitionService" /></intent>
+        <intent><action android:name="android.intent.action.TTS_SERVICE" /></intent>
         <package android:name="com.google.android.gm" />
         <package android:name="com.whatsapp" />
         <intent>
@@ -54,6 +55,8 @@
 
         <activity android:name=".OwnerAccessGateActivity" android:exported="false" android:excludeFromRecents="true" android:label="FRIDAY Owner Authentication" android:theme="@style/Theme.Jarvis" />
         <activity android:name=".CloudConfigActivity" android:exported="false" android:excludeFromRecents="true" android:label="FRIDAY Cortex Mesh" android:theme="@style/Theme.Jarvis" />
+        <activity android:name=".ProviderMeshActivity" android:exported="false" android:excludeFromRecents="true" android:label="FRIDAY Universal Provider Mesh" android:theme="@style/Theme.Jarvis" />
+        <activity android:name=".FridayVoiceLabActivity" android:exported="false" android:excludeFromRecents="true" android:label="FRIDAY Voice Lab" android:theme="@style/Theme.Jarvis" />
         <activity android:name=".GmailAuthorizationActivity" android:exported="false" android:excludeFromRecents="true" android:label="FRIDAY Gmail Authorization" android:theme="@style/Theme.Jarvis" />
         <activity android:name=".XCameraActivity" android:exported="false" android:excludeFromRecents="true" android:label="FRIDAY X-Camera" android:theme="@style/Theme.Jarvis" />
         <activity android:name=".ImageGenerationActivity" android:exported="false" android:label="FRIDAY Image Synthesis" android:theme="@style/Theme.Jarvis" />

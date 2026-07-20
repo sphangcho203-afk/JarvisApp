@@ -2,6 +2,24 @@ import type { MutableRefObject } from 'react'
 
 export type HelixState = 'IDLE' | 'LISTENING' | 'PROCESSING' | 'SPEAKING' | 'ERROR'
 export type LogChannel = 'CORE' | 'VOICE' | 'SYS' | 'WARN'
+export type FridayDesignMode = 'STANDARD' | 'FOCUS' | 'LAB' | 'STEALTH' | 'SECURE' | 'ENERGY' | 'QUANTUM'
+export type OperationalScene =
+  | 'CORE'
+  | 'NEWS'
+  | 'NAVIGATION'
+  | 'LOCATION'
+  | 'IMAGE'
+  | 'VISION'
+  | 'RESEARCH'
+  | 'ANALYSIS'
+  | 'DIARY'
+  | 'MEMORY'
+  | 'PROVIDERS'
+  | 'SYSTEM'
+  | 'WEATHER'
+  | 'COMMUNICATION'
+  | 'TIMER'
+  | 'ERROR'
 
 export interface AudioMetrics {
   rms: number
@@ -56,9 +74,16 @@ export interface OperationState {
   active: boolean
 }
 
-/** Explicit native-to-HELIX contract used for live operation phases. */
 export interface NativeOperationEnvelope extends OperationState {
   type: 'operation'
+}
+
+export interface ResponseMeta {
+  intent: string
+  confidence: number
+  trace: string[]
+  entities: string[]
+  decision: string
 }
 
 export interface WeatherTelemetry {
@@ -101,7 +126,7 @@ export interface TerminalLog {
 }
 
 export interface NativePayload {
-  type: 'ready' | 'state' | 'audio' | 'transcript' | 'response' | 'event' | 'telemetry' | 'countdown' | 'operation'
+  type: 'ready' | 'state' | 'audio' | 'transcript' | 'response' | 'event' | 'telemetry' | 'countdown' | 'operation' | 'design'
   mode?: HelixState
   rms?: number
   text?: string
@@ -109,6 +134,10 @@ export interface NativePayload {
   display?: string
   intent?: string
   confidence?: number
+  trace?: string[]
+  entities?: string[]
+  decision?: string
+  design?: FridayDesignMode
   channel?: LogChannel
   telemetry?: Partial<NativeTelemetry>
   countdown?: Partial<CountdownState>
