@@ -3,6 +3,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 CINEMATIC = ROOT / "helix-ui/src/FridayCinematicOS.tsx"
 MAP = ROOT / "helix-ui/src/WorldMapMaster.tsx"
+DATA = ROOT / "helix-ui/src/worldMapData.ts"
 MAIN = ROOT / "helix-ui/src/main.tsx"
 APP = ROOT / "helix-ui/src/App.tsx"
 
@@ -19,12 +20,46 @@ if map_entry not in cinematic:
     cinematic = cinematic.replace(anchor, anchor + map_entry, 1)
 CINEMATIC.write_text(cinematic, encoding="utf-8")
 
+world_data = DATA.read_text(encoding="utf-8")
+fallback_factory = '''export function createFallbackWorldMapDataset(): WorldMapDataset {
+  return {
+    countries: FALLBACK_COUNTRIES,
+    places: FALLBACK_PLACES,
+    source: 'fallback',
+    updatedAt: Date.now(),
+  }
+}
+
+'''
+load_anchor = "export async function loadWorldMapDataset(signal?: AbortSignal): Promise<WorldMapDataset> {"
+if "export function createFallbackWorldMapDataset" not in world_data:
+    if load_anchor not in world_data:
+        raise RuntimeError("World map fallback insertion anchor missing")
+    world_data = world_data.replace(load_anchor, fallback_factory + load_anchor, 1)
+DATA.write_text(world_data, encoding="utf-8")
+
 world_map = MAP.read_text(encoding="utf-8")
 world_map = world_map.replace(
     "type CSSProperties, type PointerEvent as ReactPointerEvent, type WheelEvent as ReactWheelEvent } from 'react'",
     "type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from 'react'",
 )
 world_map = world_map.replace("children: React.ReactNode", "children: ReactNode")
+world_map = world_map.replace(
+    "  countryLabel,\n  findPlace,",
+    "  countryLabel,\n  createFallbackWorldMapDataset,\n  findPlace,",
+)
+world_map = world_map.replace(
+    "  const [dataset, setDataset] = useState<WorldMapDataset>({ countries: [], places: [], source: 'fallback', updatedAt: 0 })",
+    "  const [dataset, setDataset] = useState<WorldMapDataset>(() => createFallbackWorldMapDataset())",
+)
+world_map = world_map.replace(
+    "          {loading ? <div className=\"world-map-loading\"><span /><b>BUILDING GLOBAL GEOMETRY</b><small>COUNTRIES · PLACES · COORDINATES</small></div> : null}",
+    "          {loading && dataset.countries.length === 0 ? <div className=\"world-map-loading\"><span /><b>BUILDING GLOBAL GEOMETRY</b><small>COUNTRIES · PLACES · COORDINATES</small></div> : null}",
+)
+world_map = world_map.replace(
+    "<span>{loading ? 'BUILDING' : 'OPERATIONAL'}</span>",
+    "<span>{loading && dataset.source === 'fallback' ? 'UPGRADING' : 'OPERATIONAL'}</span>",
+)
 world_map = world_map.replace(
     "  const country = dataset.countries.find(feature => countryName(feature).toLowerCase().includes(normalized))\n  return countryLabel(country!)?.coordinate || null",
     "  const country = dataset.countries.find(feature => countryName(feature).toLowerCase().includes(normalized))\n  if (!country) return null\n  return countryLabel(country)?.coordinate || null",
