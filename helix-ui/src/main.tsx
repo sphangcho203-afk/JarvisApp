@@ -2,18 +2,23 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import App from './App'
 import './styles.css'
-import './operationalCore.css'
+import './referenceCinematic.css'
+import './referenceCinematicFixes.css'
+import './referenceCinematicExact.css'
+import './fridayCinematicOS.css'
+import './fridayCinematicOSFixes.css'
+import './fridayCinematicReactor.css'
 
-createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>)
-
-// Automated phone and desktop captures skip the short boot veil and open the
-// actual module matrix so CI verifies the command interface rather than a mock.
+const preview = new URLSearchParams(window.location.search).get('scene')?.toLowerCase() || ''
 const visualSmokePreview = navigator.webdriver || (
   window.location.hostname === '127.0.0.1' && window.location.port === '4173'
 )
-if (visualSmokePreview) {
-  window.setTimeout(() => {
-    document.querySelector<HTMLButtonElement>('.operational-boot')?.click()
-    window.setTimeout(() => document.querySelector<HTMLButtonElement>('.operational-menu')?.click(), 320)
-  }, 420)
+if (visualSmokePreview && preview) {
+  document.documentElement.dataset.referencePreview = 'true'
+}
+
+createRoot(document.getElementById('root')!).render(<StrictMode><App /></StrictMode>)
+
+if (visualSmokePreview && preview === 'modules') {
+  window.setTimeout(() => document.querySelector<HTMLButtonElement>('.fos-menu')?.click(), 260)
 }

@@ -1,0 +1,245 @@
+.fos-command-chip,
+.fos-response {
+  left: 0 !important;
+  right: 0 !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  transform: none !important;
+}
+
+html[data-reference-preview="true"] .fos-command-chip,
+html[data-reference-preview="true"] .fos-response {
+  left: 0 !important;
+  right: 0 !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+}
+
+/* SVG transform origins must be explicit in Android WebView and Chromium. */
+.fos-core-halo,
+.fos-core-light {
+  transform-box: fill-box;
+  transform-origin: center;
+  opacity: 1 !important;
+}
+
+.fos-core-halo {
+  filter: drop-shadow(0 0 20px rgba(63, 185, 255, .82)) drop-shadow(0 0 48px rgba(17, 107, 255, .54));
+}
+
+.fos-core-light {
+  filter: drop-shadow(0 0 14px #bff7ff) drop-shadow(0 0 38px rgba(31, 152, 255, 1));
+}
+
+/* Keep the broadcast cards in orbit around the globe, without obscuring them. */
+.fos-news-stage {
+  grid-template-columns: 25% 50% 25% !important;
+  align-items: center !important;
+}
+
+.fos-news-column {
+  justify-content: center !important;
+  gap: 15px !important;
+  padding: 0 !important;
+}
+
+.fos-news-card {
+  min-height: 138px !important;
+}
+
+.fos-globe-wrap {
+  width: 105%;
+  justify-self: center;
+}
+
+.fos-globe {
+  width: 105% !important;
+  max-width: 500px !important;
+}
+
+.fos-globe-orbit {
+  width: 114% !important;
+}
+
+/* Add map depth without substituting unverified route information. */
+.fos-route-map {
+  background:
+    linear-gradient(rgba(var(--accent-rgb), .075) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(var(--accent-rgb), .075) 1px, transparent 1px),
+    repeating-linear-gradient(24deg, transparent 0 27px, rgba(var(--accent-rgb), .018) 28px 29px),
+    radial-gradient(circle at 61% 43%, rgba(var(--accent-rgb), .17), transparent 59%),
+    #020a16 !important;
+  background-size: 44px 44px, 44px 44px, auto, auto, auto !important;
+}
+
+.fos-asia {
+  fill: rgba(10, 52, 91, .27) !important;
+  stroke: rgba(111, 207, 255, .53) !important;
+  stroke-width: 1.9 !important;
+  filter: drop-shadow(0 0 6px rgba(var(--accent-rgb), .16));
+}
+
+.fos-map-grid line {
+  stroke: rgba(var(--accent-rgb), .105) !important;
+}
+
+.fos-route-line.primary {
+  stroke-width: 4.1 !important;
+}
+
+.fos-route-line.secondary,
+.fos-route-line.tertiary {
+  stroke-width: 2.8 !important;
+}
+
+.fos-map-name {
+  text-shadow: 0 0 10px #000, 0 0 7px rgba(var(--accent-rgb), .16) !important;
+}
+
+.fos-route-table > div > span {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Dense mathematical radar surface, derived from verified native location. */
+.fos-radar::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(84%, 580px);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  opacity: .48;
+  background:
+    repeating-conic-gradient(from 0deg, rgba(var(--accent-rgb), .28) 0 .45deg, transparent .45deg 10deg),
+    repeating-radial-gradient(circle, transparent 0 20px, rgba(var(--accent-rgb), .17) 21px 22px);
+  mask-image: radial-gradient(circle, transparent 0 15%, #000 16% 88%, transparent 89%);
+  animation: fosSpin 40s linear infinite;
+}
+
+.fos-radar::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: min(96%, 650px);
+  aspect-ratio: 1;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 1px dashed rgba(var(--accent-rgb), .18);
+  box-shadow: inset 0 0 65px rgba(var(--accent-rgb), .055), 0 0 35px rgba(var(--accent-rgb), .08);
+}
+
+.fos-radar-rings {
+  width: min(73%, 520px) !important;
+  z-index: 2;
+}
+
+.fos-radar-sweep,
+.fos-location-pin,
+.fos-location-check,
+.fos-coordinates,
+.fos-radar > b,
+.fos-radar-labels {
+  z-index: 5;
+}
+
+.fos-radar-labels {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.fos-radar-labels > span {
+  position: absolute;
+  max-width: 30%;
+  overflow: hidden;
+  color: rgba(185, 222, 245, .53);
+  font: 600 7px ui-monospace, SFMono-Regular, Consolas, monospace;
+  letter-spacing: .12em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-shadow: 0 0 9px #000;
+}
+
+.fos-radar-labels > span:nth-child(1) { left: 12%; top: 31%; }
+.fos-radar-labels > span:nth-child(2) { right: 10%; top: 60%; }
+.fos-radar-labels > span:nth-child(3) { left: 18%; bottom: 18%; }
+
+.fos-location-pin {
+  width: 48px !important;
+  height: 61px !important;
+}
+
+.fos-radar > b {
+  bottom: 9% !important;
+}
+
+/* The module matrix is an actual foreground system, not translucent cards over
+ * the previous page. */
+.fos-modules-backdrop {
+  background:
+    radial-gradient(circle at 50% 12%, rgba(var(--accent-rgb), .18), transparent 34%),
+    #00040a !important;
+}
+
+.fos-modules {
+  background:
+    radial-gradient(circle at 50% 10%, rgba(var(--accent-rgb), .18), transparent 28%),
+    linear-gradient(180deg, #030d1e, #010611 72%, #00040b) !important;
+}
+
+.fos-module-grid > button {
+  border-color: rgba(var(--accent-rgb), .48) !important;
+  box-shadow: inset 0 0 33px rgba(var(--accent-rgb), .055), 0 0 17px rgba(var(--accent-rgb), .055) !important;
+}
+
+.glyph-camera > i:nth-child(1) { width: 31px !important; height: 31px !important; }
+.glyph-camera > i:nth-child(2) { width: 46px !important; height: 46px !important; border-radius: 8px !important; transform: none !important; }
+.glyph-visual > i:nth-child(2),
+.glyph-visual > i:nth-child(3) { width: 45px !important; height: 45px !important; border-radius: 3px !important; transform: rotate(30deg) !important; }
+.glyph-visual > i:nth-child(3) { transform: rotate(75deg) !important; }
+.glyph-memory > i:nth-child(1) { width: 30px !important; height: 30px !important; border-radius: 4px !important; transform: rotate(45deg); }
+.glyph-mesh > i:nth-child(1) { width: 43px !important; height: 43px !important; border-radius: 4px !important; transform: rotate(45deg); }
+.glyph-control > i:nth-child(1) { width: 42px !important; height: 42px !important; }
+.glyph-control > i:nth-child(2),
+.glyph-control > i:nth-child(3) { border-radius: 50% !important; transform: none !important; }
+.glyph-shield > i:nth-child(1) { width: 27px !important; height: 34px !important; border-radius: 5px 5px 13px 13px !important; }
+.glyph-theme > i:nth-child(1) { width: 31px !important; height: 31px !important; border-radius: 2px !important; transform: rotate(45deg); }
+
+@media (max-width: 720px) {
+  .fos-news-stage {
+    grid-template-columns: 26% 48% 26% !important;
+  }
+
+  .fos-news-column {
+    gap: 10px !important;
+  }
+
+  .fos-news-card {
+    min-height: 123px !important;
+  }
+
+  .fos-globe-wrap {
+    width: 109%;
+  }
+
+  .fos-globe {
+    width: 108% !important;
+  }
+
+  .fos-globe-orbit {
+    width: 116% !important;
+  }
+
+  .fos-radar::before {
+    width: 93%;
+  }
+
+  .fos-radar-labels > span {
+    font-size: 5px;
+  }
+}

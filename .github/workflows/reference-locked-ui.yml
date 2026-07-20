@@ -1,0 +1,252 @@
+name: Build FRIDAY Cinematic OS
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - agent/friday-0.15-reference-locked-ui
+  pull_request:
+    branches:
+      - agent/friday-0.14-operational-sensory-core
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: friday-cinematic-os-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: true
+  FRIDAY_VERSION: 0.16.0
+
+jobs:
+  build:
+    name: Build and inspect FRIDAY cinematic OS
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v6
+
+      - name: Apply deterministic FRIDAY integrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/apply_provider_integrations.py
+          grep -q 'handleCurrentLocationCommand' app/src/main/java/com/seongja/jarvis/MainActivity.kt
+          grep -q 'setLocation(snapshot' app/src/main/java/com/seongja/jarvis/HelixHudView.kt
+          grep -q 'FridayLocationRuntime' app/src/main/java/com/seongja/jarvis/MainActivity.kt
+          grep -q 'FridayCinematicOS' helix-ui/src/App.tsx
+          grep -q 'function FosLogo' helix-ui/src/FridayCinematicOS.tsx
+          grep -q 'fos-radar-labels' helix-ui/src/FridayCinematicOS.tsx
+          grep -q 'fos-core-reactor' helix-ui/src/FridayCinematicOS.tsx
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: helix-ui/package-lock.json
+
+      - name: Build FRIDAY cinematic HELIX
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd helix-ui
+          npm ci --no-audit --no-fund
+          npm run build 2>&1 | tee ../cinematic-helix-build.log
+          cd ..
+          rm -rf app/src/main/assets/helix
+          mkdir -p app/src/main/assets/helix
+          cp -R helix-ui/dist/. app/src/main/assets/helix/
+          test -s app/src/main/assets/helix/index.html
+          grep -q 'GLOBAL BRIEF' helix-ui/src/FridayCinematicOS.tsx
+          grep -q 'ROUTE ANALYSIS' helix-ui/src/FridayCinematicOS.tsx
+          grep -q "YOU'RE HERE, SIR" helix-ui/src/FridayCinematicOS.tsx
+          grep -q '160°E' helix-ui/src/FridayCinematicOS.tsx
+          grep -q 'VOICE LAB' helix-ui/src/FridayCinematicOS.tsx
+          grep -q 'THEME MATRIX' helix-ui/src/FridayCinematicOS.tsx
+
+      - name: Capture complete cinematic phone and desktop scenes
+        shell: bash
+        run: |
+          set -euo pipefail
+          CHROME="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          test -n "$CHROME"
+          mkdir -p validation
+          python3 -m http.server 4173 --directory helix-ui/dist > validation/cinematic-server.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 30); do curl -fsS http://127.0.0.1:4173/ >/dev/null && break; sleep .5; done
+
+          capture_scene() {
+            local scene="$1"
+            local width="$2"
+            local height="$3"
+            local output="$4"
+            local dom="$5"
+            "$CHROME" --headless=new --no-sandbox --disable-dev-shm-usage --use-gl=swiftshader --enable-webgl --hide-scrollbars --virtual-time-budget=6500 --window-size="$width,$height" --screenshot="$output" --dump-dom "http://127.0.0.1:4173/?scene=$scene" > "$dom"
+          }
+
+          capture_scene core 432 960 validation/cinematic-core-phone.png validation/cinematic-core-phone.html
+          capture_scene voice 432 960 validation/cinematic-voice-phone.png validation/cinematic-voice-phone.html
+          capture_scene modules 432 960 validation/cinematic-modules-phone.png validation/cinematic-modules-phone.html
+          capture_scene news 432 960 validation/cinematic-news-phone.png validation/cinematic-news-phone.html
+          capture_scene route 432 960 validation/cinematic-route-phone.png validation/cinematic-route-phone.html
+          capture_scene location 432 960 validation/cinematic-location-phone.png validation/cinematic-location-phone.html
+          capture_scene core 1280 720 validation/cinematic-core-desktop.png validation/cinematic-core-desktop.html
+          capture_scene news 1280 720 validation/cinematic-news-desktop.png validation/cinematic-news-desktop.html
+          capture_scene route 1280 720 validation/cinematic-route-desktop.png validation/cinematic-route-desktop.html
+          capture_scene location 1280 720 validation/cinematic-location-desktop.png validation/cinematic-location-desktop.html
+
+          grep -q 'F.R.I.D.A.Y. operational. Awaiting command.' validation/cinematic-core-phone.html
+          grep -q 'LISTENING' validation/cinematic-voice-phone.html
+          grep -q 'VOICE LAB' validation/cinematic-modules-phone.html
+          grep -q 'THEME MATRIX' validation/cinematic-modules-phone.html
+          grep -q 'GLOBAL BRIEF' validation/cinematic-news-phone.html
+          grep -q 'WORLD INTELLIGENCE FEED' validation/cinematic-news-phone.html
+          grep -q 'ROUTE ANALYSIS' validation/cinematic-route-phone.html
+          grep -q '40°E' validation/cinematic-route-phone.html
+          grep -q '160°E' validation/cinematic-route-phone.html
+          grep -q 'INDIA' validation/cinematic-route-phone.html
+          grep -q 'JAPAN' validation/cinematic-route-phone.html
+          grep -q 'LIVE LOCATION MODE' validation/cinematic-location-phone.html
+          grep -q "YOU'RE HERE, SIR" validation/cinematic-location-phone.html
+          grep -q '26.72710° N' validation/cinematic-location-phone.html
+          grep -q '93.14790° E' validation/cinematic-location-phone.html
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install Android 16 SDK
+        shell: bash
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Lint, test and assemble cinematic APK
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew :app:lintDebug :app:testDebugUnitTest :app:assembleDebug --stacktrace --warning-mode all --no-daemon 2>&1 | tee validation/cinematic-android-build.log
+
+      - name: Verify APK and extract SHA-1 certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          APK="$(find app/build/outputs/apk/debug -name '*.apk' -type f | head -n 1)"
+          test -n "$APK"
+          cp "$APK" validation/FRIDAY-0.16.0-Cinematic-OS-debug.apk
+          "$TOOLS/zipalign" -c -v 4 validation/FRIDAY-0.16.0-Cinematic-OS-debug.apk 2>&1 | tee validation/cinematic-apk-zipalign.log
+          "$TOOLS/aapt" dump badging validation/FRIDAY-0.16.0-Cinematic-OS-debug.apk | tee validation/cinematic-apk-badging.log
+          "$TOOLS/aapt" dump permissions validation/FRIDAY-0.16.0-Cinematic-OS-debug.apk | tee validation/cinematic-apk-permissions.log
+          "$TOOLS/apksigner" verify --verbose --print-certs validation/FRIDAY-0.16.0-Cinematic-OS-debug.apk 2>&1 | tee validation/FRIDAY-0.16.0-debug-certificate.txt
+          grep -E 'Signer #1 certificate SHA-1 digest:' validation/FRIDAY-0.16.0-debug-certificate.txt | sed -E 's/^.*digest: *//' | tr '[:lower:]' '[:upper:]' | tee validation/FRIDAY-0.16.0-debug-certificate.sha1
+          sha256sum validation/FRIDAY-0.16.0-Cinematic-OS-debug.apk | tee validation/FRIDAY-0.16.0-Cinematic-OS-debug.apk.sha256
+          grep -q "versionCode='44'" validation/cinematic-apk-badging.log
+          grep -q "versionName='0.16.0-cinematic-os-debug'" validation/cinematic-apk-badging.log
+          grep -q 'application-debuggable' validation/cinematic-apk-badging.log
+          grep -q 'android.permission.ACCESS_FINE_LOCATION' validation/cinematic-apk-permissions.log
+          grep -q 'android.permission.ACCESS_COARSE_LOCATION' validation/cinematic-apk-permissions.log
+          grep -q 'android.permission.RECORD_AUDIO' validation/cinematic-apk-permissions.log
+          grep -q 'android.permission.CAMERA' validation/cinematic-apk-permissions.log
+
+      - name: Upload cinematic APK and evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: FRIDAY-0.16.0-cinematic-os-validation
+          path: |
+            validation/
+            cinematic-helix-build.log
+            app/build/reports/lint-results-debug.html
+            app/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: warn
+          retention-days: 14
+
+  runtime:
+    name: Launch FRIDAY cinematic OS on Android 16
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v6
+
+      - name: Apply deterministic FRIDAY integrations
+        shell: bash
+        run: python3 scripts/apply_provider_integrations.py
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: helix-ui/package-lock.json
+
+      - name: Build packaged cinematic UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd helix-ui
+          npm ci --no-audit --no-fund
+          npm run build
+          cd ..
+          rm -rf app/src/main/assets/helix
+          mkdir -p app/src/main/assets/helix
+          cp -R helix-ui/dist/. app/src/main/assets/helix/
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Enable KVM
+        shell: bash
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run Android 16 instrumentation
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: default
+          arch: x86_64
+          profile: pixel_6
+          emulator-boot-timeout: 420
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot -netdelay none -netspeed full
+          disable-animations: true
+          script: |
+            adb shell svc wifi disable || true
+            adb shell svc data disable || true
+            ./gradlew :app:connectedDebugAndroidTest --stacktrace --no-daemon
+
+      - name: Upload Android 16 report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: FRIDAY-0.16.0-cinematic-os-android16
+          path: |
+            app/build/reports/androidTests/connected/
+            app/build/outputs/androidTest-results/connected/
+          if-no-files-found: warn
+          retention-days: 14

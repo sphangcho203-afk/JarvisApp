@@ -110,6 +110,19 @@ export interface WeatherTelemetry {
   alert: string
 }
 
+export interface LocationSnapshot {
+  available: boolean
+  acquiring: boolean
+  latitude: number
+  longitude: number
+  accuracyM: number
+  altitudeM: number
+  provider: string
+  placeName: string
+  updatedAtMs: number
+  error: string
+}
+
 export interface CountdownState {
   active: boolean
   label: string
@@ -126,7 +139,7 @@ export interface TerminalLog {
 }
 
 export interface NativePayload {
-  type: 'ready' | 'state' | 'audio' | 'transcript' | 'response' | 'event' | 'telemetry' | 'countdown' | 'operation' | 'design'
+  type: 'ready' | 'state' | 'audio' | 'transcript' | 'response' | 'event' | 'telemetry' | 'countdown' | 'operation' | 'design' | 'location'
   mode?: HelixState
   rms?: number
   text?: string
@@ -140,6 +153,7 @@ export interface NativePayload {
   design?: FridayDesignMode
   channel?: LogChannel
   telemetry?: Partial<NativeTelemetry>
+  location?: Partial<LocationSnapshot>
   countdown?: Partial<CountdownState>
   stage?: string
   detail?: string

@@ -1,0 +1,26 @@
+/*
+ * Reference-lock corrections shared by packaged WebView and visual validation.
+ * Motion may own vertical transitions, but horizontal centering must remain
+ * deterministic on every Android WebView implementation.
+ */
+.reference-command {
+  left: 0 !important;
+  right: 0 !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  transform: none !important;
+}
+
+/* Headless screenshots validate the resolved frame, not the transition's first
+ * blurred keyframe. This selector is enabled only by localhost CI previews. */
+html[data-reference-preview="true"] .reference-scene,
+html[data-reference-preview="true"] .reference-command,
+html[data-reference-preview="true"] .reference-module-matrix {
+  opacity: 1 !important;
+  filter: none !important;
+  transform: none !important;
+}
+
+html[data-reference-preview="true"] .reference-boot {
+  display: none !important;
+}
