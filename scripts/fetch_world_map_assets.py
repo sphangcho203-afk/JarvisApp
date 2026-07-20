@@ -33,6 +33,14 @@ MINIMUM_FEATURES = {
 }
 
 
+def first(properties: dict[str, Any], *keys: str) -> Any:
+    for key in keys:
+        value = properties.get(key)
+        if value is not None and value != "":
+            return value
+    return None
+
+
 def download_json(urls: list[str]) -> dict[str, Any]:
     errors: list[str] = []
     for url in urls:
@@ -70,19 +78,19 @@ def normalize_country_collection(collection: dict[str, Any]) -> dict[str, Any]:
             {
                 "type": "Feature",
                 "properties": {
-                    "ADMIN": properties.get("ADMIN"),
-                    "NAME": properties.get("NAME"),
-                    "NAME_LONG": properties.get("NAME_LONG"),
-                    "ISO_A2": properties.get("ISO_A2"),
-                    "ISO_A3": properties.get("ISO_A3"),
-                    "CONTINENT": properties.get("CONTINENT"),
-                    "SUBREGION": properties.get("SUBREGION"),
-                    "POP_EST": properties.get("POP_EST"),
-                    "GDP_MD": properties.get("GDP_MD"),
-                    "LABEL_X": properties.get("LABEL_X"),
-                    "LABEL_Y": properties.get("LABEL_Y"),
-                    "LABELRANK": properties.get("LABELRANK"),
-                    "MIN_ZOOM": properties.get("MIN_ZOOM"),
+                    "ADMIN": first(properties, "ADMIN", "admin"),
+                    "NAME": first(properties, "NAME", "name"),
+                    "NAME_LONG": first(properties, "NAME_LONG", "name_long"),
+                    "ISO_A2": first(properties, "ISO_A2", "iso_a2"),
+                    "ISO_A3": first(properties, "ISO_A3", "iso_a3"),
+                    "CONTINENT": first(properties, "CONTINENT", "continent"),
+                    "SUBREGION": first(properties, "SUBREGION", "subregion"),
+                    "POP_EST": first(properties, "POP_EST", "pop_est"),
+                    "GDP_MD": first(properties, "GDP_MD", "gdp_md"),
+                    "LABEL_X": first(properties, "LABEL_X", "label_x"),
+                    "LABEL_Y": first(properties, "LABEL_Y", "label_y"),
+                    "LABELRANK": first(properties, "LABELRANK", "labelrank"),
+                    "MIN_ZOOM": first(properties, "MIN_ZOOM", "min_zoom"),
                 },
                 "geometry": geometry,
             }
@@ -101,18 +109,20 @@ def normalize_place_collection(collection: dict[str, Any]) -> dict[str, Any]:
             continue
         if not isinstance(properties, dict):
             properties = {}
+        capital = first(properties, "ADM0CAP", "adm0cap")
+        world_city = first(properties, "WORLDCITY", "worldcity")
         features.append(
             {
                 "type": "Feature",
                 "properties": {
-                    "NAMEPAR": properties.get("NAMEPAR"),
-                    "NAME": properties.get("NAME"),
-                    "ADM0NAME": properties.get("ADM0NAME"),
-                    "SOV0NAME": properties.get("SOV0NAME"),
-                    "SCALERANK": properties.get("SCALERANK"),
-                    "POP_MAX": properties.get("POP_MAX"),
-                    "CAPIN": properties.get("CAPIN"),
-                    "WORLDCITY": properties.get("WORLDCITY"),
+                    "NAMEPAR": first(properties, "NAMEPAR", "namepar"),
+                    "NAME": first(properties, "NAME", "name", "NAMEASCII", "nameascii"),
+                    "ADM0NAME": first(properties, "ADM0NAME", "adm0name"),
+                    "SOV0NAME": first(properties, "SOV0NAME", "sov0name"),
+                    "SCALERANK": first(properties, "SCALERANK", "scalerank"),
+                    "POP_MAX": first(properties, "POP_MAX", "pop_max"),
+                    "CAPIN": "capital" if capital in {1, "1", True} else first(properties, "CAPIN", "capin"),
+                    "WORLDCITY": "world" if world_city in {1, "1", True} else None,
                 },
                 "geometry": geometry,
             }
