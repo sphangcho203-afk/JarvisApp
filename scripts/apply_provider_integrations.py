@@ -15,6 +15,8 @@ try:
         "integration_reference_locked_ui.py",
         "integration_reference_kotlin_fix.py",
         "integration_cinematic_os_reference_fix.py",
+        "integration_world_map_master.py",
+        "integration_world_map_performance_fix.py",
     ):
         script = ROOT / script_name
         if not script.exists():
@@ -27,4 +29,4 @@ except Exception:
     print(detail)
     raise
 
-print("All FRIDAY provider, Voice Lab, sensory, location, and cinematic OS integrations applied.")
+print("All FRIDAY provider, Voice Lab, sensory, location, cinematic OS, world-map, route-correctness, and LOD integrations applied.")

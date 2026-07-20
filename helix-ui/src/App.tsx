@@ -1,8 +1,8 @@
-import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { Component, useEffect, useMemo, useState, type ErrorInfo, type ReactNode } from 'react'
 import { FridayCinematicOS } from './FridayCinematicOS'
+import { WorldMapMaster } from './WorldMapMaster'
 import { useNativeBridge } from './nativeBridge'
 
-// ReferenceCinematicCore has been superseded by the reference-accurate FridayCinematicOS.
 interface BoundaryProps { children: ReactNode }
 interface BoundaryState { error: Error | null }
 
@@ -36,6 +36,23 @@ class HelixErrorBoundary extends Component<BoundaryProps, BoundaryState> {
 
 export default function App() {
   const bridge = useNativeBridge()
+  const previewScene = useMemo(() => new URLSearchParams(window.location.search).get('scene')?.toLowerCase() || '', [])
+  const [worldMapOpen, setWorldMapOpen] = useState(previewScene === 'world-map')
+  const route = useMemo(() => parseRouteRequest(bridge.transcript), [bridge.transcript])
+  const briefs = useMemo(() => extractBriefs(bridge.response), [bridge.response])
+
+  useEffect(() => {
+    if (shouldOpenWorldMap(bridge.transcript)) setWorldMapOpen(true)
+  }, [bridge.transcript])
+
+  const openWorkspace = (workspace: string) => {
+    if (workspace === 'worldmap') {
+      setWorldMapOpen(true)
+      return
+    }
+    bridge.openWorkspace(workspace)
+  }
+
   return (
     <HelixErrorBoundary>
       <FridayCinematicOS
@@ -52,8 +69,51 @@ export default function App() {
         countdown={bridge.countdown}
         bridgeReady={bridge.bridgeReady}
         onCoreTap={bridge.tapCore}
-        onOpen={bridge.openWorkspace}
+        onOpen={openWorkspace}
       />
+      {worldMapOpen ? (
+        <WorldMapMaster
+          location={bridge.location}
+          route={route}
+          briefs={briefs}
+          initialProjection="flat"
+          onClose={previewScene === 'world-map' ? undefined : () => setWorldMapOpen(false)}
+        />
+      ) : null}
     </HelixErrorBoundary>
   )
+}
+
+function shouldOpenWorldMap(transcript: string): boolean {
+  const normalized = transcript.toLowerCase().replace(/[^a-z0-9\s]/g, ' ').replace(/\s+/g, ' ').trim()
+  if (!normalized) return false
+  return [
+    'open world map',
+    'show world map',
+    'open global map',
+    'show global map',
+    'world atlas',
+    'global command map',
+    'show the routes from',
+    'show routes from',
+    'map the route from',
+  ].some(command => normalized.includes(command))
+}
+
+function parseRouteRequest(transcript: string): { from: string; to: string } | null {
+  const cleaned = transcript.replace(/[?.,!]/g, ' ').replace(/\s+/g, ' ').trim()
+  const match = cleaned.match(/(?:routes?|path|travel|navigate)\s+(?:from\s+)?(.{2,48}?)\s+to\s+(.{2,48})$/i)
+    || cleaned.match(/from\s+(.{2,48}?)\s+to\s+(.{2,48})$/i)
+  if (!match) return null
+  return { from: titleCase(match[1]), to: titleCase(match[2]) }
+}
+
+function extractBriefs(response: string): string[] {
+  const clean = response.replace(/[*#>`_]/g, '').replace(/\s+/g, ' ').trim()
+  if (!clean) return []
+  return clean.split(/(?<=[.!?])\s+/).map(item => item.trim()).filter(item => item.length > 20).slice(0, 3)
+}
+
+function titleCase(value: string): string {
+  return value.trim().split(' ').slice(0, 6).map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()).join(' ')
 }

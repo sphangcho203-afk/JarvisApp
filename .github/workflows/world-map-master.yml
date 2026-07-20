@@ -1,0 +1,246 @@
+name: Build FRIDAY World Map Master
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - agent/friday-0.17-world-map-master
+  pull_request:
+    branches:
+      - agent/friday-0.15-reference-locked-ui
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: friday-world-map-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CI: true
+  FRIDAY_VERSION: 0.17.0
+
+jobs:
+  build:
+    name: Build and inspect FRIDAY world map master
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v6
+
+      - name: Apply deterministic FRIDAY integrations
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/apply_provider_integrations.py
+          grep -q "route: 'worldmap'" helix-ui/src/FridayCinematicOS.tsx
+          grep -q 'WorldMapMaster' helix-ui/src/App.tsx
+          grep -q 'projectGlobe' helix-ui/src/worldMapMath.ts
+          grep -q 'interpolateGreatCircle' helix-ui/src/worldMapMath.ts
+          grep -q 'loadWorldMapDataset' helix-ui/src/worldMapData.ts
+          grep -q 'countries-50m.geojson' helix-ui/src/worldMapData.ts
+          grep -q 'worldMapSonic' helix-ui/src/WorldMapSonic.ts
+          grep -q 'worldMapMaster.css' helix-ui/src/main.tsx
+
+      - name: Package high-detail world geometry
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 scripts/fetch_world_map_assets.py 2>&1 | tee world-map-assets.log
+          test -s helix-ui/public/geodata/countries-50m.geojson
+          test -s helix-ui/public/geodata/places-50m.geojson
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path('helix-ui/public/geodata')
+          countries = json.loads((root / 'countries-50m.geojson').read_text(encoding='utf-8'))
+          places = json.loads((root / 'places-50m.geojson').read_text(encoding='utf-8'))
+          assert len(countries['features']) >= 170, len(countries['features'])
+          assert len(places['features']) >= 500, len(places['features'])
+          print(f"Packaged {len(countries['features'])} countries and {len(places['features'])} populated places")
+          PY
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: helix-ui/package-lock.json
+
+      - name: Build HELIX world map system
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd helix-ui
+          npm ci --no-audit --no-fund
+          npm run build 2>&1 | tee ../world-map-helix-build.log
+          cd ..
+          rm -rf app/src/main/assets/helix
+          mkdir -p app/src/main/assets/helix
+          cp -R helix-ui/dist/. app/src/main/assets/helix/
+          test -s app/src/main/assets/helix/index.html
+          test -s app/src/main/assets/helix/geodata/countries-50m.geojson
+          test -s app/src/main/assets/helix/geodata/places-50m.geojson
+
+      - name: Capture standalone world map on phone and desktop
+        shell: bash
+        run: |
+          set -euo pipefail
+          CHROME="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          test -n "$CHROME"
+          mkdir -p validation
+          python3 -m http.server 4173 --directory helix-ui/dist > validation/world-map-server.log 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 30); do curl -fsS http://127.0.0.1:4173/ >/dev/null && break; sleep .5; done
+
+          "$CHROME" --headless=new --no-sandbox --disable-dev-shm-usage --use-gl=swiftshader --enable-webgl --hide-scrollbars --virtual-time-budget=10000 --window-size=1600,900 --screenshot=validation/world-map-desktop.png --dump-dom 'http://127.0.0.1:4173/?scene=world-map' > validation/world-map-desktop.html
+          "$CHROME" --headless=new --no-sandbox --disable-dev-shm-usage --use-gl=swiftshader --enable-webgl --hide-scrollbars --virtual-time-budget=10000 --window-size=432,960 --screenshot=validation/world-map-phone.png --dump-dom 'http://127.0.0.1:4173/?scene=world-map' > validation/world-map-phone.html
+
+          grep -q 'GLOBAL COMMAND NETWORK' validation/world-map-desktop.html
+          grep -q 'GLOBAL MAP' validation/world-map-desktop.html
+          grep -q 'ROUTE ANALYSIS' validation/world-map-desktop.html
+          grep -q 'ACTIVE OPERATIONS' validation/world-map-desktop.html
+          grep -q 'SYSTEM HEALTH' validation/world-map-desktop.html
+          grep -q 'India' validation/world-map-desktop.html
+          grep -q 'Japan' validation/world-map-desktop.html
+          grep -q 'MAP LAYERS' helix-ui/src/WorldMapMaster.tsx
+          test -s validation/world-map-desktop.png
+          test -s validation/world-map-phone.png
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Install Android 16 SDK
+        shell: bash
+        run: sdkmanager "platforms;android-36" "build-tools;36.0.0" "platform-tools"
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Lint, test and assemble world map APK
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew :app:lintDebug :app:testDebugUnitTest :app:assembleDebug --stacktrace --warning-mode all --no-daemon 2>&1 | tee validation/world-map-android-build.log
+
+      - name: Verify APK and signing certificate
+        shell: bash
+        run: |
+          set -euo pipefail
+          TOOLS="$ANDROID_HOME/build-tools/36.0.0"
+          APK="$(find app/build/outputs/apk/debug -name '*.apk' -type f | head -n 1)"
+          test -n "$APK"
+          cp "$APK" validation/FRIDAY-0.17.0-World-Map-Master-debug.apk
+          "$TOOLS/zipalign" -c -v 4 validation/FRIDAY-0.17.0-World-Map-Master-debug.apk 2>&1 | tee validation/world-map-apk-zipalign.log
+          "$TOOLS/aapt" dump badging validation/FRIDAY-0.17.0-World-Map-Master-debug.apk | tee validation/world-map-apk-badging.log
+          "$TOOLS/apksigner" verify --verbose --print-certs validation/FRIDAY-0.17.0-World-Map-Master-debug.apk 2>&1 | tee validation/FRIDAY-0.17.0-debug-certificate.txt
+          grep -E 'Signer #1 certificate SHA-1 digest:' validation/FRIDAY-0.17.0-debug-certificate.txt | sed -E 's/^.*digest: *//' | tr '[:lower:]' '[:upper:]' | tee validation/FRIDAY-0.17.0-debug-certificate.sha1
+          sha256sum validation/FRIDAY-0.17.0-World-Map-Master-debug.apk | tee validation/FRIDAY-0.17.0-World-Map-Master-debug.apk.sha256
+          grep -q "versionCode='45'" validation/world-map-apk-badging.log
+          grep -q "versionName='0.17.0-world-map-master-debug'" validation/world-map-apk-badging.log
+
+      - name: Upload world map APK and evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: FRIDAY-0.17.0-world-map-master-validation
+          path: |
+            validation/
+            world-map-assets.log
+            world-map-helix-build.log
+            app/build/reports/lint-results-debug.html
+            app/build/reports/tests/testDebugUnitTest/
+          if-no-files-found: warn
+          retention-days: 14
+
+  runtime:
+    name: Launch FRIDAY world map build on Android 16
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v6
+
+      - name: Apply deterministic FRIDAY integrations
+        shell: bash
+        run: python3 scripts/apply_provider_integrations.py
+
+      - name: Package high-detail world geometry
+        shell: bash
+        run: python3 scripts/fetch_world_map_assets.py
+
+      - name: Set up Node 22
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: helix-ui/package-lock.json
+
+      - name: Build packaged world map UI
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd helix-ui
+          npm ci --no-audit --no-fund
+          npm run build
+          cd ..
+          rm -rf app/src/main/assets/helix
+          mkdir -p app/src/main/assets/helix
+          cp -R helix-ui/dist/. app/src/main/assets/helix/
+          test -s app/src/main/assets/helix/geodata/countries-50m.geojson
+          test -s app/src/main/assets/helix/geodata/places-50m.geojson
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+
+      - name: Set up Gradle cache
+        uses: gradle/actions/setup-gradle@v6
+
+      - name: Enable KVM
+        shell: bash
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Run Android 16 instrumentation
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: default
+          arch: x86_64
+          profile: pixel_6
+          emulator-boot-timeout: 420
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -no-snapshot -netdelay none -netspeed full
+          disable-animations: true
+          script: |
+            adb shell svc wifi disable || true
+            adb shell svc data disable || true
+            ./gradlew :app:connectedDebugAndroidTest --stacktrace --no-daemon
+
+      - name: Upload Android 16 report
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: FRIDAY-0.17.0-world-map-master-android16
+          path: |
+            app/build/reports/androidTests/connected/
+            app/build/outputs/androidTest-results/connected/
+          if-no-files-found: warn
+          retention-days: 14
