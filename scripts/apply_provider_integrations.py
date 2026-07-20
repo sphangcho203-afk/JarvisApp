@@ -13,6 +13,7 @@ try:
         "integration_voice_lab.py",
         "integration_operational_sensory.py",
         "integration_reference_locked_ui.py",
+        "integration_reference_kotlin_fix.py",
     ):
         script = ROOT / script_name
         if not script.exists():
