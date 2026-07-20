@@ -7,7 +7,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
-import androidx.test.platform.app.InstrumentationRegistry
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
@@ -25,7 +24,10 @@ class RuntimeSmokeTest {
 
         ActivityScenario.launch<MainActivity>(intent).use { scenario ->
             scenario.moveToState(Lifecycle.State.RESUMED)
-            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+            // HELIX intentionally has continuous orbit, waveform, radar, and
+            // scene animations. waitForIdleSync() can never become globally
+            // idle and would test whether FRIDAY stops moving rather than
+            // whether its Android window launched correctly.
             scenario.onActivity { activity ->
                 val decor = activity.window.decorView
                 assertFalse(activity.isFinishing)
