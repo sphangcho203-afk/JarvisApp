@@ -16,7 +16,7 @@ val releaseSigningConfigured = listOf(
 
 val integrateUniversalProviderMesh by tasks.registering(Exec::class) {
     group = "friday"
-    description = "Deterministically wires provider, voice, sensory and reference UI systems into FRIDAY."
+    description = "Deterministically wires provider, voice, sensory and cinematic OS systems into FRIDAY."
     workingDir(rootProject.projectDir)
     commandLine("python3", "scripts/apply_provider_integrations.py")
     inputs.files(
@@ -26,11 +26,14 @@ val integrateUniversalProviderMesh by tasks.registering(Exec::class) {
         rootProject.file("scripts/integration_voice_lab.py"),
         rootProject.file("scripts/integration_operational_sensory.py"),
         rootProject.file("scripts/integration_reference_locked_ui.py"),
+        rootProject.file("scripts/integration_cinematic_os_reference_fix.py"),
         rootProject.file("app/src/main/java/com/seongja/jarvis/UniversalProviderMesh.kt"),
         rootProject.file("app/src/main/java/com/seongja/jarvis/FridayLocationRuntime.kt"),
         rootProject.file("app/src/main/java/com/seongja/jarvis/JarvisBrain.kt"),
         rootProject.file("app/src/main/java/com/seongja/jarvis/MainActivity.kt"),
-        rootProject.file("helix-ui/src/ReferenceCinematicCore.tsx")
+        rootProject.file("helix-ui/src/FridayCinematicOS.tsx"),
+        rootProject.file("helix-ui/src/fridayCinematicOS.css"),
+        rootProject.file("helix-ui/src/fridayCinematicOSFixes.css")
     )
     outputs.upToDateWhen { false }
 }
@@ -47,8 +50,8 @@ android {
         applicationId = "com.seongja.jarvis"
         minSdk = 28
         targetSdk = 36
-        versionCode = 43
-        versionName = "0.15.0-reference-ui"
+        versionCode = 44
+        versionName = "0.16.0-cinematic-os"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -118,8 +121,8 @@ dependencies {
     implementation("androidx.camera:camera-view:$cameraXVersion")
 
     testImplementation("junit:junit:4.13.2")
-
-    androidTestImplementation("androidx.test:core-ktx:1.7.0")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")
+    androidTestImplementation("androidx.test:core:1.7.0")
     androidTestImplementation("androidx.test:runner:1.7.0")
+    androidTestImplementation("androidx.test:rules:1.7.0")
 }
