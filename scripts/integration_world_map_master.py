@@ -25,6 +25,10 @@ world_map = world_map.replace(
     "type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type WheelEvent as ReactWheelEvent } from 'react'",
 )
 world_map = world_map.replace("children: React.ReactNode", "children: ReactNode")
+world_map = world_map.replace(
+    "  const country = dataset.countries.find(feature => countryName(feature).toLowerCase().includes(normalized))\n  return countryLabel(country!)?.coordinate || null",
+    "  const country = dataset.countries.find(feature => countryName(feature).toLowerCase().includes(normalized))\n  if (!country) return null\n  return countryLabel(country)?.coordinate || null",
+)
 MAP.write_text(world_map, encoding="utf-8")
 
 main = MAIN.read_text(encoding="utf-8")
