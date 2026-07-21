@@ -46,7 +46,7 @@ menu_block = '''        <button className="fos-menu" type="button" aria-label="O
 '''
 ui = ui.replace(menu_block, "", 1)
 
-voice_command_effect = '''
+voice_command_effect = r'''
   useEffect(() => {
     const command = props.transcript.toLowerCase().replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim()
     if (/\b(open|show|display|launch)\b.*\b(modules?|workspace matrix|system matrix|helix ops)\b/.test(command)) {
