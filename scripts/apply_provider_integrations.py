@@ -17,6 +17,8 @@ try:
         "integration_cinematic_os_reference_fix.py",
         "integration_world_map_master.py",
         "integration_world_map_performance_fix.py",
+        "integration_singularity_core.py",
+        "integration_singularity_containment.py",
     ):
         script = ROOT / script_name
         if not script.exists():
@@ -29,4 +31,4 @@ except Exception:
     print(detail)
     raise
 
-print("All FRIDAY provider, Voice Lab, sensory, location, cinematic OS, world-map, route-correctness, and LOD integrations applied.")
+print("All FRIDAY provider, Voice Lab, sensory, location, cinematic OS, world-map, route-correctness, LOD, singularity-core, and containment integrations applied.")

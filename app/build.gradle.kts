@@ -16,7 +16,7 @@ val releaseSigningConfigured = listOf(
 
 val integrateUniversalProviderMesh by tasks.registering(Exec::class) {
     group = "friday"
-    description = "Deterministically wires provider, voice, sensory, cinematic OS and world-map systems into FRIDAY."
+    description = "Deterministically wires provider, voice, sensory, cinematic OS, world-map and singularity-core systems into FRIDAY."
     workingDir(rootProject.projectDir)
     commandLine("python3", "scripts/apply_provider_integrations.py")
     inputs.files(
@@ -28,11 +28,15 @@ val integrateUniversalProviderMesh by tasks.registering(Exec::class) {
         rootProject.file("scripts/integration_reference_locked_ui.py"),
         rootProject.file("scripts/integration_cinematic_os_reference_fix.py"),
         rootProject.file("scripts/integration_world_map_master.py"),
+        rootProject.file("scripts/integration_world_map_performance_fix.py"),
+        rootProject.file("scripts/integration_singularity_core.py"),
         rootProject.file("app/src/main/java/com/seongja/jarvis/UniversalProviderMesh.kt"),
         rootProject.file("app/src/main/java/com/seongja/jarvis/FridayLocationRuntime.kt"),
         rootProject.file("app/src/main/java/com/seongja/jarvis/JarvisBrain.kt"),
         rootProject.file("app/src/main/java/com/seongja/jarvis/MainActivity.kt"),
         rootProject.file("helix-ui/src/FridayCinematicOS.tsx"),
+        rootProject.file("helix-ui/src/SingularityCore.tsx"),
+        rootProject.file("helix-ui/src/singularityCore.css"),
         rootProject.file("helix-ui/src/WorldMapMaster.tsx"),
         rootProject.file("helix-ui/src/worldMapData.ts"),
         rootProject.file("helix-ui/src/worldMapMath.ts"),
@@ -56,8 +60,8 @@ android {
         applicationId = "com.seongja.jarvis"
         minSdk = 28
         targetSdk = 36
-        versionCode = 45
-        versionName = "0.17.0-world-map-master"
+        versionCode = 46
+        versionName = "0.18.0-singularity-core"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
