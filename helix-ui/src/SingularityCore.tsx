@@ -42,18 +42,6 @@ export function SingularityCore({ mode, energy = .08, compact = false }: Props) 
             <stop offset=".5" stopColor="#061a34" stopOpacity=".92" />
             <stop offset="1" stopColor="#020916" stopOpacity=".98" />
           </linearGradient>
-          <radialGradient id="sgPower" cx="50%" cy="50%" r="50%">
-            <stop offset="0" stopColor="#ffffff" />
-            <stop offset=".06" stopColor="#dffcff" />
-            <stop offset=".16" stopColor="#8be8ff" />
-            <stop offset=".34" stopColor="#1da2ff" />
-            <stop offset=".58" stopColor="#0759d6" stopOpacity=".82" />
-            <stop offset="1" stopColor="#031431" stopOpacity="0" />
-          </radialGradient>
-          <filter id="sgGlow" x="-80%" y="-80%" width="260%" height="260%">
-            <feGaussianBlur stdDeviation="8" result="blur" />
-            <feMerge><feMergeNode in="blur" /><feMergeNode in="SourceGraphic" /></feMerge>
-          </filter>
         </defs>
 
         <g className="sg-shell">
@@ -94,15 +82,6 @@ export function SingularityCore({ mode, energy = .08, compact = false }: Props) 
           <path className="sg-housing-lock" d="M310 255 382 297v126l-72 42-72-42V297Z" />
         </g>
 
-        <g className="sg-armor-plates">
-          <path className="sg-plate sg-plate-top" d="M254 276h112l-24 54h-64Z" />
-          <path className="sg-plate sg-plate-right-top" d="m371 294 52 31v70l-57-13-25-43Z" />
-          <path className="sg-plate sg-plate-right-bottom" d="m423 395-52 31-30-45 25-43Z" />
-          <path className="sg-plate sg-plate-bottom" d="M254 444h112l-24-54h-64Z" />
-          <path className="sg-plate sg-plate-left-bottom" d="m249 426-52-31 57-13 25 43Z" />
-          <path className="sg-plate sg-plate-left-top" d="m197 325 52-31 30 45-25 43Z" />
-        </g>
-
         <g className="sg-core-lines">
           <line x1="310" y1="156" x2="310" y2="285" />
           <line x1="310" y1="435" x2="310" y2="564" />
@@ -114,13 +93,6 @@ export function SingularityCore({ mode, energy = .08, compact = false }: Props) 
           <line x1="274" y1="396" x2="238" y2="432" />
         </g>
 
-        <g className="sg-power-chamber" filter="url(#sgGlow)">
-          <circle className="sg-power-halo" cx="310" cy="360" r="94" fill="url(#sgPower)" />
-          <path className="sg-power-cage" d="M310 284 376 322v76l-66 38-66-38v-76Z" />
-          <path className="sg-power-cage-inner" d="M310 314 350 337v46l-40 23-40-23v-46Z" />
-          <circle className="sg-power-light" cx="310" cy="360" r="26" fill="url(#sgPower)" />
-        </g>
-
         <g className="sg-lock-nodes">
           {[
             [310, 122], [478, 192], [530, 360], [478, 528],
@@ -128,6 +100,12 @@ export function SingularityCore({ mode, energy = .08, compact = false }: Props) 
           ].map(([x, y], index) => <circle key={index} cx={x} cy={y} r={index % 2 === 0 ? 5 : 3.5} />)}
         </g>
       </svg>
+
+      <div className="sg-containment" aria-hidden="true">
+        <div className="sg-containment-frame"><i /><i /><i /><i /></div>
+        <div className="sg-containment-cell"><i /><span /><i /></div>
+        <div className="sg-containment-gates"><i /><i /></div>
+      </div>
 
       <div className="sg-state">
         <span>HELIX SINGULARITY</span>
