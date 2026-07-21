@@ -114,14 +114,19 @@ ui = ui.replace("{home ? 'PRIVATE INTELLIGENCE ONLINE'", "{home ? 'LIVE CONVERSA
 UI.write_text(ui, encoding="utf-8")
 
 main = MAIN.read_text(encoding="utf-8")
-css_import = "import './singularityCore.css'\n"
-if css_import not in main:
+base_import = "import './singularityCore.css'\n"
+polish_import = "import './singularityCorePolish.css'\n"
+if base_import not in main:
     preferred_anchor = "import './worldMapMaster.css'\n"
     fallback_anchor = "import './fridayCinematicReactor.css'\n"
     anchor = preferred_anchor if preferred_anchor in main else fallback_anchor
     if anchor not in main:
         raise RuntimeError("FRIDAY singularity stylesheet anchor missing")
-    main = main.replace(anchor, anchor + css_import, 1)
+    main = main.replace(anchor, anchor + base_import, 1)
+if polish_import not in main:
+    if base_import not in main:
+        raise RuntimeError("FRIDAY singularity base stylesheet missing")
+    main = main.replace(base_import, base_import + polish_import, 1)
 MAIN.write_text(main, encoding="utf-8")
 
 print("FRIDAY buttonless singularity core integration applied")
