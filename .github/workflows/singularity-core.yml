@@ -37,12 +37,17 @@ jobs:
           python3 scripts/apply_provider_integrations.py
           grep -q "import { SingularityCore }" helix-ui/src/FridayCinematicOS.tsx
           grep -q 'HELIX SINGULARITY' helix-ui/src/SingularityCore.tsx
-          grep -q 'sg-armor-plates' helix-ui/src/SingularityCore.tsx
+          grep -q 'sg-containment-gates' helix-ui/src/SingularityCore.tsx
+          grep -q 'sg-containment-cell' helix-ui/src/SingularityCore.tsx
           grep -q 'sg-energy-spine' helix-ui/src/SingularityCore.tsx
-          grep -q 'singularityCore.css' helix-ui/src/main.tsx
+          grep -q 'singularityContainment.css' helix-ui/src/main.tsx
           grep -q "scene !== 'CORE'" helix-ui/src/FridayCinematicOS.tsx
           if grep -q 'className="fos-menu"' helix-ui/src/FridayCinematicOS.tsx; then
             echo 'Visible navigation menu survived singularity integration' >&2
+            exit 1
+          fi
+          if grep -q 'sg-armor-plates' helix-ui/src/SingularityCore.tsx; then
+            echo 'Deleted radial armor survived the containment rebuild' >&2
             exit 1
           fi
 
@@ -107,7 +112,8 @@ jobs:
           grep -q 'Awaiting command.' validation/singularity-idle-phone.html
           grep -q 'VOICE CHANNEL OPEN' validation/singularity-listening-phone.html
           grep -q 'Listening' validation/singularity-listening-phone.html
-          grep -q 'sg-plate-top' validation/singularity-idle-phone.html
+          grep -q 'sg-containment-cell' validation/singularity-idle-phone.html
+          grep -q 'sg-containment-gates' validation/singularity-listening-phone.html
           grep -q 'sg-stabilizer' validation/singularity-idle-phone.html
           if grep -q 'fos-menu' validation/singularity-idle-phone.html; then
             echo 'Navigation menu rendered on the first interface' >&2
